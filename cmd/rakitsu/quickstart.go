@@ -8,11 +8,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/paupawsan/rakitsu/internal/scaffold"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var quickstartCmd = &cobra.Command{
@@ -140,37 +142,42 @@ func runQuickstart(cmd *cobra.Command, args []string) error {
 	prov := providers[pIdx]
 	fmt.Printf("  → %s\n\n", prov.name)
 
-	// Step 3: API key
+	// Step 3: API key. If already in the environment, use it as-is. If
+	// not, prompt with masked input (no terminal echo) and remember the
+	// value — it gets written to the generated project's .env file once
+	// we know absDir (Step 4), which rakitsu auto-loads at startup
+	// (internal/dotenv, wired into rootCmd.PersistentPreRunE). It is also
+	// os.Setenv'd immediately so an auto-started `serve` later in this
+	// same process (Step 5) has it right away, without waiting on the
+	// .env round-trip.
 	apiKey := ""
+	apiKeyTyped := false
 	if prov.needKey {
-		existing := os.Getenv(prov.envVar)
-		if existing != "" {
+		if existing := os.Getenv(prov.envVar); existing != "" {
 			fmt.Printf("  API key detected from $%s\n\n", prov.envVar)
-			apiKey = existing
 		} else {
 			fmt.Printf("  Enter %s API key: ", prov.name)
-			line, err := mustReadLine(reader)
+			line, err := readSecretLine(reader)
 			if err != nil {
 				return err
 			}
 			apiKey = strings.TrimSpace(line)
 			if apiKey == "" {
 				fmt.Printf("  Warning: no API key provided. Set $%s before running.\n\n", prov.envVar)
+			} else {
+				os.Setenv(prov.envVar, apiKey) //nolint:errcheck
+				apiKeyTyped = true
 			}
 		}
 	}
 
-	// Step 3b: Base URL — providers with no fixed endpoint (LiteLLM) need
-	// one before the generated config will reach anything. Same
-	// detect/prompt/warn shape as the API key step above; the value is
-	// never written into the generated config, only used for this check
-	// (the config always references the env var by name, same as the key).
+	// Step 3b: Base URL — same detect/prompt/persist shape as the API key
+	// above, for providers with no fixed endpoint (LiteLLM).
 	baseURL := ""
+	baseURLTyped := false
 	if prov.needBaseURL {
-		existing := os.Getenv(prov.baseURLEnvVar)
-		if existing != "" {
+		if existing := os.Getenv(prov.baseURLEnvVar); existing != "" {
 			fmt.Printf("  Base URL detected from $%s\n\n", prov.baseURLEnvVar)
-			baseURL = existing
 		} else {
 			fmt.Printf("  Enter %s base URL (e.g. https://your-proxy-host/v1): ", prov.name)
 			line, err := mustReadLine(reader)
@@ -180,6 +187,9 @@ func runQuickstart(cmd *cobra.Command, args []string) error {
 			baseURL = strings.TrimSpace(line)
 			if baseURL == "" {
 				fmt.Printf("  Warning: no base URL provided. Set $%s before running.\n\n", prov.baseURLEnvVar)
+			} else {
+				os.Setenv(prov.baseURLEnvVar, baseURL) //nolint:errcheck
+				baseURLTyped = true
 			}
 		}
 	}
@@ -277,6 +287,18 @@ func runQuickstart(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Config: %s\n\n", configPath)
 	}
 
+	// Step 4d: persist any freshly typed key/base_url into a project-local
+	// .env, which rakitsu loads automatically at startup (internal/dotenv
+	// via rootCmd.PersistentPreRunE). This is what makes a typed value
+	// actually useful beyond this one process — without it, a later
+	// `rakitsu run` from a new terminal would have nothing to read.
+	if apiKeyTyped || baseURLTyped {
+		if err := writeQuickstartEnv(absDir, prov, apiKey, apiKeyTyped, baseURL, baseURLTyped); err != nil {
+			return fmt.Errorf("cannot write .env: %w", err)
+		}
+		fmt.Printf("  Saved to %s (gitignored, loaded automatically by rakitsu)\n\n", filepath.Join(absDir, ".env"))
+	}
+
 	// Step 5: Start serve
 	fmt.Print("  Start web UI now? [Y/n]: ")
 	startLine, err := mustReadLine(reader)
@@ -345,6 +367,201 @@ func mustReadLine(reader *bufio.Reader) (string, error) {
 		return "", errNonInteractive
 	}
 	return line, nil
+}
+
+// shouldMaskSecretInput reports whether it's safe to read the next line
+// directly off the raw terminal fd (masked, via term.ReadPassword) rather
+// than through the wizard's shared bufio.Reader. Masking needs BOTH: an
+// actual terminal (term.IsTerminal — a piped/redirected stdin has no TTY
+// to mask against) AND nothing already buffered in reader. That second
+// condition matters because every other prompt in the wizard reads
+// through reader — if the user pastes ahead (answers several prompts'
+// worth of input before being asked), bytes meant for this answer can
+// already be sitting in reader's buffer. A raw fd read is blind to that
+// buffer: it would either hang waiting for new terminal input while the
+// real answer sits unread, or a later prompt would end up consuming it
+// out of order. Falling back to the buffered reader in that case
+// sacrifices masking for one line in exchange for correct ordering.
+func shouldMaskSecretInput(isTerminal bool, buffered int) bool {
+	return isTerminal && buffered == 0
+}
+
+// readSecretLine reads one line of sensitive input (an API key) without
+// echoing it to the terminal, so it can't be shoulder-surfed or left
+// sitting in terminal scrollback. See shouldMaskSecretInput for when it
+// falls back to the plain reader instead.
+func readSecretLine(reader *bufio.Reader) (string, error) {
+	if shouldMaskSecretInput(term.IsTerminal(int(os.Stdin.Fd())), reader.Buffered()) {
+		b, err := term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Println() // ReadPassword swallows the Enter keypress's newline
+		if err != nil {
+			return "", err
+		}
+		return string(b), nil
+	}
+	return mustReadLine(reader)
+}
+
+// writeQuickstartEnv persists a freshly typed API key/base_url to
+// <absDir>/.env (KEY=VALUE lines, mode 0600 — readable only by the current
+// user) and ensures <absDir>/.gitignore excludes it, so the secret is
+// never accidentally committed. Only called when at least one value was
+// actually typed (never for values already detected from the environment
+// — those are already available everywhere and don't need duplicating).
+func writeQuickstartEnv(absDir string, prov quickstartProvider, apiKey string, apiKeyTyped bool, baseURL string, baseURLTyped bool) error {
+	// Protect the secret before it ever exists, not after: ensure .gitignore
+	// excludes .env FIRST, before any secret-bearing file (temp or final) is
+	// created below. Doing it the other way around — write .env, then try to
+	// protect it — leaves an unprotected secret on disk if the gitignore
+	// step fails, even though writeQuickstartEnv reports the whole thing as
+	// an error. Found by the automated PR review on paupawsan/rakitsu#86.
+	if err := ensureGitignoreHasEnv(absDir); err != nil {
+		return err
+	}
+
+	path := filepath.Join(absDir, ".env")
+
+	updates := map[string]string{}
+	if apiKeyTyped {
+		updates[prov.envVar] = apiKey
+	}
+	if baseURLTyped {
+		updates[prov.baseURLEnvVar] = baseURL
+	}
+
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	merged := mergeEnvLines(string(existing), updates)
+
+	// Write to a fresh temp file (created with the right mode from the
+	// start) and rename it over the real path, rather than
+	// WriteFile-then-Chmod on the existing file directly: os.WriteFile
+	// only applies the given mode when CREATING a file — if .env already
+	// existed at a looser mode (e.g. hand-edited, or left over from
+	// before this feature), it writes the new secret into that file
+	// before a separate Chmod could tighten it, leaving a real window
+	// where the fresh secret sits at the old, loose permissions.
+	// os.Rename is atomic and the destination inherits the temp file's
+	// mode, so there's no window at all, and no torn-write risk either.
+	tmp, err := os.CreateTemp(absDir, ".env.tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath) //nolint:errcheck // no-op once the rename below succeeds
+	if err := tmp.Chmod(0600); err != nil {
+		tmp.Close() //nolint:errcheck
+		return err
+	}
+	if _, err := tmp.WriteString(merged); err != nil {
+		tmp.Close() //nolint:errcheck
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
+}
+
+// mergeEnvLines merges updates (KEY -> value) into existing .env content,
+// replacing the line for a key already present (matched by an exact
+// "KEY=" line prefix) and appending a line for a key that isn't — every
+// other line (comments, blank lines, unrelated variables) passes through
+// unchanged. Never used to CLEAR a key: updates only ever adds or
+// replaces, matching writeQuickstartEnv's callers (which only ever pass
+// freshly typed, non-empty values).
+func mergeEnvLines(existing string, updates map[string]string) string {
+	// written tracks which updated keys have already had their single
+	// replacement line emitted, so a duplicate existing line for the same
+	// key (hand-edited file, or an artifact of some other tool) is
+	// dropped outright rather than left behind with its stale value —
+	// otherwise the file would end up with two lines for one var, which
+	// is exactly the ambiguous "which one wins" state this fix exists to
+	// avoid, just re-triggered by different existing content.
+	written := make(map[string]bool, len(updates))
+
+	var out []string
+	if existing != "" {
+		for _, line := range strings.Split(strings.TrimRight(existing, "\n"), "\n") {
+			matchedKey := ""
+			for key := range updates {
+				if line == key || strings.HasPrefix(line, key+"=") {
+					matchedKey = key
+					break
+				}
+			}
+			if matchedKey == "" {
+				out = append(out, line)
+				continue
+			}
+			if !written[matchedKey] {
+				out = append(out, fmt.Sprintf("%s=%s", matchedKey, updates[matchedKey]))
+				written[matchedKey] = true
+			}
+			// else: a second (or later) existing line for a key already
+			// replaced above — drop it, don't leave a stale duplicate.
+		}
+	}
+	// Append any updated keys that weren't already present at all, in a
+	// deterministic order so output is stable across runs.
+	remaining := make(map[string]string, len(updates))
+	for k, v := range updates {
+		if !written[k] {
+			remaining[k] = v
+		}
+	}
+	for _, key := range sortedKeys(remaining) {
+		out = append(out, fmt.Sprintf("%s=%s", key, remaining[key]))
+	}
+	return strings.Join(out, "\n") + "\n"
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// ensureGitignoreHasEnv appends a ".env" entry to <absDir>/.gitignore,
+// creating the file if it doesn't exist yet and leaving it untouched if
+// ".env" is already listed (e.g. quickstart run twice into the same dir).
+func ensureGitignoreHasEnv(absDir string) error {
+	path := filepath.Join(absDir, ".gitignore")
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	present := map[string]bool{}
+	for _, line := range strings.Split(string(existing), "\n") {
+		present[strings.TrimSpace(line)] = true
+	}
+	// .env.tmp-* covers writeQuickstartEnv's temp file (os.CreateTemp +
+	// os.Rename for an atomic, correctly-permissioned write) — if the
+	// process dies between creating it and the rename, a leftover temp
+	// file holding the same secret should never be git-addable either.
+	wanted := []string{".env", ".env.tmp-*"}
+	var toAdd []string
+	for _, w := range wanted {
+		if !present[w] {
+			toAdd = append(toAdd, w)
+		}
+	}
+	if len(toAdd) == 0 {
+		return nil
+	}
+	content := string(existing)
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	for _, w := range toAdd {
+		content += w + "\n"
+	}
+	return os.WriteFile(path, []byte(content), 0644)
 }
 
 // existingQuickstartFiles returns the absolute paths, under absDir, of any
