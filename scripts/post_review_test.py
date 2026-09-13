@@ -156,6 +156,40 @@ class TagBodyTest(unittest.TestCase):
         self.assertTrue(result.endswith(f"\n\n{marker}"))
 
 
+class WaitForMarkerTest(unittest.TestCase):
+    def test_returns_true_immediately_without_further_polling(self):
+        with patch.object(post_review, "_review_with_marker_exists", return_value=True) as mock_check, \
+                patch.object(post_review.time, "sleep") as mock_sleep:
+            self.assertTrue(post_review._wait_for_marker("o/r", "1", "deadbeef", "m"))
+        mock_check.assert_called_once()
+        mock_sleep.assert_not_called()
+
+    def test_polls_again_after_a_false_and_eventually_finds_it(self):
+        # Reproduces the reviewer's finding: a single check right after
+        # the delay can still lose a race against GitHub's own
+        # read-after-write lag. Polling narrows that window.
+        with patch.object(post_review, "_review_with_marker_exists", side_effect=[False, False, True]) as mock_check, \
+                patch.object(post_review.time, "sleep") as mock_sleep:
+            self.assertTrue(post_review._wait_for_marker("o/r", "1", "deadbeef", "m"))
+        self.assertEqual(mock_check.call_count, 3)
+        self.assertEqual(mock_sleep.call_count, 2)
+
+    def test_returns_false_after_exhausting_all_polls(self):
+        with patch.object(post_review, "_review_with_marker_exists", return_value=False) as mock_check, \
+                patch.object(post_review.time, "sleep"):
+            self.assertFalse(post_review._wait_for_marker("o/r", "1", "deadbeef", "m"))
+        self.assertEqual(mock_check.call_count, post_review._MARKER_CHECK_POLLS)
+
+    def test_stops_polling_immediately_on_an_unknown_result(self):
+        # None means the check itself failed — more polling wouldn't fix
+        # that, so it isn't retried further here.
+        with patch.object(post_review, "_review_with_marker_exists", return_value=None) as mock_check, \
+                patch.object(post_review.time, "sleep") as mock_sleep:
+            self.assertIsNone(post_review._wait_for_marker("o/r", "1", "deadbeef", "m"))
+        mock_check.assert_called_once()
+        mock_sleep.assert_not_called()
+
+
 class PostWithRetryTest(unittest.TestCase):
     def _marker_from(self, mock_post):
         """Extract the marker post_with_retry tagged onto the payload it
@@ -167,7 +201,7 @@ class PostWithRetryTest(unittest.TestCase):
 
     def test_succeeds_immediately_without_checking_for_a_marker(self):
         with patch.object(post_review, "post", return_value=_proc(0, stdout="ok")) as mock_post, \
-                patch.object(post_review, "_review_with_marker_exists") as mock_check:
+                patch.object(post_review, "_wait_for_marker") as mock_check:
             proc = post_review.post_with_retry("o/r", "1", "deadbeef", {"body": "hi"})
         self.assertEqual(proc.returncode, 0)
         mock_post.assert_called_once()
@@ -182,7 +216,7 @@ class PostWithRetryTest(unittest.TestCase):
 
     def test_does_not_retry_on_422_leaves_it_to_the_existing_fallback(self):
         with patch.object(post_review, "post", return_value=_proc(1, stderr="gh: Validation Failed (HTTP 422)")) as mock_post, \
-                patch.object(post_review, "_review_with_marker_exists") as mock_check:
+                patch.object(post_review, "_wait_for_marker") as mock_check:
             proc = post_review.post_with_retry("o/r", "1", "deadbeef", {"body": "hi"})
         self.assertEqual(proc.returncode, 1)
         mock_post.assert_called_once()
@@ -190,7 +224,7 @@ class PostWithRetryTest(unittest.TestCase):
 
     def test_does_not_retry_a_real_rejection(self):
         with patch.object(post_review, "post", return_value=_proc(1, stderr="gh: Bad credentials (HTTP 401)")) as mock_post, \
-                patch.object(post_review, "_review_with_marker_exists") as mock_check:
+                patch.object(post_review, "_wait_for_marker") as mock_check:
             proc = post_review.post_with_retry("o/r", "1", "deadbeef", {"body": "hi"})
         self.assertEqual(proc.returncode, 1)
         mock_post.assert_called_once()
@@ -202,7 +236,7 @@ class PostWithRetryTest(unittest.TestCase):
             _proc(0, stdout="posted"),
         ]
         with patch.object(post_review, "post", side_effect=responses) as mock_post, \
-                patch.object(post_review, "_review_with_marker_exists", return_value=False) as mock_check, \
+                patch.object(post_review, "_wait_for_marker", return_value=False) as mock_check, \
                 patch.object(post_review.time, "sleep") as mock_sleep:
             proc = post_review.post_with_retry("o/r", "1", "deadbeef", {"body": "hi"})
         self.assertEqual(proc.returncode, 0)
@@ -220,7 +254,7 @@ class PostWithRetryTest(unittest.TestCase):
         # marker match is unambiguous even if some unrelated review also
         # exists on this commit (a stale one, or a truly concurrent one).
         with patch.object(post_review, "post", return_value=_proc(1, stderr="unexpected end of JSON input")) as mock_post, \
-                patch.object(post_review, "_review_with_marker_exists", return_value=True), \
+                patch.object(post_review, "_wait_for_marker", return_value=True), \
                 patch.object(post_review.time, "sleep") as mock_sleep:
             proc = post_review.post_with_retry("o/r", "1", "deadbeef", {"body": "hi"})
         self.assertEqual(proc.returncode, 0)
@@ -240,7 +274,7 @@ class PostWithRetryTest(unittest.TestCase):
                     _proc(1, stderr="unexpected end of JSON input"),
                     _proc(0, stdout="posted"),
                 ]) as mock_post, \
-                patch.object(post_review, "_review_with_marker_exists",
+                patch.object(post_review, "_wait_for_marker",
                              side_effect=lambda *a: calls.append("check") or False) as mock_check, \
                 patch.object(post_review.time, "sleep", side_effect=lambda *a: calls.append("sleep")) as mock_sleep:
             post_review.post_with_retry("o/r", "1", "deadbeef", {"body": "hi"})
@@ -249,7 +283,7 @@ class PostWithRetryTest(unittest.TestCase):
     def test_gives_up_after_exhausting_retries(self):
         failure = _proc(1, stderr="unexpected end of JSON input")
         with patch.object(post_review, "post", return_value=failure) as mock_post, \
-                patch.object(post_review, "_review_with_marker_exists", return_value=False), \
+                patch.object(post_review, "_wait_for_marker", return_value=False), \
                 patch.object(post_review.time, "sleep"):
             proc = post_review.post_with_retry("o/r", "1", "deadbeef", {"body": "hi"})
         self.assertEqual(proc.returncode, 1)
@@ -264,7 +298,7 @@ class PostWithRetryTest(unittest.TestCase):
             _proc(0, stdout="posted"),
         ]
         with patch.object(post_review, "post", side_effect=responses) as mock_post, \
-                patch.object(post_review, "_review_with_marker_exists", return_value=None), \
+                patch.object(post_review, "_wait_for_marker", return_value=None), \
                 patch.object(post_review.time, "sleep") as mock_sleep:
             proc = post_review.post_with_retry("o/r", "1", "deadbeef", {"body": "hi"})
         self.assertEqual(proc.returncode, 0)

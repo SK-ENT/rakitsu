@@ -34,7 +34,7 @@ unambiguous regardless of what else is happening concurrently — no
 other process can produce the same uuid — so there is no race left to
 bound by the workflow's concurrency settings or anything else.
 
-Two follow-up findings on the marker fix itself: (1) the marker check
+Three follow-up findings on the marker fix itself: (1) the marker check
 ran immediately after a failure, before the retry delay — if GitHub's
 review actually lands a moment later than that check (any latency
 between "the request was accepted" and "it's visible on a GET"), the
@@ -46,7 +46,15 @@ near GitHub's review-body limit could tip over it purely from the
 marker's own bytes — `_tag_body` now applies the length cap (and
 truncates the ORIGINAL text, never the marker) for every post, so
 `main()` no longer needs its own separate truncation logic for the 422
-fallback path either.
+fallback path either; (3) even after the delay, a SINGLE point-in-time
+check can still land during a genuine eventual-consistency lag on
+GitHub's own side (a write can be accepted while a subsequent read
+briefly still misses it on a lagging replica) — `_wait_for_marker` now
+polls a few times with a short gap between checks instead of checking
+once, meaningfully narrowing (not claiming to eliminate) that window.
+GitHub's Reviews API has no idempotency-key mechanism, so nothing
+short of that from GitHub's side can make this provably exact; this is
+the practical mitigation available without one.
 
 The review itself always posts as event "COMMENT" — it never requests
 changes as a GitHub review state. Instead, once the review is posted,
@@ -79,6 +87,13 @@ _TRUNCATION_NOTE = "\n\n… (truncated, over GitHub's review body limit)"
 # this is a gateway hiccup, not an outage worth minutes of backoff — but
 # more than one, since the first retry can land during the same blip.
 RETRY_DELAYS = (3, 6)
+
+# After a retry delay, how many times (and how far apart) to poll for the
+# marker before concluding it isn't there. A single check can still lose
+# a race against GitHub's own read-after-write lag; polling narrows that
+# window further without pretending to close it entirely.
+_MARKER_CHECK_POLLS = 3
+_MARKER_CHECK_POLL_INTERVAL = 2
 
 
 def post(repo: str, pr_number: str, payload: dict) -> subprocess.CompletedProcess:
@@ -147,6 +162,23 @@ def _review_with_marker_exists(repo: str, pr_number: str, commit_sha: str, marke
     return False
 
 
+def _wait_for_marker(repo: str, pr_number: str, commit_sha: str, marker: str) -> "bool | None":
+    """Poll `_review_with_marker_exists` a few times, with a short gap
+    between checks, instead of checking once. A single check right after
+    the retry delay can still lose a race against GitHub's own
+    read-after-write lag (a write accepted while a subsequent read
+    briefly still misses it) — polling narrows that window further.
+    Stops early on a confirmed True, or on None (the check itself
+    failing isn't something more polling fixes)."""
+    for attempt in range(_MARKER_CHECK_POLLS):
+        found = _review_with_marker_exists(repo, pr_number, commit_sha, marker)
+        if found or found is None:
+            return found
+        if attempt < _MARKER_CHECK_POLLS - 1:
+            time.sleep(_MARKER_CHECK_POLL_INTERVAL)
+    return False
+
+
 def _tag_body(body: str, marker: str) -> str:
     """Append `marker` to `body`, truncating the ORIGINAL text first if
     the combined result would exceed GitHub's review body limit. The
@@ -162,9 +194,9 @@ def _tag_body(body: str, marker: str) -> str:
 def post_with_retry(repo: str, pr_number: str, commit_sha: str, payload: dict) -> subprocess.CompletedProcess:
     """post(), retrying a transient failure (see `_is_transient_failure`)
     a couple of times. See the module docstring for why every attempt's
-    body carries a unique marker, checked (after the retry delay, not
-    before it) via `_review_with_marker_exists` rather than diffing
-    review IDs/counts."""
+    body carries a unique marker, polled for (after the retry delay, not
+    before it) via `_wait_for_marker` rather than diffing review
+    IDs/counts or checking just once."""
     marker = f"<!-- post-review:{uuid.uuid4().hex} -->"
     tagged_payload = {**payload, "body": _tag_body(payload["body"], marker)}
     proc = post(repo, pr_number, tagged_payload)
@@ -176,7 +208,7 @@ def post_with_retry(repo: str, pr_number: str, commit_sha: str, payload: dict) -
             f"waiting {delay}s before checking/retrying...\n"
         )
         time.sleep(delay)
-        if _review_with_marker_exists(repo, pr_number, commit_sha, marker):
+        if _wait_for_marker(repo, pr_number, commit_sha, marker):
             sys.stderr.write(
                 "This exact attempt's review is now present (marker match) — not retrying.\n"
             )
