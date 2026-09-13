@@ -7,10 +7,46 @@ comment's file/line doesn't match a line that's actually part of the
 diff (a real risk since the model can misjudge a line number) — so on
 that specific failure (HTTP 422) this retries once as a body-only
 review, folding every finding into the body as a fallback rather than
-silently dropping them. Any OTHER failure (bad token, rate limit, a
-5xx) is left as a failure rather than blindly retried, since a retry
-there wouldn't fix anything and could risk a duplicate post if the
-original request actually landed server-side despite a network error.
+silently dropping them.
+
+A separate, transient failure class (observed live 2026-09-13, PR
+paupawsan/rakitsu#86): a GitHub gateway hiccup returns an empty or
+non-JSON body, and `gh` itself fails client-side with "unexpected end
+of JSON input" before any HTTP status is even visible, or GitHub itself
+returns a bare 502/503/504. This is worth a couple of short retries —
+see `_is_transient_failure` for exactly which failures qualify (a real
+rejection — 401/403/404/422/429 — is never retried, see
+`post_with_retry`).
+
+A blind retry risks posting the same review twice if the original
+request actually landed server-side despite us seeing an error. Two
+earlier versions of this fix tried to detect that by diffing review
+IDs or counts before/after a failed attempt — both are fundamentally
+unable to tell "a review MY retry created" apart from "a review some
+other, truly concurrent process created for the same bot and commit in
+that window" (a real TOCTOU race, not just a theoretical one, per
+review on this same PR). The actual fix: `post_with_retry` tags every
+attempt's body with a unique, invisible marker (an HTML comment,
+`<!-- post-review:<uuid> -->` — rendered as nothing by GitHub) before
+the first POST, and before each retry checks whether a review
+containing THAT EXACT marker already exists. That match is
+unambiguous regardless of what else is happening concurrently — no
+other process can produce the same uuid — so there is no race left to
+bound by the workflow's concurrency settings or anything else.
+
+Two follow-up findings on the marker fix itself: (1) the marker check
+ran immediately after a failure, before the retry delay — if GitHub's
+review actually lands a moment later than that check (any latency
+between "the request was accepted" and "it's visible on a GET"), the
+window it needs to appear in was too short, so the check now runs
+AFTER the delay, giving eventual consistency the whole delay to catch
+up, right before the next POST would otherwise fire; (2) the marker
+was appended to the body with no length check, so a body already at or
+near GitHub's review-body limit could tip over it purely from the
+marker's own bytes — `_tag_body` now applies the length cap (and
+truncates the ORIGINAL text, never the marker) for every post, so
+`main()` no longer needs its own separate truncation logic for the 422
+fallback path either.
 
 The review itself always posts as event "COMMENT" — it never requests
 changes as a GitHub review state. Instead, once the review is posted,
@@ -25,12 +61,24 @@ parse-findings.py) and exit 0, same as always.
 Usage: post-review.py <result-json> <repo> <pr-number> <commit-sha>
 """
 import json
+import re
 import subprocess
 import sys
+import time
+import uuid
 
-# GitHub's review body cap; the fallback below can inline every finding
-# into one body, which a large finding set could exceed.
+# GitHub's review body cap; the 422 fallback can inline every finding
+# into one body, which a large finding set could exceed — and even the
+# initial (non-fallback) body is uncapped coming out of
+# parse-findings.py, which embeds the model's raw output verbatim on a
+# parsing miss. Enforced centrally in `_tag_body`, applied to every post.
 MAX_BODY_CHARS = 60000
+_TRUNCATION_NOTE = "\n\n… (truncated, over GitHub's review body limit)"
+
+# Seconds to wait before each retry of a transient POST failure. Short —
+# this is a gateway hiccup, not an outage worth minutes of backoff — but
+# more than one, since the first retry can land during the same blip.
+RETRY_DELAYS = (3, 6)
 
 
 def post(repo: str, pr_number: str, payload: dict) -> subprocess.CompletedProcess:
@@ -40,6 +88,101 @@ def post(repo: str, pr_number: str, payload: dict) -> subprocess.CompletedProces
         text=True,
         capture_output=True,
     )
+
+
+# HTTP statuses that are real, actionable rejections — never worth a
+# retry, regardless of what shape the error message takes.
+_NON_TRANSIENT_STATUSES = ("401", "403", "404", "422", "429")
+# Statuses that ARE a gateway-style hiccup, worth a short retry.
+_TRANSIENT_STATUSES = ("502", "503", "504")
+
+
+def _is_transient_failure(stderr: str) -> bool:
+    """True for a failure worth retrying: gh's own client-side JSON-parse
+    error on an empty/garbled response (no HTTP status visible at all),
+    or an explicit 502/503/504 gateway error. False for a real rejection
+    (401/403/404/422/429) — a retry wouldn't fix any of those — and
+    false for anything else unrecognized, erring toward NOT retrying an
+    error shape we haven't seen rather than assuming it's transient."""
+    if any(re.search(rf"\b{code}\b", stderr) for code in _NON_TRANSIENT_STATUSES):
+        return False
+    if "unexpected end of JSON input" in stderr:
+        return True
+    return any(re.search(rf"\b{code}\b", stderr) for code in _TRANSIENT_STATUSES)
+
+
+def _review_with_marker_exists(repo: str, pr_number: str, commit_sha: str, marker: str) -> "bool | None":
+    """True if some review from github-actions[bot] on this exact commit
+    contains `marker` in its body. `marker` is a per-attempt UUID no
+    other process could produce, so a match is unambiguous proof THIS
+    specific attempt already landed — not a stale review, not one a
+    concurrent process created. Fetches every review object
+    one-per-line (`--jq '.[]'`) rather than filtering with a single
+    aggregate `--jq` expression — `gh api --paginate` applies `--jq`
+    separately to EACH page, so an aggregate expression like `length`
+    silently miscounts across more than one page. Returns None if the
+    check itself can't be run — the caller treats that as "can't
+    confirm either way" rather than failing outright."""
+    proc = subprocess.run(
+        ["gh", "api", f"repos/{repo}/pulls/{pr_number}/reviews", "--paginate", "--jq", ".[]"],
+        text=True,
+        capture_output=True,
+    )
+    if proc.returncode != 0:
+        return None
+    for line in proc.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            review = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if (
+            review.get("commit_id") == commit_sha
+            and review.get("user", {}).get("login") == "github-actions[bot]"
+            and marker in (review.get("body") or "")
+        ):
+            return True
+    return False
+
+
+def _tag_body(body: str, marker: str) -> str:
+    """Append `marker` to `body`, truncating the ORIGINAL text first if
+    the combined result would exceed GitHub's review body limit. The
+    marker must always survive intact — retry detection depends on
+    finding it verbatim — so truncation only ever shortens `body`."""
+    suffix = f"\n\n{marker}"
+    budget = MAX_BODY_CHARS - len(suffix)
+    if len(body) > budget:
+        body = body[: budget - len(_TRUNCATION_NOTE)] + _TRUNCATION_NOTE
+    return body + suffix
+
+
+def post_with_retry(repo: str, pr_number: str, commit_sha: str, payload: dict) -> subprocess.CompletedProcess:
+    """post(), retrying a transient failure (see `_is_transient_failure`)
+    a couple of times. See the module docstring for why every attempt's
+    body carries a unique marker, checked (after the retry delay, not
+    before it) via `_review_with_marker_exists` rather than diffing
+    review IDs/counts."""
+    marker = f"<!-- post-review:{uuid.uuid4().hex} -->"
+    tagged_payload = {**payload, "body": _tag_body(payload["body"], marker)}
+    proc = post(repo, pr_number, tagged_payload)
+    for delay in RETRY_DELAYS:
+        if proc.returncode == 0 or not _is_transient_failure(proc.stderr):
+            return proc
+        sys.stderr.write(
+            f"Review POST failed transiently ({proc.stderr.strip() or 'no error output'}); "
+            f"waiting {delay}s before checking/retrying...\n"
+        )
+        time.sleep(delay)
+        if _review_with_marker_exists(repo, pr_number, commit_sha, marker):
+            sys.stderr.write(
+                "This exact attempt's review is now present (marker match) — not retrying.\n"
+            )
+            return subprocess.CompletedProcess(proc.args, 0, stdout=proc.stdout, stderr=proc.stderr)
+        proc = post(repo, pr_number, tagged_payload)
+    return proc
 
 
 def main() -> int:
@@ -53,7 +196,7 @@ def main() -> int:
         "body": result["body"],
         "comments": [{"path": c["path"], "line": c["line"], "body": c["body"]} for c in comments],
     }
-    proc = post(repo, pr_number, payload)
+    proc = post_with_retry(repo, pr_number, commit_sha, payload)
 
     if proc.returncode != 0 and comments and "422" in proc.stderr:
         sys.stderr.write(
@@ -64,9 +207,9 @@ def main() -> int:
         fallback_body = result["body"]
         for c in comments:
             fallback_body += f"\n\n**{c['path']}:{c['line']}** — {c['body']}"
-        if len(fallback_body) > MAX_BODY_CHARS:
-            fallback_body = fallback_body[:MAX_BODY_CHARS] + "\n\n… (truncated, over GitHub's review body limit)"
-        proc = post(repo, pr_number, {"commit_id": commit_sha, "event": "COMMENT", "body": fallback_body})
+        # No length cap here — post_with_retry's _tag_body enforces
+        # MAX_BODY_CHARS (marker included) for every post, this one too.
+        proc = post_with_retry(repo, pr_number, commit_sha, {"commit_id": commit_sha, "event": "COMMENT", "body": fallback_body})
 
     sys.stdout.write(proc.stdout)
     if proc.returncode != 0:
