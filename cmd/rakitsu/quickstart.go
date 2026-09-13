@@ -13,6 +13,7 @@ import (
 
 	"github.com/paupawsan/rakitsu/internal/scaffold"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var quickstartCmd = &cobra.Command{
@@ -140,37 +141,42 @@ func runQuickstart(cmd *cobra.Command, args []string) error {
 	prov := providers[pIdx]
 	fmt.Printf("  → %s\n\n", prov.name)
 
-	// Step 3: API key
+	// Step 3: API key. If already in the environment, use it as-is. If
+	// not, prompt with masked input (no terminal echo) and remember the
+	// value — it gets written to the generated project's .env file once
+	// we know absDir (Step 4), which rakitsu auto-loads at startup
+	// (internal/dotenv, wired into rootCmd.PersistentPreRunE). It is also
+	// os.Setenv'd immediately so an auto-started `serve` later in this
+	// same process (Step 5) has it right away, without waiting on the
+	// .env round-trip.
 	apiKey := ""
+	apiKeyTyped := false
 	if prov.needKey {
-		existing := os.Getenv(prov.envVar)
-		if existing != "" {
+		if existing := os.Getenv(prov.envVar); existing != "" {
 			fmt.Printf("  API key detected from $%s\n\n", prov.envVar)
-			apiKey = existing
 		} else {
 			fmt.Printf("  Enter %s API key: ", prov.name)
-			line, err := mustReadLine(reader)
+			line, err := readSecretLine(reader)
 			if err != nil {
 				return err
 			}
 			apiKey = strings.TrimSpace(line)
 			if apiKey == "" {
 				fmt.Printf("  Warning: no API key provided. Set $%s before running.\n\n", prov.envVar)
+			} else {
+				os.Setenv(prov.envVar, apiKey) //nolint:errcheck
+				apiKeyTyped = true
 			}
 		}
 	}
 
-	// Step 3b: Base URL — providers with no fixed endpoint (LiteLLM) need
-	// one before the generated config will reach anything. Same
-	// detect/prompt/warn shape as the API key step above; the value is
-	// never written into the generated config, only used for this check
-	// (the config always references the env var by name, same as the key).
+	// Step 3b: Base URL — same detect/prompt/persist shape as the API key
+	// above, for providers with no fixed endpoint (LiteLLM).
 	baseURL := ""
+	baseURLTyped := false
 	if prov.needBaseURL {
-		existing := os.Getenv(prov.baseURLEnvVar)
-		if existing != "" {
+		if existing := os.Getenv(prov.baseURLEnvVar); existing != "" {
 			fmt.Printf("  Base URL detected from $%s\n\n", prov.baseURLEnvVar)
-			baseURL = existing
 		} else {
 			fmt.Printf("  Enter %s base URL (e.g. https://your-proxy-host/v1): ", prov.name)
 			line, err := mustReadLine(reader)
@@ -180,6 +186,9 @@ func runQuickstart(cmd *cobra.Command, args []string) error {
 			baseURL = strings.TrimSpace(line)
 			if baseURL == "" {
 				fmt.Printf("  Warning: no base URL provided. Set $%s before running.\n\n", prov.baseURLEnvVar)
+			} else {
+				os.Setenv(prov.baseURLEnvVar, baseURL) //nolint:errcheck
+				baseURLTyped = true
 			}
 		}
 	}
@@ -277,6 +286,18 @@ func runQuickstart(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Config: %s\n\n", configPath)
 	}
 
+	// Step 4d: persist any freshly typed key/base_url into a project-local
+	// .env, which rakitsu loads automatically at startup (internal/dotenv
+	// via rootCmd.PersistentPreRunE). This is what makes a typed value
+	// actually useful beyond this one process — without it, a later
+	// `rakitsu run` from a new terminal would have nothing to read.
+	if apiKeyTyped || baseURLTyped {
+		if err := writeQuickstartEnv(absDir, prov, apiKey, apiKeyTyped, baseURL, baseURLTyped); err != nil {
+			return fmt.Errorf("cannot write .env: %w", err)
+		}
+		fmt.Printf("  Saved to %s (gitignored, loaded automatically by rakitsu)\n\n", filepath.Join(absDir, ".env"))
+	}
+
 	// Step 5: Start serve
 	fmt.Print("  Start web UI now? [Y/n]: ")
 	startLine, err := mustReadLine(reader)
@@ -345,6 +366,66 @@ func mustReadLine(reader *bufio.Reader) (string, error) {
 		return "", errNonInteractive
 	}
 	return line, nil
+}
+
+// readSecretLine reads one line of sensitive input (an API key) without
+// echoing it to the terminal, so it can't be shoulder-surfed or left
+// sitting in terminal scrollback. It only does so when stdin is actually
+// an interactive terminal (term.IsTerminal) — a piped/redirected stdin
+// (tests, scripted input) has no TTY to mask against, so it falls back to
+// the plain reader in that case.
+func readSecretLine(reader *bufio.Reader) (string, error) {
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		b, err := term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Println() // ReadPassword swallows the Enter keypress's newline
+		if err != nil {
+			return "", err
+		}
+		return string(b), nil
+	}
+	return mustReadLine(reader)
+}
+
+// writeQuickstartEnv persists a freshly typed API key/base_url to
+// <absDir>/.env (KEY=VALUE lines, mode 0600 — readable only by the current
+// user) and ensures <absDir>/.gitignore excludes it, so the secret is
+// never accidentally committed. Only called when at least one value was
+// actually typed (never for values already detected from the environment
+// — those are already available everywhere and don't need duplicating).
+func writeQuickstartEnv(absDir string, prov quickstartProvider, apiKey string, apiKeyTyped bool, baseURL string, baseURLTyped bool) error {
+	var b strings.Builder
+	if apiKeyTyped {
+		fmt.Fprintf(&b, "%s=%s\n", prov.envVar, apiKey)
+	}
+	if baseURLTyped {
+		fmt.Fprintf(&b, "%s=%s\n", prov.baseURLEnvVar, baseURL)
+	}
+	if err := os.WriteFile(filepath.Join(absDir, ".env"), []byte(b.String()), 0600); err != nil {
+		return err
+	}
+	return ensureGitignoreHasEnv(absDir)
+}
+
+// ensureGitignoreHasEnv appends a ".env" entry to <absDir>/.gitignore,
+// creating the file if it doesn't exist yet and leaving it untouched if
+// ".env" is already listed (e.g. quickstart run twice into the same dir).
+func ensureGitignoreHasEnv(absDir string) error {
+	path := filepath.Join(absDir, ".gitignore")
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	for _, line := range strings.Split(string(existing), "\n") {
+		if strings.TrimSpace(line) == ".env" {
+			return nil
+		}
+	}
+	content := string(existing)
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	content += ".env\n"
+	return os.WriteFile(path, []byte(content), 0644)
 }
 
 // existingQuickstartFiles returns the absolute paths, under absDir, of any

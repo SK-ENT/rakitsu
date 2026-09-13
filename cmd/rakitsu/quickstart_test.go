@@ -193,10 +193,12 @@ func runQuickstartWithInput(t *testing.T, input string) error {
 	return runQuickstart(quickstartCmd, nil)
 }
 
-// Regression: selecting LiteLLM (provider 5) with neither env var set must
-// prompt for both key and base_url — not silently skip them the way it did
-// before needKey/needBaseURL were wired up. Answers "n" to "Start web UI
-// now?" so the test never blocks on a real server.
+// Regression: quickstart never prompts for an API key or base_url
+// to be typed — a typed value can't be persisted anywhere useful (it would
+// only live in this one process, never reaching a later `rakitsu run` in a
+// new shell), so the wizard only detects-or-warns. Selecting LiteLLM
+// (provider 5) with neither env var set must consume zero extra stdin
+// lines and complete without prompting.
 func TestRunQuickstart_LiteLLM_PromptsForKeyAndBaseURLWhenUnset(t *testing.T) {
 	unsetenvForTest(t, "LITELLM_API_KEY")
 	unsetenvForTest(t, "LITELLM_BASE_URL")
@@ -206,6 +208,103 @@ func TestRunQuickstart_LiteLLM_PromptsForKeyAndBaseURLWhenUnset(t *testing.T) {
 	err := runQuickstartWithInput(t, "\n5\n\n\n\n\nn\n")
 	if err != nil {
 		t.Fatalf("runQuickstart returned an error: %v", err)
+	}
+}
+
+// Regression: a freshly typed key/base_url must be persisted
+// to the generated project's .env (mode 0600) so a later `rakitsu run`
+// from a new shell can pick it up via internal/dotenv — os.Setenv alone
+// only reaches this one process. A .gitignore entry must also exist so
+// the secret is never accidentally committed.
+func TestRunQuickstart_TypedKeyAndBaseURLPersistToDotEnv(t *testing.T) {
+	unsetenvForTest(t, "LITELLM_API_KEY")
+	unsetenvForTest(t, "LITELLM_BASE_URL")
+
+	dir := t.TempDir()
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(origWd) }) //nolint:errcheck
+
+	origStdin := os.Stdin
+	t.Cleanup(func() { os.Stdin = origStdin })
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		// template(blank) provider(5=litellm) apikey(typed) baseurl(typed)
+		// dir(myproj) structure(blank) start-web-ui(n)
+		w.WriteString("\n5\nsk-typed-key\nhttps://typed.example/v1\nmyproj\n\nn\n") //nolint:errcheck
+		w.Close()
+	}()
+	os.Stdin = r
+
+	if err := runQuickstart(quickstartCmd, nil); err != nil {
+		t.Fatalf("runQuickstart returned an error: %v", err)
+	}
+
+	envPath := filepath.Join(dir, "myproj", ".env")
+	info, err := os.Stat(envPath)
+	if err != nil {
+		t.Fatalf(".env not written: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0600 {
+		t.Errorf(".env mode = %o, want 0600", perm)
+	}
+	content, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "LITELLM_API_KEY=sk-typed-key") {
+		t.Errorf(".env content = %q, missing LITELLM_API_KEY", content)
+	}
+	if !strings.Contains(string(content), "LITELLM_BASE_URL=https://typed.example/v1") {
+		t.Errorf(".env content = %q, missing LITELLM_BASE_URL", content)
+	}
+
+	gitignore, err := os.ReadFile(filepath.Join(dir, "myproj", ".gitignore"))
+	if err != nil {
+		t.Fatalf(".gitignore not written: %v", err)
+	}
+	if !strings.Contains(string(gitignore), ".env") {
+		t.Errorf(".gitignore = %q, missing .env entry", gitignore)
+	}
+}
+
+// Regression: when both env vars are already detected from the real
+// environment, nothing should be written to .env — that value is already
+// available everywhere and duplicating it into a file is unnecessary.
+func TestRunQuickstart_DetectedKeyDoesNotWriteDotEnv(t *testing.T) {
+	t.Setenv("LITELLM_API_KEY", "sk-test-key")
+	t.Setenv("LITELLM_BASE_URL", "https://example.invalid/v1")
+
+	dir := t.TempDir()
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(origWd) }) //nolint:errcheck
+
+	origStdin := os.Stdin
+	t.Cleanup(func() { os.Stdin = origStdin })
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		w.WriteString("\n5\nmyproj\n\nn\n") //nolint:errcheck
+		w.Close()
+	}()
+	os.Stdin = r
+
+	if err := runQuickstart(quickstartCmd, nil); err != nil {
+		t.Fatalf("runQuickstart returned an error: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "myproj", ".env")); !os.IsNotExist(err) {
+		t.Errorf(".env should not be written for env-detected values, stat err = %v", err)
 	}
 }
 

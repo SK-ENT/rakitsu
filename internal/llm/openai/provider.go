@@ -198,6 +198,28 @@ func applyReasoningEffort(req *openai.ChatCompletionRequest, effort string) {
 	}
 }
 
+// applyReasoningEffortFallback sets req.ReasoningEffort to "none" and
+// reports true (caller should retry once) only when wrapped's message
+// names reasoning_effort as the problem (see wrapAPIError's hint) AND the
+// request didn't already carry an explicit value — never override a real
+// config choice, and never retry the same request twice. This reacts to
+// what the API actually said rather than guessing ahead of time which
+// vendor-routed model aliases (e.g. LiteLLM's "openai/gpt-5.6-luna") are
+// GPT-5.6-tier — the same reasoning as omitRejectedParam above.
+func applyReasoningEffortFallback(req *openai.ChatCompletionRequest, wrapped error) bool {
+	if req.ReasoningEffort != "" {
+		return false
+	}
+	if !strings.Contains(wrapped.Error(), "reasoning_effort") {
+		return false
+	}
+	warnFn(fmt.Sprintf("Warning: model %q requires reasoning_effort with tools — retrying with "+
+		"reasoning_effort: none. Set it explicitly on the provider in settings.providers (or per "+
+		"agent under model_config) to stop relying on this retry.\n", req.Model))
+	req.ReasoningEffort = "none"
+	return true
+}
+
 func setMaxTokens(req *openai.ChatCompletionRequest, model string, maxTokens int) {
 	if maxTokens <= 0 {
 		return
@@ -299,12 +321,13 @@ func (p *Provider) generate(
 	resp, err := p.client.CreateChatCompletion(ctx, req)
 	if err != nil {
 		wrapped := wrapAPIError("openai API error", err)
-		if !omitRejectedParam(&req, wrapped) {
+		if !omitRejectedParam(&req, wrapped) && !applyReasoningEffortFallback(&req, wrapped) {
 			return nil, wrapped
 		}
-		// Retry exactly once with the rejected field omitted — see
-		// omitRejectedParam's doc for why this is safer than guessing ahead
-		// of time which models are reasoning-tier.
+		// Retry exactly once with the rejected field omitted, or
+		// reasoning_effort defaulted — see omitRejectedParam's doc for why
+		// this is safer than guessing ahead of time which models are
+		// reasoning-tier.
 		resp, err = p.client.CreateChatCompletion(ctx, req)
 		if err != nil {
 			return nil, wrapAPIError("openai API error", err)
@@ -460,12 +483,13 @@ func (p *Provider) GenerateStream(
 	stream, err := p.client.CreateChatCompletionStream(ctx, req)
 	if err != nil {
 		wrapped := wrapAPIError("openai stream error", err)
-		if !omitRejectedParam(&req, wrapped) {
+		if !omitRejectedParam(&req, wrapped) && !applyReasoningEffortFallback(&req, wrapped) {
 			return nil, wrapped
 		}
-		// Retry exactly once with the rejected field omitted — see
-		// omitRejectedParam's doc for why this is safer than guessing ahead
-		// of time which models are reasoning-tier.
+		// Retry exactly once with the rejected field omitted, or
+		// reasoning_effort defaulted — see omitRejectedParam's doc for why
+		// this is safer than guessing ahead of time which models are
+		// reasoning-tier.
 		stream, err = p.client.CreateChatCompletionStream(ctx, req)
 		if err != nil {
 			return nil, wrapAPIError("openai stream error", err)

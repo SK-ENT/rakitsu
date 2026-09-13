@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/paupawsan/rakitsu/internal/dotenv"
 	"github.com/spf13/cobra"
 )
 
@@ -71,6 +72,14 @@ Architecture:
 	// usage mistake — printing the full flag usage block after it buries
 	// the actionable message. Cobra still prints the error itself.
 	SilenceUsage: true,
+	// Load a project-local .env (if any) before any subcommand runs, so a
+	// quickstart-generated project's saved API key is available to `run`/
+	// `serve`/`doctor` without the user exporting anything by hand. Never
+	// overrides a variable already set in the real shell environment —
+	// see internal/dotenv.
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		return dotenv.Load(".env")
+	},
 }
 
 // versionString is the user-facing version. Release builds set Version to the
