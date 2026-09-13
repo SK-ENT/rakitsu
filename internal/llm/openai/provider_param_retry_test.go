@@ -169,6 +169,50 @@ func TestGenerate_ParamRejectionWarningUsesWarnFn(t *testing.T) {
 	}
 }
 
+// TestGenerate_RetriesWithReasoningEffortNone is a regression,
+// reproduced live: `--model gpt-5.6-luna` with no `reasoning_effort`
+// configured hard-failed on the first tool-using step with a 400 telling
+// the user to set `reasoning_effort: none` — this must now self-heal via
+// applyReasoningEffortFallback instead of requiring a manual config edit.
+func TestGenerate_RetriesWithReasoningEffortNone(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if requests == 1 {
+			if _, present := body["reasoning_effort"]; present {
+				t.Error("first request should not have sent reasoning_effort")
+			}
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"error":{"message":"Function tools with reasoning_effort are not supported for gpt-5.6-luna in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'.","type":"invalid_request_error","param":null,"code":null}}`)
+			return
+		}
+		if got, _ := body["reasoning_effort"].(string); got != "none" {
+			t.Errorf("retried request reasoning_effort = %q, want %q", got, "none")
+		}
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"id":"1","object":"chat.completion","created":1,"model":"gpt-5.6-luna","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]}`)
+	}))
+	defer srv.Close()
+
+	p := NewProvider(&llm.ProviderConfig{APIKey: "test-key", BaseURL: srv.URL, Model: "gpt-5.6-luna"})
+
+	result, err := p.Generate(context.Background(), "", []llm.Message{llm.NewTextMessage("user", "hi")}, []llm.ToolDefinition{{Name: "noop"}})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected a result, got nil")
+	}
+	if requests != 2 {
+		t.Fatalf("expected 2 requests (initial + 1 retry), got %d", requests)
+	}
+}
+
 func TestGenerateStream_OmitsRejectedParamAndRetries(t *testing.T) {
 	// GenerateStream carries its own independent copy of the same gating
 	// logic — verify the retry applies there too.
