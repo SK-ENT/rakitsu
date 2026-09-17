@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/export/shared"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/export/shared"
 )
 
 // --- Sandbox policy types (NemoClaw openclaw-sandbox.yaml) ---

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/turntree"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/turntree"
 )
 
 // TestMarshalChatTreeRoundTrip exercises the .chat.json envelope: a session

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regression tests for scripts/post-review.py's retry behavior.
 
-Reproduces the failure seen on real PRs (e.g. paupawsan/rakitsu#86,
+Reproduces the failure seen on real PRs (e.g. SK-ENT/rakitsu#86,
 2026-09-13): `gh api ... reviews` occasionally comes back from a GitHub
 gateway hiccup with an empty/non-JSON body, and `gh` itself then fails
 client-side with "unexpected end of JSON input" — a transient failure

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/telemetry"
-	"github.com/paupawsan/rakitsu/internal/turntree"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/turntree"
 )
 
 func mustPayload(t *testing.T, v interface{}) json.RawMessage {

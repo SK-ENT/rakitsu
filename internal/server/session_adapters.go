@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/debug"
-	"github.com/paupawsan/rakitsu/internal/session"
+	"github.com/SK-ENT/rakitsu/internal/debug"
+	"github.com/SK-ENT/rakitsu/internal/session"
 )
 
 // oneShotSessionAdapter projects a single AgentRunner run as a session.Session.

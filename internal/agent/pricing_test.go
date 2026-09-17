@@ -3,7 +3,7 @@ package agent
 import (
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/config"
 )
 
 func TestResolvePricing_KnownFromUserConfig(t *testing.T) {

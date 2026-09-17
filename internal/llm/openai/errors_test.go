@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 	openai "github.com/sashabaranov/go-openai"
 )
 

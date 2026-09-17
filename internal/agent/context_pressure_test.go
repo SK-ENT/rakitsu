@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/config"
 )
 
 // newPressureMonitor creates a ContextMonitor with "auto" strategy and custom pressure thresholds.

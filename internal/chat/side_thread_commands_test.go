@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // TestClearInSideThreadDoesNotWipeMainHistory is the C3 repro. m.blocks

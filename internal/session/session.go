@@ -14,7 +14,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/debug"
+	"github.com/SK-ENT/rakitsu/internal/debug"
 )
 
 // SessionMode distinguishes one-shot runs from long-lived chats.

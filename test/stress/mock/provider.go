@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // Provider is a mock LLM provider with configurable behavior.

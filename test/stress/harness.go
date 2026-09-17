@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/debug"
-	"github.com/paupawsan/rakitsu/internal/server"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/debug"
+	"github.com/SK-ENT/rakitsu/internal/server"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // Harness sets up in-process servers for stress testing.

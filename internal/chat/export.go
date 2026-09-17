@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // reportsDir returns ~/.rakitsu/reports, creating it if necessary.

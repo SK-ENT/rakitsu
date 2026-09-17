@@ -5,10 +5,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/export/core"
-	"github.com/paupawsan/rakitsu/internal/export/openclaw"
-	"github.com/paupawsan/rakitsu/internal/export/shared"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/export/core"
+	"github.com/SK-ENT/rakitsu/internal/export/openclaw"
+	"github.com/SK-ENT/rakitsu/internal/export/shared"
 )
 
 // Options configures exporter behavior.

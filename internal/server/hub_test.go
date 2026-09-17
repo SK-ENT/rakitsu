@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 func postHubMessageResult(t *testing.T, base string, body map[string]interface{}) *http.Response {

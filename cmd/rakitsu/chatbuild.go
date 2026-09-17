@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/paupawsan/rakitsu/internal/agent"
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/server"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
-	"github.com/paupawsan/rakitsu/internal/tools/userinput"
+	"github.com/SK-ENT/rakitsu/internal/agent"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/server"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/tools/userinput"
 )
 
 // buildChatRunner is the shared chat-runner factory used by both the CLI

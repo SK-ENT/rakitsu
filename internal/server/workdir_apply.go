@@ -1,6 +1,6 @@
 package server
 
-import "github.com/paupawsan/rakitsu/internal/config"
+import "github.com/SK-ENT/rakitsu/internal/config"
 
 // applyWorkdirToTools injects workdir into every tool's sandbox allowlist and
 // WorkingDir — both global `cfg.Tools` and agent-level `ToolsInline`. Only

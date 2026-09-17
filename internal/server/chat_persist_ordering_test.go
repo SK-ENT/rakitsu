@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/store"
+	"github.com/SK-ENT/rakitsu/internal/store"
 )
 
 // TestPersistTreeRaw_SkipsStaleGeneration regression-guards: persistTree

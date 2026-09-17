@@ -9,7 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 func msg(role, content string) llm.Message { return llm.NewTextMessage(role, content) }

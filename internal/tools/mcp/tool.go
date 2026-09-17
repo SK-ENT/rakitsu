@@ -10,8 +10,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/tools"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/tools"
 )
 
 var nonAlphanumRe = regexp.MustCompile(`[^a-zA-Z0-9_]+`)

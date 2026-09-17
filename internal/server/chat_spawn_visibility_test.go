@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // TestSpawnedChildFramesForwarded — a runtime-spawned child's AGENT_START /

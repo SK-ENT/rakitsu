@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // Conversation memory: instead of re-feeding the whole transcript every chat

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/paupawsan/rakitsu/internal/tokenizer"
+	"github.com/SK-ENT/rakitsu/internal/tokenizer"
 )
 
 // contextCategory is one row of a /context breakdown: a named slice of

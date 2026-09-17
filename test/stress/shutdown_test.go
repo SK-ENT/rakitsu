@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // TestGracefulShutdownWithActiveConnections: cancel mid-execution with SSE clients connected.

@@ -3,8 +3,8 @@ package openai
 import (
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
-	"github.com/paupawsan/rakitsu/internal/llm/format"
+	"github.com/SK-ENT/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm/format"
 	openai "github.com/sashabaranov/go-openai"
 )
 

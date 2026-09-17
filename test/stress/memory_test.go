@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // TestMemoryStability: 100 sequential event bus cycles, track goroutine/heap growth.

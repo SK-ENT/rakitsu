@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/paupawsan/rakitsu/internal/debug"
-	"github.com/paupawsan/rakitsu/internal/session"
+	"github.com/SK-ENT/rakitsu/internal/debug"
+	"github.com/SK-ENT/rakitsu/internal/session"
 )
 
 // Multi-session debug routing.

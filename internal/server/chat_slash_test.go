@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/agent"
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/agent"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // stubLLM is a no-op LLM used only to exercise the swap path. The /model

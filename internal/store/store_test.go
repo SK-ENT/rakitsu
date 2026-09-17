@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // newTestStore creates a SessionStore backed by a temp directory.

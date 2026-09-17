@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/config"
 )
 
 // Regression for the --workdir / allowed_paths mismatch: relative

@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/agent"
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/llm"
-	"github.com/paupawsan/rakitsu/internal/memory"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
-	"github.com/paupawsan/rakitsu/internal/tools"
+	"github.com/SK-ENT/rakitsu/internal/agent"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/memory"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/tools"
 )
 
 // ctxAwareProvider blocks Generate until its context is done, then reports

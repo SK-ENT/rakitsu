@@ -14,13 +14,13 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
-	"github.com/paupawsan/rakitsu/internal/agent"
-	"github.com/paupawsan/rakitsu/internal/agentchat"
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/llm"
-	"github.com/paupawsan/rakitsu/internal/memory"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
-	"github.com/paupawsan/rakitsu/internal/tools/userinput"
+	"github.com/SK-ENT/rakitsu/internal/agent"
+	"github.com/SK-ENT/rakitsu/internal/agentchat"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/memory"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/tools/userinput"
 )
 
 // stickyHeaderHeight is the number of viewport rows reserved above the

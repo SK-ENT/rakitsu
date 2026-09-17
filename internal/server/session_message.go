@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/paupawsan/rakitsu/internal/chat"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/chat"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // Cross-session messaging: POST /api/sessions/{id}/message injects a message

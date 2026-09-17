@@ -5,9 +5,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/paupawsan/rakitsu/internal/agent"
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/agent"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // SlashCommandContext is the dependency bundle a slash command handler needs

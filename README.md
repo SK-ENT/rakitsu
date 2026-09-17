@@ -4,8 +4,8 @@
 
 <h1 align="center">Rakitsu</h1>
 
-[![CI](https://github.com/paupawsan/rakitsu/actions/workflows/ci.yml/badge.svg)](https://github.com/paupawsan/rakitsu/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/paupawsan/rakitsu?include_prereleases)](https://github.com/paupawsan/rakitsu/releases)
+[![CI](https://github.com/SK-ENT/rakitsu/actions/workflows/ci.yml/badge.svg)](https://github.com/SK-ENT/rakitsu/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/SK-ENT/rakitsu?include_prereleases)](https://github.com/SK-ENT/rakitsu/releases)
 [![Status: Alpha](https://img.shields.io/badge/status-alpha-orange.svg)](#disclaimer)
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL%201.1-blue.svg)](LICENSE)
 [![Go 1.25](https://img.shields.io/badge/Go-1.25-00ADD8.svg)](https://go.dev)
@@ -26,7 +26,7 @@ Design multi-agent systems on a drag-and-drop canvas, debug with breakpoints and
 
 ```bash
 # Install (Linux / macOS)
-curl -fsSL https://raw.githubusercontent.com/paupawsan/rakitsu/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/SK-ENT/rakitsu/main/install.sh | sh
 
 # Create your first project (interactive wizard)
 rakitsu quickstart
@@ -210,7 +210,7 @@ See [docs/EXPORT-VERIFICATION.md](docs/EXPORT-VERIFICATION.md) for the full audi
 ## Build from Source
 
 ```bash
-git clone https://github.com/paupawsan/rakitsu.git
+git clone https://github.com/SK-ENT/rakitsu.git
 cd rakitsu
 make build-embedded    # frontend + Go binary → bin/rakitsu
 ./bin/rakitsu serve

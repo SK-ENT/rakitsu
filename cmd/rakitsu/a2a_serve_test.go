@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/config"
 )
 
 // testA2AResponse mirrors srvA2AResponse but keeps Result as raw JSON so

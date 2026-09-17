@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/paupawsan/rakitsu/internal/agent"
+	"github.com/SK-ENT/rakitsu/internal/agent"
 )
 
 // Spec describes one requested child agent.

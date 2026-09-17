@@ -11,12 +11,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/llm"
-	"github.com/paupawsan/rakitsu/internal/session"
-	"github.com/paupawsan/rakitsu/internal/store"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
-	"github.com/paupawsan/rakitsu/internal/turntree"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/session"
+	"github.com/SK-ENT/rakitsu/internal/store"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/turntree"
 )
 
 // SlashLLMFactory builds a fresh LLM client for the `/model` slash command's

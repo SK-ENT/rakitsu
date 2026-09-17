@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	neutools "github.com/paupawsan/rakitsu/internal/tools"
+	neutools "github.com/SK-ENT/rakitsu/internal/tools"
 )
 
 // ─── Stub tool ────────────────────────────────────────────────────────────────

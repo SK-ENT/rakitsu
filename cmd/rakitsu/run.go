@@ -14,24 +14,24 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/agent"
-	"github.com/paupawsan/rakitsu/internal/chat"
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/debug"
-	"github.com/paupawsan/rakitsu/internal/llm"
-	anthropicProvider "github.com/paupawsan/rakitsu/internal/llm/anthropic"
-	codexProvider "github.com/paupawsan/rakitsu/internal/llm/codex"
-	geminiProvider "github.com/paupawsan/rakitsu/internal/llm/gemini"
-	openaiProvider "github.com/paupawsan/rakitsu/internal/llm/openai"
-	"github.com/paupawsan/rakitsu/internal/server"
-	"github.com/paupawsan/rakitsu/internal/store"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
-	"github.com/paupawsan/rakitsu/internal/tools"
-	a2atool "github.com/paupawsan/rakitsu/internal/tools/a2a"
-	clitool "github.com/paupawsan/rakitsu/internal/tools/cli"
-	fstool "github.com/paupawsan/rakitsu/internal/tools/fs"
-	mcptool "github.com/paupawsan/rakitsu/internal/tools/mcp"
-	"github.com/paupawsan/rakitsu/internal/tools/sessionmsg"
+	"github.com/SK-ENT/rakitsu/internal/agent"
+	"github.com/SK-ENT/rakitsu/internal/chat"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/debug"
+	"github.com/SK-ENT/rakitsu/internal/llm"
+	anthropicProvider "github.com/SK-ENT/rakitsu/internal/llm/anthropic"
+	codexProvider "github.com/SK-ENT/rakitsu/internal/llm/codex"
+	geminiProvider "github.com/SK-ENT/rakitsu/internal/llm/gemini"
+	openaiProvider "github.com/SK-ENT/rakitsu/internal/llm/openai"
+	"github.com/SK-ENT/rakitsu/internal/server"
+	"github.com/SK-ENT/rakitsu/internal/store"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/tools"
+	a2atool "github.com/SK-ENT/rakitsu/internal/tools/a2a"
+	clitool "github.com/SK-ENT/rakitsu/internal/tools/cli"
+	fstool "github.com/SK-ENT/rakitsu/internal/tools/fs"
+	mcptool "github.com/SK-ENT/rakitsu/internal/tools/mcp"
+	"github.com/SK-ENT/rakitsu/internal/tools/sessionmsg"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -446,7 +446,7 @@ func runAgent(cmd *cobra.Command, args []string) (runErr error) {
 	// Apply workdir to all tools that don't have their own. Made absolute
 	// first: tools anchor relative allowed_paths on an absolute working_dir
 	// (so allowed_paths: ["."] means the workdir), but treat a relative one
-	// as cwd-relative like every other relative path (paupawsan/rakitsu#28).
+	// as cwd-relative like every other relative path (SK-ENT/rakitsu#28).
 	if runWorkdir != "" {
 		if abs, err := filepath.Abs(runWorkdir); err == nil {
 			runWorkdir = abs

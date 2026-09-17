@@ -26,7 +26,7 @@ package format
 import (
 	"strings"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // RawDelta represents one streaming chunk's raw fields from any provider.

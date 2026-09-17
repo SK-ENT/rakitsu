@@ -46,7 +46,7 @@ This follows the [Developer Certificate of Origin](https://developercertificate.
 
 ```bash
 # Requirements: Go 1.25+, Node.js 20+
-git clone https://github.com/paupawsan/rakitsu.git
+git clone https://github.com/SK-ENT/rakitsu.git
 cd rakitsu
 make build-embedded    # frontend + Go binary
 make test              # run tests
@@ -62,7 +62,7 @@ make lint              # run linters
 
 ## Reporting Issues
 
-Open an issue on [GitHub Issues](https://github.com/paupawsan/rakitsu/issues) with:
+Open an issue on [GitHub Issues](https://github.com/SK-ENT/rakitsu/issues) with:
 - What you expected
 - What happened
 - Steps to reproduce

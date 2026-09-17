@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/telemetry"
-	"github.com/paupawsan/rakitsu/internal/turntree"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/turntree"
 )
 
 // seedTree builds a small tree fixture: t1 (root) -> t2 (one child),

@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/paupawsan/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/config"
 	"gopkg.in/yaml.v3"
 )
 

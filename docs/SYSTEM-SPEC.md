@@ -2,7 +2,7 @@
 
 **Version**: v0.3.0-alpha.3 (see `Makefile` `VERSION_CORE` / latest git tag for current)
 **Stack**: Go 1.25 + Vue 3 / Vite 7 / TypeScript 5.9
-**Module**: `github.com/paupawsan/rakitsu`
+**Module**: `github.com/SK-ENT/rakitsu`
 
 ---
 

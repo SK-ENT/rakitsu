@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/config"
 )
 
 func TestSanitizeID(t *testing.T) {

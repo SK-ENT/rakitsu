@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/export/shared"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/export/shared"
 )
 
 // GenerateOrchestration produces runnable orchestration artifacts for multi-agent

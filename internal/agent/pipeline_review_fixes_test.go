@@ -7,10 +7,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/debug"
-	"github.com/paupawsan/rakitsu/internal/llm"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/debug"
+	"github.com/SK-ENT/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // countingProvider records every Generate() invocation, regardless of what

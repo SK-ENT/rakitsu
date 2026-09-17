@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/scaffold"
+	"github.com/SK-ENT/rakitsu/internal/scaffold"
 	"github.com/spf13/cobra"
 )
 
@@ -313,7 +313,7 @@ func TestWriteQuickstartEnv_GitignoresTempFilePattern(t *testing.T) {
 // then merely report the gitignore failure. Otherwise a user sees
 // quickstart report an error and reasonably assumes nothing was written,
 // while an ungitignored .env sits on disk ready to be committed. Found
-// by the automated PR review on paupawsan/rakitsu#86.
+// by the automated PR review on SK-ENT/rakitsu#86.
 func TestWriteQuickstartEnv_NeverWritesEnvIfGitignoreCannotBeEnsured(t *testing.T) {
 	dir := t.TempDir()
 	// Make .gitignore a directory so ensureGitignoreHasEnv's os.WriteFile

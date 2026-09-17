@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/chat"
+	"github.com/SK-ENT/rakitsu/internal/chat"
 )
 
 // TestShutdownChatDrainsSendsBeforeCleanup is the safety-critical ordering.

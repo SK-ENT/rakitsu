@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // truncationMarker is inserted where transcript history was dropped, so a

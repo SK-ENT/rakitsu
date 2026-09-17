@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 
-	"github.com/paupawsan/rakitsu/internal/debug"
+	"github.com/SK-ENT/rakitsu/internal/debug"
 )
 
 // Runner is the common interface for executable entities in the orchestration graph.

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	mem "github.com/paupawsan/rakitsu/internal/memory"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	mem "github.com/SK-ENT/rakitsu/internal/memory"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 func newDeps(t *testing.T) Deps {

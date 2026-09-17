@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/paupawsan/rakitsu/internal/scaffold"
+	"github.com/SK-ENT/rakitsu/internal/scaffold"
 	"github.com/spf13/cobra"
 )
 

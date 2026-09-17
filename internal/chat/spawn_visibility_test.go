@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 func TestBridgeConvertsAgentLifecycle(t *testing.T) {

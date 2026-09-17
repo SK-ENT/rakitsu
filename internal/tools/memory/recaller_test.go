@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	mem "github.com/paupawsan/rakitsu/internal/memory"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	mem "github.com/SK-ENT/rakitsu/internal/memory"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 func mustAdd(t *testing.T, store *mem.Store, n mem.Node) {

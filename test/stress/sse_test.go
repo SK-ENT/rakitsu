@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // TestSSEConcurrentClients: 200 SSE clients, 5K events, rapid connect/disconnect.

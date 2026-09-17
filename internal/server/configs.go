@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/paupawsan/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/config"
 )
 
 // ConfigEntry represents a discovered or uploaded config.

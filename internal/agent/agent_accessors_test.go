@@ -6,11 +6,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/llm"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
-	"github.com/paupawsan/rakitsu/internal/tools"
-	"github.com/paupawsan/rakitsu/internal/tools/fs"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/tools"
+	"github.com/SK-ENT/rakitsu/internal/tools/fs"
 )
 
 func TestGetSystemPrompt(t *testing.T) {

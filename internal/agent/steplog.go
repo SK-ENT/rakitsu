@@ -1,7 +1,7 @@
 package agent
 
 import (
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // Step represents a single ReAct iteration's execution data.

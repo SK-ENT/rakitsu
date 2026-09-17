@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/paupawsan/rakitsu/internal/scaffold"
+	"github.com/SK-ENT/rakitsu/internal/scaffold"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -414,7 +414,7 @@ func writeQuickstartEnv(absDir string, prov quickstartProvider, apiKey string, a
 	// created below. Doing it the other way around — write .env, then try to
 	// protect it — leaves an unprotected secret on disk if the gitignore
 	// step fails, even though writeQuickstartEnv reports the whole thing as
-	// an error. Found by the automated PR review on paupawsan/rakitsu#86.
+	// an error. Found by the automated PR review on SK-ENT/rakitsu#86.
 	if err := ensureGitignoreHasEnv(absDir); err != nil {
 		return err
 	}

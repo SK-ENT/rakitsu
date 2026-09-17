@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/export"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/export"
 	"github.com/spf13/cobra"
 )
 

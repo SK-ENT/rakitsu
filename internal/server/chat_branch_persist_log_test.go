@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/store"
-	"github.com/paupawsan/rakitsu/internal/turntree"
+	"github.com/SK-ENT/rakitsu/internal/store"
+	"github.com/SK-ENT/rakitsu/internal/turntree"
 )
 
 // TestBroadcastTreeMutationLocked_LogsPersistFailure regression-guards:

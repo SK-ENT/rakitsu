@@ -43,7 +43,7 @@ macOS および Windows 向けのセットアップと開発の完全ガイド�
 
 ```bash
 # 1. クローン
-git clone https://github.com/paupawsan/rakitsu.git
+git clone https://github.com/SK-ENT/rakitsu.git
 cd rakitsu
 
 # 2. Go の依存関係をインストール
@@ -120,7 +120,7 @@ brew install golangci-lint
 #### 4. クローンとビルド
 
 ```bash
-git clone https://github.com/paupawsan/rakitsu.git
+git clone https://github.com/SK-ENT/rakitsu.git
 cd rakitsu
 go mod download
 cd web && npm install && cd ..
@@ -221,7 +221,7 @@ go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
 **PowerShell：**
 ```powershell
-git clone https://github.com/paupawsan/rakitsu.git
+git clone https://github.com/SK-ENT/rakitsu.git
 cd rakitsu
 go mod download
 cd web; npm install; cd ..

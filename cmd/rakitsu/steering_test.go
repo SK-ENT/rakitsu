@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/chat"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/chat"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 func TestEnqueueSteerDropsOldestOnOverflow(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/store"
+	"github.com/SK-ENT/rakitsu/internal/store"
 	"github.com/spf13/cobra"
 )
 

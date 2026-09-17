@@ -40,7 +40,7 @@ const agreed = ref(false);
 
         <p class="license-link">
           Full license text:
-          <a href="https://github.com/paupawsan/rakitsu/blob/main/LICENSE" target="_blank" rel="noopener">
+          <a href="https://github.com/SK-ENT/rakitsu/blob/main/LICENSE" target="_blank" rel="noopener">
             LICENSE
           </a>
         </p>

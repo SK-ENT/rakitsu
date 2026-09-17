@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
-	"github.com/paupawsan/rakitsu/internal/store"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/store"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // Regression: one-shot `run --resume` used to fork the session record but

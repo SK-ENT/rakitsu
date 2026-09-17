@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // InputRequest is sent from the tool to the TUI/chat UI when the agent asks a

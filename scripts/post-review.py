@@ -10,7 +10,7 @@ review, folding every finding into the body as a fallback rather than
 silently dropping them.
 
 A separate, transient failure class (observed live 2026-09-13, PR
-paupawsan/rakitsu#86): a GitHub gateway hiccup returns an empty or
+SK-ENT/rakitsu#86): a GitHub gateway hiccup returns an empty or
 non-JSON body, and `gh` itself fails client-side with "unexpected end
 of JSON input" before any HTTP status is even visible, or GitHub itself
 returns a bare 502/503/504. This is worth a couple of short retries —

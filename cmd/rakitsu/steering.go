@@ -1,10 +1,10 @@
 package main
 
 import (
-	"github.com/paupawsan/rakitsu/internal/chat"
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/llm"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/chat"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // Steerable one-shot plumbing (spec §5): OnCommand enqueues inbound

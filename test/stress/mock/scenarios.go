@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // ScenarioStep defines a single LLM response in a sequence.

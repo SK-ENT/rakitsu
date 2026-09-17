@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	mem "github.com/paupawsan/rakitsu/internal/memory"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
-	"github.com/paupawsan/rakitsu/internal/tools"
+	mem "github.com/SK-ENT/rakitsu/internal/memory"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/tools"
 )
 
 // Deps carries the shared dependencies for one agent's memory tool set.

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/paupawsan/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/config"
 )
 
 // ─── A2A JSON-RPC types (A2A v1.0.1, github.com/a2aproject/A2A) ─────────────
