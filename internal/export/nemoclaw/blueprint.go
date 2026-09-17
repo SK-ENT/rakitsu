@@ -3,8 +3,8 @@ package nemoclaw
 import (
 	"fmt"
 
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/export/shared"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/export/shared"
 )
 
 // Blueprint is the NemoClaw blueprint.yaml structure.

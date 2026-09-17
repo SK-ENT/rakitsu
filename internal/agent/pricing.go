@@ -1,6 +1,6 @@
 package agent
 
-import "github.com/paupawsan/rakitsu/internal/config"
+import "github.com/SK-ENT/rakitsu/internal/config"
 
 // Default pricing in USD per 1M tokens.
 // Used when user config doesn't specify pricing for a model.

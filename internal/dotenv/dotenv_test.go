@@ -101,7 +101,7 @@ func TestLoad_IgnoresMalformedLines(t *testing.T) {
 // that any later subprocess rakitsu's own tools spawn (internal/tools/cli,
 // internal/tools/fs) would inherit — arbitrary code execution the moment
 // rakitsu is run from that directory. Found by the automated PR review on
-// paupawsan/rakitsu#86.
+// SK-ENT/rakitsu#86.
 
 func TestLoad_RefusesToSetKnownDangerousVars(t *testing.T) {
 	dangerous := []string{

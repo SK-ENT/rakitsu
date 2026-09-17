@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/config"
 )
 
 // Same contract as the cli tool: "required" must marshal as a JSON array

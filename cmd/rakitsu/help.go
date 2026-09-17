@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/paupawsan/rakitsu/internal/brand"
+	"github.com/SK-ENT/rakitsu/internal/brand"
 	"github.com/spf13/cobra"
 )
 

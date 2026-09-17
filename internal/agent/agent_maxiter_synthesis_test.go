@@ -17,8 +17,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // TestAgent_MaxIterations_ForcedSynthesis_ProducesAnswer is the core

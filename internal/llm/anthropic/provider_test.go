@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // TestParseResponse_MalformedToolCallArgumentsErrors is a regression test:

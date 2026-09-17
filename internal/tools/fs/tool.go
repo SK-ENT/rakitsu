@@ -14,7 +14,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/paupawsan/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/config"
 )
 
 // DefaultMaxReadBytes caps how much of a file readFile loads into memory
@@ -49,7 +49,7 @@ func NewTool(def *config.ToolDefinition) *Tool {
 	// allowedPaths[0]: agents are prompted with paths relative to where
 	// `rakitsu run` was launched, and joining those onto a fence like
 	// ["./workspace/"] silently produced doubled trees (workspace/workspace/…)
-	// via writeFile's MkdirAll — see paupawsan/rakitsu#28.
+	// via writeFile's MkdirAll — see SK-ENT/rakitsu#28.
 	workDir := def.WorkingDir
 
 	return &Tool{
@@ -183,7 +183,7 @@ func (t *Tool) Execute(ctx context.Context, args map[string]interface{}) (string
 // tool's working_dir is absolute (what `rakitsu run --workdir` sets), a
 // relative fence is anchored on it, so allowed_paths: ["."] means "the
 // workdir" rather than "wherever rakitsu was launched from". A relative
-// working_dir is itself relative to the process cwd (paupawsan/rakitsu#28),
+// working_dir is itself relative to the process cwd (SK-ENT/rakitsu#28),
 // so relative fences keep resolving against the cwd in that case, as before.
 func (t *Tool) absAllowed(allowed string) (string, error) {
 	if !filepath.IsAbs(allowed) && filepath.IsAbs(t.workingDir) {

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // StartBridge subscribes to the event bus and converts AgentEvents

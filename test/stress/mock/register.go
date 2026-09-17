@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // ProviderFactory creates a mock provider from a ProviderConfig.

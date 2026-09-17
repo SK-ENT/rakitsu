@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/paupawsan/rakitsu/internal/dotenv"
+	"github.com/SK-ENT/rakitsu/internal/dotenv"
 	"github.com/spf13/cobra"
 )
 

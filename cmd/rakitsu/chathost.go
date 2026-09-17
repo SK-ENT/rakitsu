@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/paupawsan/rakitsu/internal/agent"
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
-	"github.com/paupawsan/rakitsu/internal/tools"
-	"github.com/paupawsan/rakitsu/internal/tools/chathost"
-	"github.com/paupawsan/rakitsu/internal/tools/sessionmsg"
-	"github.com/paupawsan/rakitsu/internal/tools/userinput"
+	"github.com/SK-ENT/rakitsu/internal/agent"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/tools"
+	"github.com/SK-ENT/rakitsu/internal/tools/chathost"
+	"github.com/SK-ENT/rakitsu/internal/tools/sessionmsg"
+	"github.com/SK-ENT/rakitsu/internal/tools/userinput"
 )
 
 // buildChatHostAgent creates a synthetic conversational agent that wraps

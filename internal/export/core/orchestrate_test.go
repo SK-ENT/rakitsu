@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/export/core"
-	"github.com/paupawsan/rakitsu/internal/export/nemoclaw"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/export/core"
+	"github.com/SK-ENT/rakitsu/internal/export/nemoclaw"
 )
 
 // defaultTargets returns both runtime targets for testing.

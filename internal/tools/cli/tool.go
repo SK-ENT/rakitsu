@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/paupawsan/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/config"
 )
 
 // System-level whitelist (hard-coded for security)
@@ -390,7 +390,7 @@ func (t *Tool) Execute(ctx context.Context, args map[string]interface{}) (string
 // "{{name}}" as the VALUE of parameter "name" — never changes on
 // replacement, so the re-scan condition never goes false: an unbounded hang
 // reachable via any caller/agent-controlled tool argument, not just a
-// config-authoring mistake. Found by review on paupawsan/rakitsu#75 and
+// config-authoring mistake. Found by review on SK-ENT/rakitsu#75 and
 // verified independently (both the pre-existing per-part loop this
 // replaces and the new resolvePlaceholders helper hung on this input). 32
 // is far beyond any realistic nesting depth for this feature.
@@ -405,7 +405,7 @@ const maxPlaceholderResolutionPasses = 32
 // is reached — a caller-controlled memory-exhaustion DoS, not just a hang.
 // Checked as a PROJECTED size before each replace, so the oversized string
 // is never actually allocated. 64 KiB is far beyond any realistic argv
-// value for a cli tool. Found by review on paupawsan/rakitsu#75, verified
+// value for a cli tool. Found by review on SK-ENT/rakitsu#75, verified
 // independently with a timeout-guarded reproduction (didn't finish in 5s).
 const maxPlaceholderResolutionLength = 1 << 16
 
@@ -501,7 +501,7 @@ func resolvePlaceholders(s string, args map[string]interface{}) (string, error) 
 		// 32 bits) it can still exceed math.MaxInt32, so the projected
 		// size is computed with explicit int64 arithmetic rather than
 		// relying on the platform's native int width. Found by review
-		// on paupawsan/rakitsu#75.
+		// on SK-ENT/rakitsu#75.
 		if count > maxPlaceholderResolutionLength || len(valStr) > maxPlaceholderResolutionLength || len(s) > maxPlaceholderResolutionLength {
 			return s, errPlaceholderResolutionBoundExceeded
 		}
@@ -797,7 +797,7 @@ func (t *Tool) executeLocalRestricted(ctx context.Context, cmd []string) (string
 	}
 	// A nonexistent Dir surfaces from os/exec as "fork/exec <binary>: no such
 	// file or directory", which reads as the binary being missing — check up
-	// front so the error names the real problem (paupawsan/rakitsu#28).
+	// front so the error names the real problem (SK-ENT/rakitsu#28).
 	if dir != "" {
 		if _, statErr := os.Stat(dir); statErr != nil {
 			return "", fmt.Errorf("working directory %q for command execution is not usable: %w", dir, statErr)

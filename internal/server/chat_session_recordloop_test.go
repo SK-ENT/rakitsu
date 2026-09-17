@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/store"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/store"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // TestRecordLoop_StopsOnStopCh regression-guards: recordLoop used

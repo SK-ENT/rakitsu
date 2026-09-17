@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/export/nemoclaw"
-	"github.com/paupawsan/rakitsu/internal/export/openclaw"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/export/nemoclaw"
+	"github.com/SK-ENT/rakitsu/internal/export/openclaw"
 	"gopkg.in/yaml.v3"
 )
 

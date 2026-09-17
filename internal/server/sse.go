@@ -17,15 +17,15 @@ import (
 	"time"
 
 	"context"
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/debug"
-	"github.com/paupawsan/rakitsu/internal/llm"
-	codexProvider "github.com/paupawsan/rakitsu/internal/llm/codex"
-	"github.com/paupawsan/rakitsu/internal/session"
-	"github.com/paupawsan/rakitsu/internal/store"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
-	"github.com/paupawsan/rakitsu/internal/tokenizer"
-	"github.com/paupawsan/rakitsu/internal/webui"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/debug"
+	"github.com/SK-ENT/rakitsu/internal/llm"
+	codexProvider "github.com/SK-ENT/rakitsu/internal/llm/codex"
+	"github.com/SK-ENT/rakitsu/internal/session"
+	"github.com/SK-ENT/rakitsu/internal/store"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/tokenizer"
+	"github.com/SK-ENT/rakitsu/internal/webui"
 )
 
 // SessionInfo holds metadata about the current debug session

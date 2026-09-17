@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/debug"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/debug"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // TestDebugControllerConcurrent: 20 goroutines Check(), 10 set/clear breakpoints,

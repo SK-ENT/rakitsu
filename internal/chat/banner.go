@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/paupawsan/rakitsu/internal/brand"
+	"github.com/SK-ENT/rakitsu/internal/brand"
 )
 
 // renderBanner draws the startup banner shown once at the top of a new chat

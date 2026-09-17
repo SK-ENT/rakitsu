@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/turntree"
+	"github.com/SK-ENT/rakitsu/internal/turntree"
 )
 
 // chatTreeSchemaVersion is the version tag stamped onto every persisted

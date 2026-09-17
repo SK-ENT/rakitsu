@@ -3,7 +3,7 @@ package server
 import (
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/config"
 )
 
 func TestApplyWorkdirToTools_GlobalTools(t *testing.T) {

@@ -39,9 +39,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/llm"
-	codexProvider "github.com/paupawsan/rakitsu/internal/llm/codex"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/llm"
+	codexProvider "github.com/SK-ENT/rakitsu/internal/llm/codex"
 )
 
 // Severity controls the symbol in front of each report line and contributes

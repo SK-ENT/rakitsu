@@ -3,7 +3,7 @@ package server
 import (
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/debug"
+	"github.com/SK-ENT/rakitsu/internal/debug"
 )
 
 // lockCheckingRunner is a test double that, on the detach path (dc == nil),

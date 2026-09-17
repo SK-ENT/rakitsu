@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // Attachable is implemented by agents and orchestrators that support mid-run debug attach/detach.

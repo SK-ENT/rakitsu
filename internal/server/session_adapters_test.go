@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/debug"
-	"github.com/paupawsan/rakitsu/internal/session"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/debug"
+	"github.com/SK-ENT/rakitsu/internal/session"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 func newTestEventBus() *telemetry.EventBus { return telemetry.NewEventBus(8) }

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/paupawsan/rakitsu/internal/session"
+	"github.com/SK-ENT/rakitsu/internal/session"
 )
 
 // handleRuntimeSessions serves GET /api/runtime/sessions.

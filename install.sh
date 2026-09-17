@@ -1,10 +1,10 @@
 #!/bin/sh
 # Rakitsu installer / uninstaller
-# Install:   curl -fsSL https://raw.githubusercontent.com/paupawsan/rakitsu/main/install.sh | sh
-# Uninstall: curl -fsSL https://raw.githubusercontent.com/paupawsan/rakitsu/main/install.sh | sh -s -- --uninstall
+# Install:   curl -fsSL https://raw.githubusercontent.com/SK-ENT/rakitsu/main/install.sh | sh
+# Uninstall: curl -fsSL https://raw.githubusercontent.com/SK-ENT/rakitsu/main/install.sh | sh -s -- --uninstall
 set -e
 
-REPO="paupawsan/rakitsu"
+REPO="SK-ENT/rakitsu"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
 # Uninstall mode
@@ -33,7 +33,7 @@ if [ "$1" = "--uninstall" ] || [ "$1" = "uninstall" ]; then
     else
       echo ""
       echo "No interactive terminal available — re-run with --yes to confirm:"
-      echo "  curl -fsSL https://raw.githubusercontent.com/paupawsan/rakitsu/main/install.sh | sh -s -- --uninstall --yes"
+      echo "  curl -fsSL https://raw.githubusercontent.com/SK-ENT/rakitsu/main/install.sh | sh -s -- --uninstall --yes"
       exit 1
     fi
   fi

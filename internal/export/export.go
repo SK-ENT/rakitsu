@@ -8,9 +8,9 @@
 package export
 
 import (
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/export/nemoclaw"
-	ocexport "github.com/paupawsan/rakitsu/internal/export/openclaw"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/export/nemoclaw"
+	ocexport "github.com/SK-ENT/rakitsu/internal/export/openclaw"
 )
 
 // Format identifies a target export format.

@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // DefaultBaseURL is the subscription-backed Responses endpoint root.

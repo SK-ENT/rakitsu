@@ -1,6 +1,6 @@
 package shared
 
-import "github.com/paupawsan/rakitsu/internal/config"
+import "github.com/SK-ENT/rakitsu/internal/config"
 
 // ResolveProvider returns the provider name and definition for an agent.
 // Falls back to settings.default_provider if agent has no provider set.

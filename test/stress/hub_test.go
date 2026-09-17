@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // TestHubConcurrentSessions: 50 sessions register, each ingests 1K events, concurrent polling.

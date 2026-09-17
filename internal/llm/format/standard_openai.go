@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // StandardOpenAI is the baseline adapter for clean OpenAI-shaped responses:

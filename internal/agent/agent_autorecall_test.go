@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // fakeRecaller is an in-test MemoryRecaller returning a fixed block, counting

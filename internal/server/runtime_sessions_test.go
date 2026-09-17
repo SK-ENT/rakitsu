@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/session"
+	"github.com/SK-ENT/rakitsu/internal/session"
 )
 
 // newTestSSEWithRegistry wires a minimal SSEServer with a registry — enough

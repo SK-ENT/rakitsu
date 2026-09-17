@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // ToolCallTagInline handles models that emit tool calls as XML-ish tags

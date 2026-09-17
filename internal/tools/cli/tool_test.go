@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/config"
 )
 
 // ============================================================
@@ -639,7 +639,7 @@ func TestBuildCommand_ArgvSplit_EmptyValue_YieldsNoExtraArgvElements(t *testing.
 }
 
 func TestBuildCommand_ArgvSplit_ResolvesNestedPlaceholderInValue(t *testing.T) {
-	// Regression found by review on paupawsan/rakitsu#75: the
+	// Regression found by review on SK-ENT/rakitsu#75: the
 	// pre-existing per-part loop re-scans a substituted string for further
 	// {{...}} patterns, so a value that itself contains {{other_param}}
 	// syntax is recursively resolved on the non-split path (see
@@ -679,7 +679,7 @@ func TestBuildCommand_ArgvSplit_ResolvesNestedPlaceholderInValue(t *testing.T) {
 }
 
 func TestBuildCommand_SelfReferentialValue_TerminatesInsteadOfHanging(t *testing.T) {
-	// MAJOR finding, review on paupawsan/rakitsu#75: a caller passing the
+	// MAJOR finding, review on SK-ENT/rakitsu#75: a caller passing the
 	// literal string "{{name}}" as the VALUE of parameter "name" makes the
 	// substitution a no-op (replacing "{{name}}" with "{{name}}"), so the
 	// old unbounded re-scan loop never terminated. This is
@@ -721,7 +721,7 @@ func TestBuildCommand_SelfReferentialValue_TerminatesInsteadOfHanging(t *testing
 }
 
 func TestBuildCommand_WhitespacePaddedPlaceholderValue_TerminatesInsteadOfHanging(t *testing.T) {
-	// MAJOR finding, review on paupawsan/rakitsu#75: resolvePlaceholders
+	// MAJOR finding, review on SK-ENT/rakitsu#75: resolvePlaceholders
 	// used to look up the TRIMMED placeholder name but then reconstruct
 	// "{{"+trimmed+"}}" as the search-and-replace target — for a value
 	// containing internal whitespace like "{{ name }}", that reconstructed
@@ -1649,7 +1649,7 @@ func containsArgPair(args []string, flag string, pred func(string) bool) bool {
 }
 
 // ============================================================
-// working-dir existence — paupawsan/rakitsu#28
+// working-dir existence — SK-ENT/rakitsu#28
 // ============================================================
 
 // TestExecute_MissingSandboxWorkdir_ClearError: when the exec cwd falls back

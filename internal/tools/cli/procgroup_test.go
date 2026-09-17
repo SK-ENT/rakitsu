@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/config"
 )
 
 // TestExecute_TimeoutKillsProcessGroup regression-tests the fix for a

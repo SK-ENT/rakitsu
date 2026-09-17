@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // TestHandleChatFork_ChunkedBodyIsNotSkipped regression-guards: the handler

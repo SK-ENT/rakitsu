@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // handleHubRegister handles POST /api/hub/register — CLI registers a run session

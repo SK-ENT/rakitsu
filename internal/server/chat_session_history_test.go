@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
-	"github.com/paupawsan/rakitsu/internal/turntree"
+	"github.com/SK-ENT/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/turntree"
 )
 
 // TestHistoryFromTranscript verifies the web chat reconstructs prior turns

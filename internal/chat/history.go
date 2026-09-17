@@ -3,7 +3,7 @@ package chat
 import (
 	"strings"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 const (

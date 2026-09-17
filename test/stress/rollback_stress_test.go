@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/agent"
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
-	"github.com/paupawsan/rakitsu/internal/tools"
-	"github.com/paupawsan/rakitsu/test/stress/mock"
-	"github.com/paupawsan/rakitsu/test/stress/mocktools"
+	"github.com/SK-ENT/rakitsu/internal/agent"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/tools"
+	"github.com/SK-ENT/rakitsu/test/stress/mock"
+	"github.com/SK-ENT/rakitsu/test/stress/mocktools"
 )
 
 // TestRollbackConcurrentSelfCorrection runs N agents concurrently, each forced

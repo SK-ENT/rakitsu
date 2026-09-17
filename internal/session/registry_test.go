@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/debug"
+	"github.com/SK-ENT/rakitsu/internal/debug"
 )
 
 // fakeSession is a minimal Session used to exercise the registry without

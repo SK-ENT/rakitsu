@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/store"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
-	"github.com/paupawsan/rakitsu/internal/turntree"
+	"github.com/SK-ENT/rakitsu/internal/store"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/turntree"
 )
 
 // PR D-5.5 — fork on a past (non-live) session. These tests exercise the

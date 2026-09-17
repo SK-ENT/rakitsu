@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/config"
 )
 
 func TestBM25_EmptyQuery(t *testing.T) {

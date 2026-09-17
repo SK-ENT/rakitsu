@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // TestEventBusThroughput: 100 publishers x 10K events, 50 subscribers.

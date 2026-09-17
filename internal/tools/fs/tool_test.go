@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/config"
 )
 
 // ============================================================
@@ -520,7 +520,7 @@ func TestStress_ConcurrentPathChecks(t *testing.T) {
 }
 
 // ============================================================
-// working-dir resolution — paupawsan/rakitsu#28
+// working-dir resolution — SK-ENT/rakitsu#28
 // ============================================================
 
 // TestWrite_FencedAllowedPath_ResolvesAgainstCwd locks down the #28 fix:

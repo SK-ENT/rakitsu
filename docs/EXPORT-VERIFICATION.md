@@ -242,7 +242,7 @@ Prerequisites: Docker, a valid `NVIDIA_API_KEY` from [build.nvidia.com](https://
 
 ```bash
 # 1. Clone and build Rakitsu
-git clone https://github.com/paupawsan/rakitsu.git
+git clone https://github.com/SK-ENT/rakitsu.git
 cd rakitsu
 make build-embedded
 

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/store"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
-	neutools "github.com/paupawsan/rakitsu/internal/tools"
+	"github.com/SK-ENT/rakitsu/internal/store"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	neutools "github.com/SK-ENT/rakitsu/internal/tools"
 )
 
 // Regression coverage for the token-gate audit findings:

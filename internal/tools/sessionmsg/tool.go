@@ -26,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/tools"
+	"github.com/SK-ENT/rakitsu/internal/tools"
 )
 
 // sessionMsgTokenEnv and apiTokenEnv mirror internal/server's constants;

@@ -7,8 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/paupawsan/rakitsu/internal/agentchat"
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/agentchat"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // agentChatDisabledNote is shown when Ctrl+A is pressed in a session with no

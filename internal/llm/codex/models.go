@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // ModelInfo is the subset of the Codex model catalog entry rakitsu shows.

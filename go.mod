@@ -1,4 +1,4 @@
-module github.com/paupawsan/rakitsu
+module github.com/SK-ENT/rakitsu
 
 go 1.25.0
 

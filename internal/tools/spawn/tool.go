@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/paupawsan/rakitsu/internal/config"
-	"github.com/paupawsan/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // Tool is the spawn_agent tool. Execute is called concurrently by the ReAct

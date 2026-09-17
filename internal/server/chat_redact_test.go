@@ -3,7 +3,7 @@ package server
 import (
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/config"
 )
 
 // Resume loads a persisted YAML whose api_key fields were redacted before

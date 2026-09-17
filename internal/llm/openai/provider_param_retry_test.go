@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paupawsan/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // paramRejectingServer replays a fixed sequence of chat-completion responses:
