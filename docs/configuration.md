@@ -405,6 +405,12 @@ tools:
     description: "Delegate to the Researcher agent on another rakitsu process"
     url: "http://research-host:9100/a2a"
     agent: "Researcher"                  # remote agent name to delegate to
+
+  - name: "jev"
+    type: "jev"
+    description: "Ask TypeSafe AI's Jev model typed yes/no, pick-one, or scored questions about a state"
+    # api_key: "${TYPESAFE_API_KEY}"     # optional — omit to read TYPESAFE_API_KEY from the environment
+    # url: "https://api.typesafe.ai/v1/systemone"  # optional override
 ```
 
 ### ToolDefinition Fields
@@ -412,7 +418,7 @@ tools:
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | string | **Required.** Unique tool name |
-| `type` | string | **Required.** Tool type: `cli`, `fs`, `mcp_server`, `a2a` |
+| `type` | string | **Required.** Tool type: `cli`, `fs`, `mcp_server`, `a2a`, `jev` |
 | `description` | string | What the tool does (shown to LLM) |
 | `command` | string | Shell command (for `cli` type) |
 | `operation` | string | Operation name (for `fs` type): `read`, `write`, `search`, `list` |
@@ -430,7 +436,7 @@ tools:
 | `agent` | string | Remote agent name to delegate to (for `a2a` type) |
 | `allowed_exit_codes` | []int | Acceptable exit codes |
 | `sandbox` | SandboxConfig | Security sandbox configuration |
-| `api_key` | string | Authenticates against a peer's `/a2a` endpoint (`RAKITSU_API_TOKEN` or any bearer token an A2A server requires) — sent as `Authorization: Bearer <api_key>`. Supports `${ENV_VAR}` expansion, same as provider `api_key` values |
+| `api_key` | string | Authenticates against a peer's `/a2a` endpoint (`RAKITSU_API_TOKEN` or any bearer token an A2A server requires), or (for `jev` type) against Jev's API — sent as `Authorization: Bearer <api_key>`. Supports `${ENV_VAR}` expansion, same as provider `api_key` values. For `jev`, omitting this falls back to the `TYPESAFE_API_KEY` environment variable directly |
 
 ### Parameter
 

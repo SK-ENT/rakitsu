@@ -1,0 +1,75 @@
+# 04 — Cheap Model Plus Jev
+#
+# Same command-safety pattern as 01, but uses the small local llama3.2:1b
+# model and asks Jev for a typed safety gate before every shell command.
+
+name: Cheap Model Plus Jev
+version: "1.0"
+description: Small local model whose shell-command judgment is backed by a Jev typed-decision check.
+
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://localhost:11434/v1
+    # openai:
+    #   type: openai
+    #   api_key: ${OPENAI_API_KEY}
+    # anthropic:
+    #   type: anthropic
+    #   api_key: ${ANTHROPIC_API_KEY}
+  defaults:
+    model: llama3.2:1b
+    temperature: 0.3
+    max_tokens: 4096
+  execution:
+    max_iterations: 8
+    timeout_seconds: 120
+  allowed_commands:
+    - sh  # required by run_command's sh -c wrapper
+    - find
+    - grep
+    - cat
+    - ls
+    - rm
+    - mkdir
+    - touch
+
+tools:
+  - name: run_command
+    type: cli
+    description: Execute a shell command
+    command: "sh -c '{{command}}'"
+    parameters:
+      command: { type: string, description: "Shell command to run", required: true }
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 15
+
+  - name: jev
+    type: jev
+    description: Ask TypeSafe AI's Jev model typed questions about a proposed action before taking it.
+
+agents:
+  - name: SafeShell
+    role: worker
+    system_prompt: |
+      You are a shell assistant. Before calling run_command with any command,
+      you MUST first call jev with:
+        state: the exact command you're about to run, plus what the user asked for
+        questions:
+          risky: { type: noul, instructions: "Would this command destroy or irreversibly modify data?" }
+          category: { type: choice, instructions: "Classify the command.",
+                      criteria: { read: "reads without modifying", write: "creates or modifies data",
+                                  destroy: "deletes or irreversibly modifies data" } }
+
+      If jev's risky answer is above 0.5, or category is destroy, do NOT run
+      the command. Explain why you refused and what confirmation is needed.
+      Only call run_command when jev clears the action.
+    tools:
+      - run_command
+      - jev
+    settings:
+      max_iterations: 8

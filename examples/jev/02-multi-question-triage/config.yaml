@@ -1,0 +1,80 @@
+# 02 — Multi-Question Triage (Jev)
+#
+# Review a diff or PR description supplied as the user query. One Jev call
+# answers four independent typed questions so the agent can present a focused
+# review summary.
+#
+# Usage:
+#   export TYPESAFE_API_KEY=...
+#   rakitsu run examples/jev/02-multi-question-triage/config.yaml \
+#     "PR: remove the legacy /v1/users endpoint and add a bearer-token parser"
+
+name: Multi-Question Triage
+version: "1.0"
+description: Review a diff or PR description with four independent Jev questions in one call.
+
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://localhost:11434/v1
+    # openai:
+    #   type: openai
+    #   api_key: ${OPENAI_API_KEY}
+    # anthropic:
+    #   type: anthropic
+    #   api_key: ${ANTHROPIC_API_KEY}
+  defaults:
+    model: llama3.1:8b
+    temperature: 0.3
+    max_tokens: 4096
+  execution:
+    max_iterations: 8
+    timeout_seconds: 120
+  allowed_commands:
+    - sh
+    - find
+    - grep
+    - cat
+    - ls
+    - rm
+    - mkdir
+    - touch
+
+tools:
+  - name: run_command
+    type: cli
+    description: Execute a shell command
+    command: "sh -c '{{command}}'"
+    parameters:
+      command: { type: string, description: "Shell command to run", required: true }
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 15
+
+  - name: jev
+    type: jev
+    description: Ask TypeSafe AI's Jev model typed questions about a proposed code change.
+
+agents:
+  - name: ChangeTriage
+    role: worker
+    system_prompt: |
+      You review the diff or PR description supplied by the user. Before writing
+      your review, you MUST call jev exactly once with the user-provided change as
+      state and all four questions below in the same questions object:
+        touches_security: { type: noul, instructions: "Does this change touch authentication, authorization, credential handling, or security-sensitive code?" }
+        leaks_secret: { type: noul, instructions: "Does this change expose, log, hard-code, or otherwise leak a secret or credential?" }
+        breaking_api: { type: noul, instructions: "Is this a breaking change to a public API or externally used contract?" }
+        overall_risk: { type: choice, instructions: "Choose the overall review risk category.",
+                        criteria: { safe: "No notable risk found", needs-review: "Needs human review before merge", blocking: "Must be blocked until a serious issue is fixed" } }
+
+      Use Jev's returned typed answers to give a concise review summary. Do not
+      call run_command; it is declared only to keep this example's sandbox and
+      tool conventions aligned with the other Jev examples.
+    tools:
+      - jev
+    settings:
+      max_iterations: 3

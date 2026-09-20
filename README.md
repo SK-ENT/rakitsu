@@ -111,7 +111,7 @@ before writing a config.
 - `rakitsu acp` — run as an ACP (Agent Client Protocol) server so editors like Zed can talk to rakitsu agents directly
 - `rakitsu serve` exposes an MCP server at `/mcp` (legacy era, ≤2025-11-25 revision) so external MCP clients can discover and call rakitsu's tools
 - `rakitsu serve` exposes an A2A endpoint at `/a2a` (real A2A v1.0.1) plus agent-card discovery, so a rakitsu agent can delegate to a named agent in a different rakitsu process
-- Tool types `mcp_server` and `a2a` let a rakitsu agent call *out* to other MCP servers or A2A agents
+- Tool types `mcp_server`, `a2a`, and `jev` let a rakitsu agent call *out* to other MCP servers, A2A agents, or TypeSafe AI's Jev model for typed yes/no, pick-one, or scored questions
 
 ## CLI
 

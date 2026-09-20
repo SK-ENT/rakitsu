@@ -40,6 +40,47 @@ type TurnResetter interface {
 	ResetTurn()
 }
 
+// turnQueryContextKey is an unexported type so this package's context key
+// can't collide with a key from another package (standard Go context-key
+// pattern).
+type turnQueryContextKey struct{}
+
+// turnQueryValue is what's actually stored under turnQueryContextKey.
+// HasAttachments matters because Query alone is incomplete when the turn
+// also carried attachments (e.g. --attach images): a tool that falls back
+// to Query as if it were the whole turn would silently evaluate only the
+// text and miss the attachment content entirely.
+type turnQueryValue struct {
+	Query          string
+	HasAttachments bool
+}
+
+// WithTurnQuery returns a copy of ctx carrying the current turn's query
+// text (and whether the turn also had attachments), so a tool's Execute
+// can read it back via TurnQueryFromContext instead of requiring the
+// calling LLM to retype content it already has as a tool-call argument
+// (e.g. the jev tool's `state` argument — see internal/tools/jev/tool.go).
+// context.Context values are immutable and scoped to this call chain, so —
+// unlike a field stored on the Tool instance itself — this is safe when
+// the same Tool is shared across concurrent agent runs (e.g. rakitsu serve
+// handling overlapping sessions, or an orchestrator running parallel
+// sub-agents): each run's own ctx carries its own query, with no shared
+// mutable state to race on.
+func WithTurnQuery(ctx context.Context, query string, hasAttachments bool) context.Context {
+	return context.WithValue(ctx, turnQueryContextKey{}, turnQueryValue{Query: query, HasAttachments: hasAttachments})
+}
+
+// TurnQueryFromContext returns the current turn's query text set by
+// WithTurnQuery, whether the turn also had attachments, and whether a
+// value was set at all.
+func TurnQueryFromContext(ctx context.Context) (query string, hasAttachments bool, ok bool) {
+	v, ok := ctx.Value(turnQueryContextKey{}).(turnQueryValue)
+	if !ok {
+		return "", false, false
+	}
+	return v.Query, v.HasAttachments, true
+}
+
 // ToolExecutor manages tool registration and execution
 type ToolExecutor interface {
 	// RegisterTool registers a tool

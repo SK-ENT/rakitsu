@@ -1,0 +1,86 @@
+# 03b — Pipeline Condition Gate, WITHOUT Jev (comparison baseline)
+#
+# Same Pipeline loop as config.yaml, but the condition agent decides in free
+# text and self-constrains its result to the exact PASS or FAIL marker.
+
+name: Pipeline Condition Gate (no Jev, for comparison)
+version: "1.0"
+description: Pipeline loop whose condition agent uses its own LLM reasoning and emits an exact PASS or FAIL marker.
+
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://localhost:11434/v1
+    # openai:
+    #   type: openai
+    #   api_key: ${OPENAI_API_KEY}
+    # anthropic:
+    #   type: anthropic
+    #   api_key: ${ANTHROPIC_API_KEY}
+  defaults:
+    model: llama3.1:8b
+    temperature: 0.3
+    max_tokens: 4096
+  execution:
+    max_iterations: 8
+    timeout_seconds: 120
+  allowed_commands:
+    - sh
+    - find
+    - grep
+    - cat
+    - ls
+    - rm
+    - mkdir
+    - touch
+
+tools:
+  - name: run_command
+    type: cli
+    description: Execute a shell command
+    command: "sh -c '{{command}}'"
+    parameters:
+      command: { type: string, description: "Shell command to run", required: true }
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 15
+
+agents:
+  - name: Worker
+    role: worker
+    system_prompt: |
+      Complete the requested work. When prior feedback is present, revise the
+      work to address it. Return only the work product.
+    settings:
+      max_iterations: 1
+
+  - name: LLMGate
+    role: worker
+    system_prompt: |
+      You are a pipeline condition agent. Judge from the complete task context
+      whether the work is complete and acceptable for the original request.
+      Output exactly PASS if it is complete and acceptable; otherwise output
+      exactly FAIL. Output no other text.
+    settings:
+      max_iterations: 1
+
+orchestrator:
+  name: CompletionPipeline
+  strategy: Pipeline
+  provider: ollama
+  model: llama3.1:8b
+  agents: [Worker, LLMGate]
+  pipeline:
+    steps:
+      - name: complete-work
+        type: loop
+        max_iterations: 3
+        condition_agent: LLMGate
+        condition_prompt: Evaluate the original request and the work from the latest iteration. Return the required pipeline marker.
+        steps:
+          - name: work
+            agent: Worker
+            task: Complete the original request. If prior output shows an incomplete result, improve it.

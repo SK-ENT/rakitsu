@@ -30,6 +30,7 @@ import (
 	a2atool "github.com/SK-ENT/rakitsu/internal/tools/a2a"
 	clitool "github.com/SK-ENT/rakitsu/internal/tools/cli"
 	fstool "github.com/SK-ENT/rakitsu/internal/tools/fs"
+	jevtool "github.com/SK-ENT/rakitsu/internal/tools/jev"
 	mcptool "github.com/SK-ENT/rakitsu/internal/tools/mcp"
 	"github.com/SK-ENT/rakitsu/internal/tools/sessionmsg"
 	"github.com/spf13/cobra"
@@ -1453,6 +1454,9 @@ func executeConfig(ctx context.Context, cfg *config.Config, eventBus *telemetry.
 				case "fs":
 					t := fstool.NewTool(&inlineTool)
 					agentToolRegistry.RegisterTool(t)
+				case "jev":
+					t := jevtool.NewTool(&inlineTool)
+					agentToolRegistry.RegisterTool(t)
 				case "mcp_server":
 					mcpTools, closer, err := mcptool.NewMCPServer(ctx, &inlineTool)
 					if err != nil {
@@ -1652,6 +1656,9 @@ func createToolRegistry(ctx context.Context, cfg *config.Config) *tools.ToolRegi
 			registry.RegisterTool(tool)
 		case "fs":
 			tool := fstool.NewTool(&toolDef)
+			registry.RegisterTool(tool)
+		case "jev":
+			tool := jevtool.NewTool(&toolDef)
 			registry.RegisterTool(tool)
 		case "mcp_server":
 			mcpTools, closer, err := mcptool.NewMCPServer(ctx, &toolDef)
