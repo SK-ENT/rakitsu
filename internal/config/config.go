@@ -4,6 +4,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -279,7 +280,7 @@ type LoggingSettings struct {
 // ToolDefinition defines a tool that agents can use
 type ToolDefinition struct {
 	Name             string               `mapstructure:"name" yaml:"name"`
-	Type             string               `mapstructure:"type" yaml:"type"` // cli, fs, http, custom
+	Type             string               `mapstructure:"type" yaml:"type"` // cli, fs, mcp_server, a2a
 	Description      string               `mapstructure:"description" yaml:"description"`
 	Command          string               `mapstructure:"command,omitempty" yaml:"command,omitempty"`
 	Operation        string               `mapstructure:"operation,omitempty" yaml:"operation,omitempty"`
@@ -598,6 +599,20 @@ type RequireToolCallGate struct {
 	// as not matching rather than guessed at, so CommandContains can never
 	// be satisfied by an unrelated field (a path, an env value, metadata).
 	ArgKey string `mapstructure:"arg_key,omitempty" yaml:"arg_key,omitempty"`
+
+	// OutputJSONPath, when set, extends the gate beyond "was the tool
+	// called" to "did its own JSON response contain a numeric value within
+	// bounds" — checked against the matching call's actual output, not the
+	// agent's self-reported summary of it. A dot-separated path into the
+	// tool's JSON output, e.g. "answers.severity.score" for a Jev score
+	// question. At least one of MinValue/MaxValue must be set alongside it.
+	OutputJSONPath string `mapstructure:"output_json_path,omitempty" yaml:"output_json_path,omitempty"`
+	// MinValue/MaxValue bound the extracted value, inclusive. Either or
+	// both may be set. A step whose matching call's extracted value falls
+	// outside the given bound(s) fails the gate, even if the agent's own
+	// final answer claims success.
+	MinValue *float64 `mapstructure:"min_value,omitempty" yaml:"min_value,omitempty"`
+	MaxValue *float64 `mapstructure:"max_value,omitempty" yaml:"max_value,omitempty"`
 }
 
 // WorkflowDefinition defines a pre-configured workflow (legacy, use PipelineConfig instead)
@@ -770,6 +785,17 @@ func Load(configPath string) (*Config, error) {
 		for ti := range config.Agents[ai].ToolsInline {
 			expandToolDefEnvVars(&config.Agents[ai].ToolsInline[ti])
 		}
+	}
+
+	// Merge each agent's referenced skills' prompt_template into its
+	// effective SystemPrompt — in memory only, same convention as the
+	// expandEnvVar/resolveFileReferences mutations above. Must run after
+	// resolveFileReferences (which resolves a skill's own prompt_template
+	// file: ref) so the text being merged in is already resolved. Before
+	// this, `skills:` was validated and exported but never actually
+	// affected an agent's behavior.
+	for i := range config.Agents {
+		config.Agents[i].SystemPrompt = config.EffectiveSystemPrompt(&config.Agents[i])
 	}
 
 	// Validate the config. Errors block load; warnings are logged and ignored.
@@ -995,6 +1021,27 @@ func (c *Config) GetSkill(name string) *SkillDefinition {
 		}
 	}
 	return nil
+}
+
+// EffectiveSystemPrompt composes def's own SystemPrompt with the
+// prompt_template of every skill def references (in declaration order),
+// joined by blank lines. An unresolvable skill name is skipped here rather
+// than treated as an error — Validate() already reports an unknown skill
+// reference separately, and this function needs to stay usable even when
+// called before validation runs.
+func (c *Config) EffectiveSystemPrompt(def *AgentDefinition) string {
+	prompt := def.SystemPrompt
+	for _, ref := range def.Skills {
+		skill := c.GetSkill(ref)
+		if skill == nil || strings.TrimSpace(skill.PromptTemplate) == "" {
+			continue
+		}
+		if prompt != "" {
+			prompt += "\n\n"
+		}
+		prompt += skill.PromptTemplate
+	}
+	return prompt
 }
 
 // ============================================================
@@ -1252,6 +1299,46 @@ func validatePipelineSteps(steps []PipelineStep, runners map[string]bool, prefix
 				Field:   path + ".require_tool_call.tool",
 				Message: fmt.Sprintf("step %q has require_tool_call but no tool name", s.Name),
 			})
+		}
+		if gate := s.RequireToolCall; gate != nil {
+			hasBound := gate.MinValue != nil || gate.MaxValue != nil
+			if gate.OutputJSONPath != "" && !hasBound {
+				*errs = append(*errs, &ValidationError{
+					Field:   path + ".require_tool_call.output_json_path",
+					Message: fmt.Sprintf("step %q sets output_json_path but neither min_value nor max_value", s.Name),
+				})
+			}
+			if hasBound && gate.OutputJSONPath == "" {
+				*errs = append(*errs, &ValidationError{
+					Field:   path + ".require_tool_call.min_value",
+					Message: fmt.Sprintf("step %q sets min_value/max_value but no output_json_path to extract", s.Name),
+				})
+			}
+			if gate.MinValue != nil && gate.MaxValue != nil && *gate.MinValue > *gate.MaxValue {
+				*errs = append(*errs, &ValidationError{
+					Field:   path + ".require_tool_call.min_value",
+					Message: fmt.Sprintf("step %q has min_value %v greater than max_value %v", s.Name, *gate.MinValue, *gate.MaxValue),
+				})
+			}
+			// A NaN bound makes every comparison in checkOutputValueBounds
+			// false (value < NaN and value > NaN are both always false),
+			// silently disabling the gate — every value would pass — while
+			// the config still looks fully configured. The min>max check
+			// above can't catch this either, since NaN comparisons are
+			// always false there too. Reject explicitly rather than let a
+			// malformed YAML `.nan` bound quietly defeat a safety gate.
+			if gate.MinValue != nil && math.IsNaN(*gate.MinValue) {
+				*errs = append(*errs, &ValidationError{
+					Field:   path + ".require_tool_call.min_value",
+					Message: fmt.Sprintf("step %q has min_value NaN, which would make the gate accept every value", s.Name),
+				})
+			}
+			if gate.MaxValue != nil && math.IsNaN(*gate.MaxValue) {
+				*errs = append(*errs, &ValidationError{
+					Field:   path + ".require_tool_call.max_value",
+					Message: fmt.Sprintf("step %q has max_value NaN, which would make the gate accept every value", s.Name),
+				})
+			}
 		}
 	}
 }

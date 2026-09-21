@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -151,6 +152,73 @@ func TestValidate_PipelineStepRequireToolCallWithTool_NoError(t *testing.T) {
 	errs := cfg.Validate()
 	if len(errs) != 0 {
 		t.Fatalf("expected no error for a valid require_tool_call gate, got %v", errs)
+	}
+}
+
+// TestValidate_RequireToolCall_NaNBound_Rejected is the regression test for
+// a real finding caught by automated review: a NaN min_value/max_value
+// makes every comparison in checkOutputValueBounds false (value < NaN and
+// value > NaN are both always false), so the gate would silently accept
+// every value while looking fully configured — and the existing
+// min>max check can't catch it either, since NaN comparisons are always
+// false there too. Must be rejected explicitly at validation time.
+func TestValidate_RequireToolCall_NaNBound_Rejected(t *testing.T) {
+	nan := math.NaN()
+	valid := 0.5
+	tests := []struct {
+		name string
+		gate *RequireToolCallGate
+	}{
+		{"NaN min_value", &RequireToolCallGate{Tool: "jev", OutputJSONPath: "a.b", MinValue: &nan}},
+		{"NaN max_value", &RequireToolCallGate{Tool: "jev", OutputJSONPath: "a.b", MaxValue: &nan}},
+		{"NaN min_value with valid max_value", &RequireToolCallGate{Tool: "jev", OutputJSONPath: "a.b", MinValue: &nan, MaxValue: &valid}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{
+				Agents: []AgentDefinition{{Name: "Worker"}},
+				Orchestrator: &OrchestratorConfig{
+					Name:   "Lead",
+					Agents: []string{"Worker"},
+					Pipeline: &PipelineConfig{
+						Steps: []PipelineStep{{Name: "s1", Agent: "Worker", RequireToolCall: tt.gate}},
+					},
+				},
+			}
+			errs := cfg.Validate()
+			if len(errs) == 0 {
+				t.Fatal("expected an error rejecting the NaN bound, got none")
+			}
+			found := false
+			for _, e := range errs {
+				if strings.Contains(e.Message, "NaN") {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("expected an error message mentioning NaN, got: %v", errs)
+			}
+		})
+	}
+}
+
+func TestValidate_RequireToolCall_FiniteBounds_NoError(t *testing.T) {
+	min, max := 0.3, 0.7
+	cfg := Config{
+		Agents: []AgentDefinition{{Name: "Worker"}},
+		Orchestrator: &OrchestratorConfig{
+			Name:   "Lead",
+			Agents: []string{"Worker"},
+			Pipeline: &PipelineConfig{
+				Steps: []PipelineStep{{Name: "s1", Agent: "Worker", RequireToolCall: &RequireToolCallGate{
+					Tool: "jev", OutputJSONPath: "a.b", MinValue: &min, MaxValue: &max,
+				}}},
+			},
+		},
+	}
+	errs := cfg.Validate()
+	if len(errs) != 0 {
+		t.Fatalf("expected no error for finite, well-ordered bounds, got %v", errs)
 	}
 }
 

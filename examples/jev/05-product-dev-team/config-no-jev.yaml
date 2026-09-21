@@ -98,7 +98,7 @@ agents:
       request. Output exactly PASS if it is finished and acceptable; otherwise
       output exactly FAIL. Output no other text.
     settings:
-      max_iterations: 1
+      max_iterations: 2
 
   - name: LLMTriage
     role: worker
@@ -113,7 +113,7 @@ agents:
 
       Do not call any tool.
     settings:
-      max_iterations: 1
+      max_iterations: 3
 
   - name: Reviewer
     role: worker

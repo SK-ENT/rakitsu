@@ -299,6 +299,132 @@ func TestCheckRequireToolCall_NoGate_AlwaysNil(t *testing.T) {
 }
 
 // ============================================================
+// require_tool_call value-bound gate tests (output_json_path/min_value/
+// max_value): checks the tool's actual JSON response, not just that the
+// call happened — the mechanism a Jev-based pipeline gate needs to be a
+// real enforced check rather than an instruction the agent could ignore.
+// ============================================================
+
+func minVal(v float64) *float64 { return &v }
+
+// TestExecuteStep_RequireToolCall_ValueBound_Satisfied verifies a step
+// passes when the required tool was called AND its JSON response's value
+// at output_json_path clears min_value.
+func TestExecuteStep_RequireToolCall_ValueBound_Satisfied(t *testing.T) {
+	bus := telemetry.NewEventBus(16)
+	reg := tools.NewToolRegistry()
+	reg.RegisterTool(newMockTool("jev", `{"answers":{"severity":{"type":"score","score":0.92}}}`))
+	provider := newSequenceProvider(
+		llm.GenerateResult{
+			ToolCalls:    []llm.ToolCall{{ID: "c1", Name: "jev", Arguments: map[string]interface{}{"query": "x"}}},
+			FinishReason: "tool_calls",
+		},
+		llm.GenerateResult{Response: "BLOCK", FinishReason: "stop"},
+	)
+	ag := NewAgent(&config.AgentDefinition{Name: "worker", Role: "worker", Tools: []string{"jev"}}, provider, reg, bus, nil)
+	o := newTestOrchestrator(nil, map[string]*Agent{"worker": ag})
+	o.eventBus = bus
+
+	step := config.PipelineStep{
+		Name: "gate", Agent: "worker", Task: "triage",
+		RequireToolCall: &config.RequireToolCallGate{Tool: "jev", OutputJSONPath: "answers.severity.score", MinValue: minVal(0.7)},
+	}
+	pctx := newPipelineContext("q")
+
+	if _, err := o.executeStep(context.Background(), step, pctx); err != nil {
+		t.Fatalf("expected step to pass (score 0.92 >= min_value 0.7), got error: %v", err)
+	}
+}
+
+// TestExecuteStep_RequireToolCall_ValueBound_NotSatisfied_OverridesSelfReport
+// is the case this gate exists for: the agent called the right tool, but
+// Jev's own response didn't clear the threshold, and the agent's final
+// answer claims BLOCK anyway (e.g. misreading its own tool result, or an
+// instruction it silently ignored) — the gate must still fail the step.
+func TestExecuteStep_RequireToolCall_ValueBound_NotSatisfied_OverridesSelfReport(t *testing.T) {
+	bus := telemetry.NewEventBus(16)
+	reg := tools.NewToolRegistry()
+	reg.RegisterTool(newMockTool("jev", `{"answers":{"severity":{"type":"score","score":0.2}}}`))
+	provider := newSequenceProvider(
+		llm.GenerateResult{
+			ToolCalls:    []llm.ToolCall{{ID: "c1", Name: "jev", Arguments: map[string]interface{}{"query": "x"}}},
+			FinishReason: "tool_calls",
+		},
+		// Agent misreports BLOCK even though Jev's own score (0.2) is well
+		// under the 0.7 threshold — the mechanical gate, not the agent's
+		// self-report, must be what actually decides this.
+		llm.GenerateResult{Response: "BLOCK", FinishReason: "stop"},
+	)
+	ag := NewAgent(&config.AgentDefinition{Name: "worker", Role: "worker", Tools: []string{"jev"}}, provider, reg, bus, nil)
+	o := newTestOrchestrator(nil, map[string]*Agent{"worker": ag})
+	o.eventBus = bus
+
+	step := config.PipelineStep{
+		Name: "gate", Agent: "worker", Task: "triage",
+		RequireToolCall: &config.RequireToolCallGate{Tool: "jev", OutputJSONPath: "answers.severity.score", MinValue: minVal(0.7)},
+	}
+	pctx := newPipelineContext("q")
+
+	_, err := o.executeStep(context.Background(), step, pctx)
+	if err == nil {
+		t.Fatal("expected the gate to fail the step: Jev's own score (0.2) never cleared min_value (0.7)")
+	}
+	if !strings.Contains(err.Error(), "gate") || !strings.Contains(err.Error(), "jev") {
+		t.Errorf("expected error to name the step and the tool, got: %v", err)
+	}
+}
+
+func TestExtractJSONPathFloat(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		path    string
+		want    float64
+		wantErr bool
+	}{
+		{"noul nested path", `{"answers":{"is_urgent":{"noul":0.95}}}`, "answers.is_urgent.noul", 0.95, false},
+		{"score nested path", `{"answers":{"severity":{"score":1.05}}}`, "answers.severity.score", 1.05, false},
+		{"malformed json", `not json`, "a.b", 0, true},
+		{"missing key", `{"a":{"b":1}}`, "a.c", 0, true},
+		{"non-object intermediate", `{"a":1}`, "a.b", 0, true},
+		{"non-numeric leaf", `{"a":{"b":"x"}}`, "a.b", 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := extractJSONPathFloat(tt.raw, tt.path)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("extractJSONPathFloat(%q, %q) error = %v, wantErr %v", tt.raw, tt.path, err, tt.wantErr)
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Errorf("extractJSONPathFloat(%q, %q) = %v, want %v", tt.raw, tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCheckRequireToolCall_ValueBound_RunnerWithoutOutputReporter_FailsClosed
+// mirrors TestCheckRequireToolCall_RunnerWithoutReporter_FailsClosed for the
+// output-value path: a Runner that can report calls but not their outputs
+// must fail closed when the gate needs a value check, not silently pass.
+type toolCallOnlyReporterRunner struct{ toolCallReporterlessRunner }
+
+func (toolCallOnlyReporterRunner) ToolCallsForRun(uint64) []llm.ToolCall { return nil }
+
+func TestCheckRequireToolCall_ValueBound_RunnerWithoutOutputReporter_FailsClosed(t *testing.T) {
+	step := config.PipelineStep{
+		Name:            "s",
+		RequireToolCall: &config.RequireToolCallGate{Tool: "jev", OutputJSONPath: "answers.x.score", MinValue: minVal(0.5)},
+	}
+	err := checkRequireToolCall(step, toolCallOnlyReporterRunner{}, 0)
+	if err == nil {
+		t.Fatal("expected fail-closed (non-nil error) for a Runner without ToolOutputReporter when the gate needs a value check")
+	}
+	if !strings.Contains(err.Error(), "s") || !strings.Contains(err.Error(), "jev") {
+		t.Errorf("error should name the step and required tool, got: %v", err)
+	}
+}
+
+// ============================================================
 // require_tool_call argument-matching tests: matching against ANY
 // string-valued argument let an unrelated field like
 // a path or metadata value satisfy command_contains without the actual

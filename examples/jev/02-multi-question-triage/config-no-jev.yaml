@@ -62,4 +62,4 @@ agents:
       Do not call run_command; it is declared only to keep this example's sandbox
       and tool conventions aligned with the other Jev examples.
     settings:
-      max_iterations: 1
+      max_iterations: 3

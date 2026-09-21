@@ -65,7 +65,7 @@ agents:
       Output exactly PASS if it is complete and acceptable; otherwise output
       exactly FAIL. Output no other text.
     settings:
-      max_iterations: 1
+      max_iterations: 2
 
 orchestrator:
   name: CompletionPipeline

@@ -1,0 +1,123 @@
+# 08 — Enforced Pipeline Gate (Jev)
+#
+# Every prior example in this directory treats Jev's verdict as a judgment
+# aid: an agent is instructed to call it and act on the answer, but nothing
+# stops the agent from ignoring that instruction or misreporting what Jev
+# actually said (07's README says this plainly: "the Jev check is a
+# judgment aid... not a hard runtime gate enforced by Rakitsu itself — an
+# agent could still ignore it").
+#
+# This example closes that gap using rakitsu's own Pipeline mechanism.
+# `require_tool_call` already mechanically verifies a step's agent invoked
+# a named tool, instead of trusting the agent's self-report (see 03). That
+# gate can also go one step further: `output_json_path` +
+# `min_value`/`max_value` check the tool's ACTUAL JSON response, not just
+# that it was called. Here, the "merge" step only runs at all if the
+# "safety-check" step's own Jev call returned a noul probability >= 0.5 —
+# checked by rakitsu's pipeline code directly against Jev's real API
+# response, not by trusting SafetyChecker's own text output.
+#
+# Usage — safe finding (gate passes, both steps run):
+#   export TYPESAFE_API_KEY=...
+#   rakitsu run examples/jev/08-enforced-pipeline-gate/config.yaml \
+#     "Change: renamed a private helper function for clarity, no behavior change." \
+#     --trace
+#
+# Usage — unsafe finding (gate fails, pipeline aborts before "merge" runs):
+#   rakitsu run examples/jev/08-enforced-pipeline-gate/config.yaml \
+#     "Change: the /admin/reset-password endpoint does not verify the \
+#      caller's session before issuing a new password, so any authenticated \
+#      user can reset any other user's password." \
+#     --trace
+#
+# Runs keyless against local Ollama by default (https://ollama.com):
+#   ollama pull llama3.1:8b
+# Prefer a cloud model? Uncomment a provider under settings.providers below.
+
+name: Enforced Pipeline Gate
+version: "1.0"
+description: A Jev noul verdict mechanically gates whether a later pipeline step is even allowed to run.
+
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://localhost:11434/v1
+    # openai:
+    #   type: openai
+    #   api_key: ${OPENAI_API_KEY}
+    # anthropic:
+    #   type: anthropic
+    #   api_key: ${ANTHROPIC_API_KEY}
+  defaults:
+    model: llama3.1:8b
+    temperature: 0.3
+    max_tokens: 4096
+  execution:
+    max_iterations: 6
+    timeout_seconds: 120
+
+tools:
+  - name: jev
+    type: jev
+    description: Ask TypeSafe AI's Jev model whether a change is safe to merge.
+
+skills:
+  # Shared Jev usage rules — see examples/jev/01-command-safety-gate's
+  # config.yaml comment for why, and examples/jev/_shared/jev-usage-skill.md
+  # for the content.
+  - name: jev-usage
+    description: General rules for calling the jev tool correctly.
+    tools: [jev]
+    prompt_template: file:../_shared/jev-usage-skill.md
+
+agents:
+  - name: SafetyChecker
+    role: worker
+    system_prompt: |
+      You check whether a described change is safe to merge. Call jev
+      exactly once with:
+        state: the change description, verbatim
+        questions:
+          is_safe_to_merge: { type: noul, instructions:
+            "Is this change safe to merge as-is, with no security or
+             correctness concerns that would require blocking it?" }
+
+      Report Jev's probability and your own one-line read of it. Your
+      report is informational only — the pipeline step itself decides
+      pass/fail mechanically from Jev's actual response, not from what you
+      write here.
+    tools:
+      - jev
+    skills:
+      - jev-usage
+    settings:
+      max_iterations: 2
+
+  - name: Merger
+    role: worker
+    system_prompt: |
+      The safety check already passed (this step only runs if it did).
+      Respond with exactly: Merged.
+    settings:
+      max_iterations: 1
+
+orchestrator:
+  name: GatedMergePipeline
+  strategy: Pipeline
+  provider: ollama
+  model: llama3.1:8b
+  agents: [SafetyChecker, Merger]
+  pipeline:
+    steps:
+      - name: safety-check
+        agent: SafetyChecker
+        task: Check whether the change described in the original request is safe to merge.
+        require_tool_call:
+          tool: jev
+          output_json_path: answers.is_safe_to_merge.noul
+          min_value: 0.5
+      - name: merge
+        agent: Merger
+        task: Merge the change.

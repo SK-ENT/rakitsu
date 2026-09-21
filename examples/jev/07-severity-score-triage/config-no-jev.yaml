@@ -1,0 +1,56 @@
+# 07b — Severity Score Triage, WITHOUT Jev (comparison baseline)
+#
+# Same triage agent as config.yaml, but asked to produce its own severity
+# score in free text instead of calling Jev. Run the same prompt against
+# both to compare — see README.md.
+#
+# Usage:
+#   rakitsu run examples/jev/07-severity-score-triage/config-no-jev.yaml \
+#     "Finding: the /admin/reset-password endpoint does not verify the \
+#      caller's session before issuing a new password, so any authenticated \
+#      user can reset any other user's password."
+
+name: Severity Score Triage (no Jev, for comparison)
+version: "1.0"
+description: Same triage agent as config.yaml, but scores severity itself instead of calling Jev.
+
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://localhost:11434/v1
+    # openai:
+    #   type: openai
+    #   api_key: ${OPENAI_API_KEY}
+    # anthropic:
+    #   type: anthropic
+    #   api_key: ${ANTHROPIC_API_KEY}
+  defaults:
+    model: llama3.1:8b
+    temperature: 0.3
+    max_tokens: 4096
+  execution:
+    max_iterations: 6
+    timeout_seconds: 120
+
+agents:
+  - name: SeverityTriage
+    role: worker
+    system_prompt: |
+      You triage a review finding or incident description supplied by the
+      user. Score how severe it is yourself, from 0.0 (cosmetic, no real
+      consequence) to 1.0 (critical — data loss, security breach, or
+      outage). Judge impact and likelihood together, not just how alarming
+      the wording sounds.
+
+      Map your own score to an action band:
+        >= 0.7  -> BLOCK: must be fixed before merge/deploy
+        0.3-0.69 -> WARN: needs human review, not automatically blocking
+        <  0.3  -> INFO: worth noting, not urgent
+
+      Report: the severity score, the action band, and a one-line reason
+      referencing the specific finding — not a generic restatement of the
+      band's definition.
+    settings:
+      max_iterations: 3
