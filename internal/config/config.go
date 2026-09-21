@@ -1339,6 +1339,25 @@ func validatePipelineSteps(steps []PipelineStep, runners map[string]bool, prefix
 					Message: fmt.Sprintf("step %q has max_value NaN, which would make the gate accept every value", s.Name),
 				})
 			}
+			// An infinite bound defeats the gate the same way NaN does:
+			// `value < -Inf` and `value > +Inf` are always false for any
+			// finite value, so `min_value: -.inf` or `max_value: .inf`
+			// makes that side of the check a no-op while the config still
+			// looks fully configured. There's no legitimate use for this —
+			// omitting the field entirely (nil) already means "don't check
+			// this side" — so reject explicitly, same as the NaN case.
+			if gate.MinValue != nil && math.IsInf(*gate.MinValue, 0) {
+				*errs = append(*errs, &ValidationError{
+					Field:   path + ".require_tool_call.min_value",
+					Message: fmt.Sprintf("step %q has min_value %v, which would make the gate accept every value on this side — omit min_value instead if no lower bound is wanted", s.Name, *gate.MinValue),
+				})
+			}
+			if gate.MaxValue != nil && math.IsInf(*gate.MaxValue, 0) {
+				*errs = append(*errs, &ValidationError{
+					Field:   path + ".require_tool_call.max_value",
+					Message: fmt.Sprintf("step %q has max_value %v, which would make the gate accept every value on this side — omit max_value instead if no upper bound is wanted", s.Name, *gate.MaxValue),
+				})
+			}
 		}
 	}
 }

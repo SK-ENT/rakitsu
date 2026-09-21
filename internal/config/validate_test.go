@@ -202,6 +202,53 @@ func TestValidate_RequireToolCall_NaNBound_Rejected(t *testing.T) {
 	}
 }
 
+// TestValidate_RequireToolCall_InfBound_Rejected is the regression test for
+// a real finding caught by automated review: an infinite min_value/
+// max_value defeats the gate the same way NaN does — `value < -Inf` and
+// `value > +Inf` are always false for any finite value, so `min_value:
+// -.inf` or `max_value: .inf` makes that side of the check a no-op while
+// the config still looks fully configured. Must be rejected explicitly.
+func TestValidate_RequireToolCall_InfBound_Rejected(t *testing.T) {
+	posInf := math.Inf(1)
+	negInf := math.Inf(-1)
+	valid := 0.5
+	tests := []struct {
+		name string
+		gate *RequireToolCallGate
+	}{
+		{"+Inf max_value", &RequireToolCallGate{Tool: "jev", OutputJSONPath: "a.b", MaxValue: &posInf}},
+		{"-Inf min_value", &RequireToolCallGate{Tool: "jev", OutputJSONPath: "a.b", MinValue: &negInf}},
+		{"-Inf min_value with valid max_value", &RequireToolCallGate{Tool: "jev", OutputJSONPath: "a.b", MinValue: &negInf, MaxValue: &valid}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{
+				Agents: []AgentDefinition{{Name: "Worker"}},
+				Orchestrator: &OrchestratorConfig{
+					Name:   "Lead",
+					Agents: []string{"Worker"},
+					Pipeline: &PipelineConfig{
+						Steps: []PipelineStep{{Name: "s1", Agent: "Worker", RequireToolCall: tt.gate}},
+					},
+				},
+			}
+			errs := cfg.Validate()
+			if len(errs) == 0 {
+				t.Fatal("expected an error rejecting the infinite bound, got none")
+			}
+			found := false
+			for _, e := range errs {
+				if strings.Contains(e.Message, "accept every value") {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("expected an error message about accepting every value, got: %v", errs)
+			}
+		})
+	}
+}
+
 func TestValidate_RequireToolCall_FiniteBounds_NoError(t *testing.T) {
 	min, max := 0.3, 0.7
 	cfg := Config{

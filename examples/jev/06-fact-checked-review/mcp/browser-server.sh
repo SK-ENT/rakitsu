@@ -71,6 +71,18 @@
 #    unsupervised CI (not just a manually-run example), that specific
 #    delta needs its own explicit go-ahead, not inherited from the
 #    earlier answer.
+#
+# 4. Specific instance of point 3: this wrapper has no network allowlist,
+#    so a search result a malicious or prompt-injection-controlled page
+#    could point the agent at (e.g. `http://127.0.0.1:<port>` or a cloud
+#    metadata endpoint like `169.254.169.254`) is reachable the same as
+#    any public URL — the browser's file:// block (point 1) doesn't cover
+#    this, it's a different access path. No allowlist/proxy is
+#    implemented here; running this example means accepting that an
+#    untrusted search result can cause SSRF-style access to whatever the
+#    OS user's network can already reach. Worth real mitigation (an
+#    egress allowlist or proxy) before any unsupervised/CI use — not
+#    attempted here, this is a standalone example, not a hardened service.
 
 set -e
 
