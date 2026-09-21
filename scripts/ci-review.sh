@@ -118,7 +118,9 @@ $diff_content"
 TMP_STDERR=$(mktemp)
 FINDINGS_TXT=$(mktemp)
 PREAMBLE_TXT=$(mktemp)
-trap 'rm -f "$TMP_STDERR" "$FINDINGS_TXT" "$PREAMBLE_TXT"' EXIT
+PARSED_JSON=$(mktemp)
+DIFF_TXT=$(mktemp)
+trap 'rm -f "$TMP_STDERR" "$FINDINGS_TXT" "$PREAMBLE_TXT" "$PARSED_JSON" "$DIFF_TXT"' EXIT
 
 set +e
 raw_output=$("$RAKITSU_BIN" run "$CONFIG" "$query" --no-hub 2>"$TMP_STDERR")
@@ -149,4 +151,11 @@ fi
 
 preamble > "$PREAMBLE_TXT"
 printf '%s\n' "$findings" > "$FINDINGS_TXT"
-python3 "$SCRIPT_DIR/parse-findings.py" "$PREAMBLE_TXT" "$FINDINGS_TXT" > "$OUTPUT"
+python3 "$SCRIPT_DIR/parse-findings.py" "$PREAMBLE_TXT" "$FINDINGS_TXT" > "$PARSED_JSON"
+
+# Per-finding Jev verification pass. Fails open on its own —
+# see scripts/jev-verify-findings.py's docstring — no TYPESAFE_API_KEY set,
+# or any Jev call error, reprints $PARSED_JSON unchanged. Never blocks the
+# review on Jev being reachable.
+printf '%s' "$diff_content" > "$DIFF_TXT"
+python3 "$SCRIPT_DIR/jev-verify-findings.py" "$PARSED_JSON" "$DIFF_TXT" > "$OUTPUT"

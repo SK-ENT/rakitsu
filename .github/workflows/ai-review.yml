@@ -185,6 +185,10 @@ jobs:
         if: steps.resolve.outputs.skip != 'true'
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # Per-finding verification pass (scripts/jev-verify-findings.py)
+          # — fails open if this secret isn't set, so it's safe to leave
+          # unconfigured; findings just won't get verified.
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
         run: |
           scripts/ci-review.sh \
             "${{ steps.mode.outputs.mode }}" \
