@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	"github.com/google/uuid"
 )
 
 // SessionStatus represents the final state of a session.
@@ -317,6 +317,10 @@ func (s *SessionStore) readIndex() ([]SessionMeta, error) {
 	return sessions, nil
 }
 
+func (s *SessionStore) lockPath() string {
+	return s.indexPath() + ".lock"
+}
+
 func (s *SessionStore) writeIndex(sessions []SessionMeta) error {
 	data, err := json.MarshalIndent(sessions, "", "  ")
 	if err != nil {
@@ -326,9 +330,22 @@ func (s *SessionStore) writeIndex(sessions []SessionMeta) error {
 	// truncates the file before writing the new content, so a reader
 	// landing mid-write (even one holding s.mu, briefly, between the
 	// truncate and the write completing) could observe a corrupt file.
+	//
+	// The tmp filename includes pid+timestamp rather than a fixed
+	// ".tmp" suffix: two separate rakitsu processes both writing the
+	// index around the same time (rakitsu serve + rakitsu run is the
+	// documented workflow) previously raced to the *same* tmp path, and
+	// their writes to that one shared file could interleave before
+	// either rename happened — producing exactly the kind of torn,
+	// invalid-JSON sessions.json this was found reproducing in practice
+	// (a valid array immediately followed by a fragment of another
+	// entry). A unique tmp name per writer removes that shared target
+	// entirely, independent of the lockFile call in appendToIndex/
+	// updateIndex below.
 	path := s.indexPath()
-	tmp := path + ".tmp"
+	tmp := fmt.Sprintf("%s.tmp.%d.%d", path, os.Getpid(), time.Now().UnixNano())
 	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		os.Remove(tmp)
 		return fmt.Errorf("write index: write tmp: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
@@ -338,31 +355,43 @@ func (s *SessionStore) writeIndex(sessions []SessionMeta) error {
 	return nil
 }
 
+// appendToIndex and updateIndex each read-modify-write the entire index.
+// SessionStore's sync.Mutex only serializes goroutines within this one
+// process; a second rakitsu process doing the same read-modify-write around
+// the same time would otherwise see a stale read and clobber the first
+// process's write (a lost update — a session silently vanishing from
+// `rakitsu sessions`). lockFile takes a cross-process advisory lock around
+// the whole cycle so concurrent processes serialize instead of racing.
+
 func (s *SessionStore) appendToIndex(meta SessionMeta) error {
-	sessions, err := s.readIndex()
-	if err != nil {
-		return err
-	}
-	sessions = append(sessions, meta)
-	return s.writeIndex(sessions)
+	return lockFile(s.lockPath(), func() error {
+		sessions, err := s.readIndex()
+		if err != nil {
+			return err
+		}
+		sessions = append(sessions, meta)
+		return s.writeIndex(sessions)
+	})
 }
 
 func (s *SessionStore) updateIndex(meta SessionMeta) error {
-	sessions, err := s.readIndex()
-	if err != nil {
-		return err
-	}
-
-	for i := range sessions {
-		if sessions[i].ID == meta.ID {
-			sessions[i] = meta
-			return s.writeIndex(sessions)
+	return lockFile(s.lockPath(), func() error {
+		sessions, err := s.readIndex()
+		if err != nil {
+			return err
 		}
-	}
 
-	// Not found — append (shouldn't happen but safe fallback)
-	sessions = append(sessions, meta)
-	return s.writeIndex(sessions)
+		for i := range sessions {
+			if sessions[i].ID == meta.ID {
+				sessions[i] = meta
+				return s.writeIndex(sessions)
+			}
+		}
+
+		// Not found — append (shouldn't happen but safe fallback)
+		sessions = append(sessions, meta)
+		return s.writeIndex(sessions)
+	})
 }
 
 // DeleteSession removes a session, its JSONL file, checkpoint file, and chat
@@ -425,19 +454,25 @@ func (s *SessionStore) DeleteSession(id string) error {
 		}
 	}
 
-	sessions, err := s.readIndex()
-	if err != nil {
-		return err
-	}
-
-	filtered := sessions[:0]
-	for _, sess := range sessions {
-		if sess.ID != id {
-			filtered = append(filtered, sess)
+	// Same cross-process race as appendToIndex/updateIndex: this is a
+	// read-modify-write of the whole index, so it needs the same
+	// lockFile serialization against a concurrent process's own
+	// appendToIndex/updateIndex/DeleteSession call.
+	return lockFile(s.lockPath(), func() error {
+		sessions, err := s.readIndex()
+		if err != nil {
+			return err
 		}
-	}
 
-	return s.writeIndex(filtered)
+		filtered := sessions[:0]
+		for _, sess := range sessions {
+			if sess.ID != id {
+				filtered = append(filtered, sess)
+			}
+		}
+
+		return s.writeIndex(filtered)
+	})
 }
 
 // --- chat tree helpers ---

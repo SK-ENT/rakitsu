@@ -771,3 +771,69 @@ func TestWriteEvent_RedactsToolCallArguments(t *testing.T) {
 		t.Fatalf("expected a redacted token value in the session JSONL, got: %s", content)
 	}
 }
+
+// TestSessionStore_MultipleInstancesConcurrentWrites_IndexStaysValidAndComplete
+// regression-guards the cross-process race: SessionStore's sync.Mutex only
+// serializes goroutines within one *SessionStore instance, but two separate
+// rakitsu processes (rakitsu serve + rakitsu run is the documented workflow)
+// each construct their own instance pointing at the same ~/.rakitsu/sessions
+// directory. Before the lockFile fix, that let two instances race past each
+// other in appendToIndex/updateIndex's read-modify-write, losing updates, and
+// let writeIndex's shared ".tmp" path let two instances' writes interleave on
+// the same file — reproduced in practice as sessions.json growing to 16MB and
+// ending in a valid JSON array immediately followed by a truncated fragment
+// of another entry ("]tal_tokens": 0, ..."), which readIndex then reports as
+// "corrupt sessions index: invalid character 't' after top-level value".
+//
+// Uses N independent *SessionStore values sharing one directory (not
+// goroutines sharing one instance) specifically so s.mu provides no
+// protection at all here — only lockFile's cross-process flock does.
+func TestSessionStore_MultipleInstancesConcurrentWrites_IndexStaysValidAndComplete(t *testing.T) {
+	dir := t.TempDir()
+
+	const n = 20
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			// A fresh SessionStore per goroutine, same dir: each has its own
+			// sync.Mutex, so this only exercises the cross-process lockFile
+			// path, not the in-process one already covered above.
+			inst := &SessionStore{dir: dir}
+			if err := inst.StartSession(SessionMeta{Name: fmt.Sprintf("concurrent-%d", i), Query: "q"}); err != nil {
+				t.Errorf("StartSession(%d): %v", i, err)
+				return
+			}
+			inst.EndSession(SessionSuccess)
+		}(i)
+	}
+	wg.Wait()
+
+	// Read the index file directly (not through readIndex, so a parse
+	// failure here is unambiguous and not conflated with any other code
+	// path) and confirm it's valid JSON with exactly n entries.
+	data, err := os.ReadFile(filepath.Join(dir, "sessions.json"))
+	if err != nil {
+		t.Fatalf("read sessions.json: %v", err)
+	}
+	var sessions []SessionMeta
+	if err := json.Unmarshal(data, &sessions); err != nil {
+		t.Fatalf("sessions.json is not valid JSON after %d concurrent instances: %v\ncontent: %s", n, err, data)
+	}
+	if len(sessions) != n {
+		t.Errorf("sessions.json has %d entries, want %d (a lost update during concurrent cross-instance writes would under-count)", len(sessions), n)
+	}
+
+	// No stray unique-named tmp files left behind (writeIndex's tmp name
+	// now includes pid+timestamp per writer — confirm cleanup still works).
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.Contains(e.Name(), ".tmp.") {
+			t.Errorf("stray tmp file left behind: %s", e.Name())
+		}
+	}
+}
