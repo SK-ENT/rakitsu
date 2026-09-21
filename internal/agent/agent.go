@@ -572,6 +572,20 @@ func (a *Agent) RunWithAttachments(ctx context.Context, query string, history []
 		history = append(history, llm.Message{Role: "user", Content: blocks})
 	}
 
+	// Carry this turn's query (and whether it had attachments) in ctx (not
+	// as mutable state on any shared Tool instance) so a tool's Execute can
+	// reference it directly instead of the LLM having to retype it as a
+	// tool-call argument — see internal/tools/jev/tool.go for the
+	// motivating case (a large `state` argument truncating mid-generation).
+	// The attachments flag lets a tool refuse this fallback when it would
+	// be incomplete: query alone omits attachment content entirely.
+	// Reassigning the local `ctx` here, before the ReAct loop and any
+	// tool-call goroutines start, means every downstream use of ctx in
+	// this Run carries it; a field on the Tool itself would instead race
+	// across concurrent Runs sharing the same registered Tool instance
+	// (e.g. rakitsu serve, or parallel sub-agents).
+	ctx = tools.WithTurnQuery(ctx, query, len(attachments) > 0)
+
 	// Capture the settled transcript on every exit path. A deferred closure
 	// reads `history` at return time, so it sees whatever the ReAct loop,
 	// rollback, and reflection left behind — no per-return-site plumbing.

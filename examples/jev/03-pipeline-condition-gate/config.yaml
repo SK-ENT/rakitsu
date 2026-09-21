@@ -1,0 +1,96 @@
+# 03 — Pipeline Condition Gate (Jev)
+#
+# A Pipeline loop repeats work until JevGate returns PASS. The runtime accepts
+# a condition result only when it begins with PASS, so JevGate emits exactly
+# PASS or FAIL after one typed Jev classification.
+
+name: Pipeline Condition Gate
+version: "1.0"
+description: Pipeline loop whose condition agent turns a Jev typed verdict into an exact PASS or FAIL marker.
+
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://localhost:11434/v1
+    # openai:
+    #   type: openai
+    #   api_key: ${OPENAI_API_KEY}
+    # anthropic:
+    #   type: anthropic
+    #   api_key: ${ANTHROPIC_API_KEY}
+  defaults:
+    model: llama3.1:8b
+    temperature: 0.3
+    max_tokens: 4096
+  execution:
+    max_iterations: 8
+    timeout_seconds: 120
+  allowed_commands:
+    - sh
+    - find
+    - grep
+    - cat
+    - ls
+    - rm
+    - mkdir
+    - touch
+
+tools:
+  - name: run_command
+    type: cli
+    description: Execute a shell command
+    command: "sh -c '{{command}}'"
+    parameters:
+      command: { type: string, description: "Shell command to run", required: true }
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 15
+
+  - name: jev
+    type: jev
+    description: Ask TypeSafe AI's Jev model for a typed completion verdict.
+
+agents:
+  - name: Worker
+    role: worker
+    system_prompt: |
+      Complete the requested work. When prior feedback is present, revise the
+      work to address it. Return only the work product.
+    settings:
+      max_iterations: 1
+
+  - name: JevGate
+    role: worker
+    system_prompt: |
+      You are a pipeline condition agent. Your only tool is jev. You MUST call
+      it exactly once with the complete task context supplied to you as state:
+        completion: { type: choice, instructions: "Is the work complete and acceptable for the original request?",
+                      criteria: { pass: "Complete and acceptable", fail: "Incomplete, incorrect, or needs another iteration" } }
+
+      If Jev's completion choice is pass, output exactly PASS. Otherwise output
+      exactly FAIL. Output no other text.
+    tools:
+      - jev
+    settings:
+      max_iterations: 2
+
+orchestrator:
+  name: CompletionPipeline
+  strategy: Pipeline
+  provider: ollama
+  model: llama3.1:8b
+  agents: [Worker, JevGate]
+  pipeline:
+    steps:
+      - name: complete-work
+        type: loop
+        max_iterations: 3
+        condition_agent: JevGate
+        condition_prompt: Evaluate the original request and the work from the latest iteration. Return the required pipeline marker.
+        steps:
+          - name: work
+            agent: Worker
+            task: Complete the original request. If prior output shows an incomplete result, improve it.

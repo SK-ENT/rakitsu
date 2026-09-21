@@ -18,6 +18,7 @@ import (
 	a2atool "github.com/SK-ENT/rakitsu/internal/tools/a2a"
 	clitool "github.com/SK-ENT/rakitsu/internal/tools/cli"
 	fstool "github.com/SK-ENT/rakitsu/internal/tools/fs"
+	jevtool "github.com/SK-ENT/rakitsu/internal/tools/jev"
 	mcptool "github.com/SK-ENT/rakitsu/internal/tools/mcp"
 	memtool "github.com/SK-ENT/rakitsu/internal/tools/memory"
 	"github.com/SK-ENT/rakitsu/internal/tools/sessionmsg"
@@ -313,6 +314,8 @@ func (b *runtimeBuilder) buildAgentToolRegistryDepth(def *config.AgentDefinition
 			reg.RegisterTool(clitool.NewTool(inline, b.cfg.Settings.AllowedCommands))
 		case "fs":
 			reg.RegisterTool(fstool.NewTool(inline))
+		case "jev":
+			reg.RegisterTool(jevtool.NewTool(inline))
 		case "mcp_server":
 			mcpTools, closer, err := mcptool.NewMCPServer(b.ctx, inline)
 			if err != nil {

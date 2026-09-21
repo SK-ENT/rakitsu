@@ -1,0 +1,65 @@
+# 02b — Multi-Question Triage, WITHOUT Jev (comparison baseline)
+#
+# Same triage task as config.yaml, but one LLM answers all four questions in
+# free text instead of receiving typed Jev answers.
+
+name: Multi-Question Triage (no Jev, for comparison)
+version: "1.0"
+description: Review a diff or PR description by asking the main LLM four free-text questions.
+
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://localhost:11434/v1
+    # openai:
+    #   type: openai
+    #   api_key: ${OPENAI_API_KEY}
+    # anthropic:
+    #   type: anthropic
+    #   api_key: ${ANTHROPIC_API_KEY}
+  defaults:
+    model: llama3.1:8b
+    temperature: 0.3
+    max_tokens: 4096
+  execution:
+    max_iterations: 8
+    timeout_seconds: 120
+  allowed_commands:
+    - sh
+    - find
+    - grep
+    - cat
+    - ls
+    - rm
+    - mkdir
+    - touch
+
+tools:
+  - name: run_command
+    type: cli
+    description: Execute a shell command
+    command: "sh -c '{{command}}'"
+    parameters:
+      command: { type: string, description: "Shell command to run", required: true }
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 15
+
+agents:
+  - name: ChangeTriage
+    role: worker
+    system_prompt: |
+      You review the diff or PR description supplied by the user. Answer all of
+      these questions in one concise free-text review:
+      1. Does it touch authentication, authorization, credential handling, or security-sensitive code?
+      2. Does it expose, log, hard-code, or otherwise leak a secret or credential?
+      3. Is it a breaking change to a public API or externally used contract?
+      4. What is the overall risk category: safe, needs-review, or blocking?
+
+      Do not call run_command; it is declared only to keep this example's sandbox
+      and tool conventions aligned with the other Jev examples.
+    settings:
+      max_iterations: 1

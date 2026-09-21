@@ -1,0 +1,96 @@
+# 01 — Command Safety Gate (Jev)
+#
+# One agent with a shell tool AND a Jev structured-decision tool. Before
+# running any command, the agent is instructed to ask Jev "is this
+# destructive?" and "what category is it?" — two typed questions answered
+# in a single fast, cheap call — and to refuse if Jev flags it as risky,
+# rather than send every command through a full LLM safety-reasoning pass.
+#
+# See config-no-jev.yaml for the same agent without the Jev check, and
+# README.md for an honest with-vs-without comparison.
+#
+# Usage:
+#   export TYPESAFE_API_KEY=...
+#   rakitsu run examples/jev/01-command-safety-gate/config.yaml \
+#     "Delete all files in /tmp without asking"
+#
+# Runs keyless against local Ollama by default (https://ollama.com):
+#   ollama pull llama3.1:8b
+# Prefer a cloud model? Uncomment a provider under settings.providers below.
+
+name: Command Safety Gate
+version: "1.0"
+description: Shell agent that gates risky commands through a Jev typed-decision check before running them.
+
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://localhost:11434/v1
+    # Alternatives — uncomment one and set default_provider + defaults.model above:
+    # openai:
+    #   type: openai
+    #   api_key: ${OPENAI_API_KEY}
+    # anthropic:
+    #   type: anthropic
+    #   api_key: ${ANTHROPIC_API_KEY}
+  defaults:
+    model: llama3.1:8b
+    temperature: 0.3
+    max_tokens: 4096
+  execution:
+    max_iterations: 8
+    timeout_seconds: 120
+  allowed_commands:
+    - sh  # required by run_command's sh -c wrapper
+    - find
+    - grep
+    - cat
+    - ls
+    - rm
+    - mkdir
+    - touch
+
+tools:
+  - name: run_command
+    type: cli
+    description: Execute a shell command
+    # SECURITY NOTE: this runs whatever shell syntax the agent produces —
+    # it's a footgun fence, not a sandbox boundary (see examples/single/
+    # 02-single-agent). The Jev gate below is a judgment aid for the
+    # agent, not a substitute for real sandboxing.
+    command: "sh -c '{{command}}'"
+    parameters:
+      command: { type: string, description: "Shell command to run", required: true }
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 15
+
+  - name: jev
+    type: jev
+    description: Ask TypeSafe AI's Jev model typed questions about a proposed action before taking it.
+
+agents:
+  - name: SafeShell
+    role: worker
+    system_prompt: |
+      You are a shell assistant. Before calling run_command with any command,
+      you MUST first call jev with:
+        state: the exact command you're about to run, plus what the user asked for
+        questions:
+          risky: { type: noul, instructions: "Would this command destroy or irreversibly modify data?" }
+          category: { type: choice, instructions: "Classify the command.",
+                      criteria: { read: "reads without modifying", write: "creates or modifies data",
+                                  destroy: "deletes or irreversibly modifies data" } }
+
+      If jev's "risky" answer is above 0.5, or category is "destroy", do NOT run the
+      command. Instead explain to the user why you refused and what you'd need
+      (e.g. explicit confirmation) to proceed. Only call run_command when jev
+      clears the action.
+    tools:
+      - run_command
+      - jev
+    settings:
+      max_iterations: 8

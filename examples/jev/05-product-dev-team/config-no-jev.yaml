@@ -1,0 +1,145 @@
+# 05b — Product Development Team (without Jev)
+
+name: Product Development Team (no Jev, for comparison)
+version: "1.0"
+description: A dynamically routed product-development team using LLM-only gates and triage.
+
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://localhost:11434/v1
+  defaults:
+    model: qwen3-coder:30b
+    temperature: 0.3
+    max_tokens: 4096
+  execution:
+    max_iterations: 8
+    timeout_seconds: 120
+  allowed_commands:
+    - go
+    - python3
+    - node
+    - npm
+    - make
+    - git
+    - find
+    - grep
+    - cat
+    - ls
+  spawn:
+    enabled: true
+    max_concurrent: 3
+    max_depth: 3
+
+tools:
+  - name: read-file
+    type: fs
+    operation: read
+    allowed_paths:
+      - "."
+    description: Read source file contents
+    parameters:
+      path: { type: string, description: "File path to read", required: true }
+
+  - name: write-file
+    type: fs
+    operation: write
+    allowed_paths:
+      - "."
+    description: Write or create a source file
+    parameters:
+      path: { type: string, description: "File path to write", required: true }
+      content: { type: string, description: "File content", required: true }
+
+  - name: run-command
+    type: cli
+    description: Execute a shell command (restricted to allowed_commands)
+    command: "sh -c '{{command}}'"
+    parameters:
+      command: { type: string, description: "Shell command to execute", required: true }
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 30
+
+agents:
+  - name: Planner
+    role: worker
+    system_prompt: |
+      You are a technical planner. Read the request and existing code as needed,
+      then write a short, concrete implementation plan for the new feature.
+    tools: [read-file, run-command]
+    settings: { max_iterations: 3 }
+
+  - name: Developer
+    role: worker
+    system_prompt: |
+      You are a software developer. Implement the plan, fix the reported bug, or
+      revise the implementation based on QA feedback. Read existing code first,
+      make the necessary changes, and follow existing conventions.
+    tools: [read-file, write-file, run-command]
+    settings: { max_iterations: 5 }
+
+  - name: Verifier
+    role: worker
+    system_prompt: |
+      You are a QA engineer. Read the relevant implementation, run the useful
+      tests or commands, and report pass/fail with specific evidence and concerns.
+    tools: [read-file, run-command]
+    settings: { max_iterations: 4 }
+
+  - name: LLMGate
+    role: worker
+    system_prompt: |
+      You are a pipeline condition agent. Judge from the complete Verifier report
+      and task context whether the work is finished and acceptable for the original
+      request. Output exactly PASS if it is finished and acceptable; otherwise
+      output exactly FAIL. Output no other text.
+    settings:
+      max_iterations: 1
+
+  - name: LLMTriage
+    role: worker
+    system_prompt: |
+      You review the diff or change described in the task. Answer all three
+      questions in one concise free-text review:
+      1. Does this change touch authentication, authorization, credential handling,
+         or security-sensitive code?
+      2. Is this a breaking change to a public API or externally used contract?
+      3. What is the overall risk category: routine (no special review needed) or
+         needs-deep-review (flag for careful review)?
+
+      Do not call any tool.
+    settings:
+      max_iterations: 1
+
+  - name: Reviewer
+    role: worker
+    system_prompt: |
+      You review a diff or change. If the task or context mentions a Triage risk
+      verdict, calibrate your review depth to it: needs-deep-review means explicitly
+      focus on the security and breaking-change concern before approving; routine
+      means perform a normal review pass. If no Triage verdict is present, review
+      normally. Output an APPROVE or REQUEST_CHANGES verdict with reasoning.
+    tools: [read-file]
+    settings: { max_iterations: 2 }
+
+  - name: Coordinator
+    role: worker
+    system_prompt: |
+      You coordinate product-development work by reading the user's actual request
+      and deciding which specialists to spawn with spawn_agent. Do not always run
+      the full sequence; choose only the specialists needed and pass their reports
+      into the next tasks.
+
+      For a bug-fix request, spawn Developer, then Verifier, then LLMGate with the
+      Verifier's report. If LLMGate says FAIL, spawn Developer again with that
+      feedback and repeat the Verifier plus LLMGate check, up to 3 rounds total.
+      For a review or QA-only request on an existing diff, spawn LLMTriage then
+      Reviewer, passing LLMTriage's verdict into Reviewer's task. For a full new-
+      feature request, spawn Planner first, then the Developer/Verifier/LLMGate
+      loop, then LLMTriage, then Reviewer. Return a concise synthesis of the
+      specialists' results.
+    settings: { max_iterations: 8 }

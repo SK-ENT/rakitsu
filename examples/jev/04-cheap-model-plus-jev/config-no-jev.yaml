@@ -1,0 +1,62 @@
+# 04b — Cheap Model Plus Jev, WITHOUT Jev (comparison baseline)
+#
+# Same small local model and shell tool as config.yaml, but it judges command
+# risk itself instead of calling Jev.
+
+name: Cheap Model Plus Jev (no Jev, for comparison)
+version: "1.0"
+description: Small local model that judges shell-command risk through its own reasoning.
+
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://localhost:11434/v1
+    # openai:
+    #   type: openai
+    #   api_key: ${OPENAI_API_KEY}
+    # anthropic:
+    #   type: anthropic
+    #   api_key: ${ANTHROPIC_API_KEY}
+  defaults:
+    model: llama3.2:1b
+    temperature: 0.3
+    max_tokens: 4096
+  execution:
+    max_iterations: 8
+    timeout_seconds: 120
+  allowed_commands:
+    - sh
+    - find
+    - grep
+    - cat
+    - ls
+    - rm
+    - mkdir
+    - touch
+
+tools:
+  - name: run_command
+    type: cli
+    description: Execute a shell command
+    command: "sh -c '{{command}}'"
+    parameters:
+      command: { type: string, description: "Shell command to run", required: true }
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 15
+
+agents:
+  - name: SafeShell
+    role: worker
+    system_prompt: |
+      You are a shell assistant. Before calling run_command with any command,
+      use your own judgment to assess whether it would destroy or irreversibly
+      modify data. If it looks destructive, do NOT run it — explain why you
+      refused and what confirmation is needed to proceed.
+    tools:
+      - run_command
+    settings:
+      max_iterations: 8
