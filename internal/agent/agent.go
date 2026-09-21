@@ -124,6 +124,14 @@ type Agent struct {
 	toolCallsByRunMu sync.Mutex
 	toolCallsByRun   map[uint64][]llm.ToolCall
 
+	// toolOutputsByRun mirrors toolCallsByRun but records each call's actual
+	// output (ToolOutput, keyed by the same run ID and sharing
+	// toolCallsByRunMu) so a pipeline gate can check a tool's real JSON
+	// response — e.g. a Jev score — instead of only whether the tool was
+	// called. Populated and released alongside toolCallsByRun; read via
+	// ToolOutputsForRun(id), which also deletes the entry once read.
+	toolOutputsByRun map[uint64][]ToolOutput
+
 	// rollback holds the resolved per-agent runtime self-correction config.
 	// When Enabled, a dead-end iteration is rewound out of history mid-Run.
 	rollback config.RollbackConfig
@@ -1221,6 +1229,12 @@ func (a *Agent) RunWithAttachments(ctx context.Context, query string, history []
 					a.toolCallsByRun = make(map[uint64][]llm.ToolCall)
 				}
 				a.toolCallsByRun[runToolCallID] = append(a.toolCallsByRun[runToolCallID], r.call)
+				if a.toolOutputsByRun == nil {
+					a.toolOutputsByRun = make(map[uint64][]ToolOutput)
+				}
+				a.toolOutputsByRun[runToolCallID] = append(a.toolOutputsByRun[runToolCallID], ToolOutput{
+					CallID: r.call.ID, ToolName: r.call.Name, RawOutput: r.output, Error: errMsg, Duration: r.dur,
+				})
 				a.toolCallsByRunMu.Unlock()
 			}
 
@@ -2108,5 +2122,22 @@ func (a *Agent) ToolCallsForRun(runID uint64) []llm.ToolCall {
 	delete(a.toolCallsByRun, runID)
 	out := make([]llm.ToolCall, len(calls))
 	copy(out, calls)
+	return out
+}
+
+// ToolOutputsForRun returns every tool call's actual output (RawOutput,
+// keyed by CallID) attempted during the Run invocation identified by runID,
+// in call order. See ToolCallsForRun for the run-ID-keying rationale — this
+// mirrors it exactly, sharing the same lock and the same "deleted after
+// being read" lifecycle. Outer orchestrators read this (via the
+// ToolOutputReporter interface) to check a step's tool response against a
+// pipeline gate's value bounds, not just that some call happened.
+func (a *Agent) ToolOutputsForRun(runID uint64) []ToolOutput {
+	a.toolCallsByRunMu.Lock()
+	defer a.toolCallsByRunMu.Unlock()
+	outputs := a.toolOutputsByRun[runID]
+	delete(a.toolOutputsByRun, runID)
+	out := make([]ToolOutput, len(outputs))
+	copy(out, outputs)
 	return out
 }

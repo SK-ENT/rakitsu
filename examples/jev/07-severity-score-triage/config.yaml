@@ -1,0 +1,95 @@
+# 07 — Severity Score Triage (Jev)
+#
+# Examples 01-06 all use Jev's `noul` (yes/no) and `choice` (category)
+# question types. None use `score` — a continuous 0.0-1.0 rating, the
+# right type when "yes/no" is too coarse and a fixed category list is too
+# rigid, e.g. ranking how severe a review finding or incident report is so
+# calling code can pick a threshold-based action.
+#
+# One agent takes a review finding or incident description as the query
+# and asks Jev a single `score` question for its severity, then maps the
+# returned number to an action band (block / warn / info) itself — Jev
+# supplies the number, the agent's own instructions supply the thresholds.
+#
+# See config-no-jev.yaml for the same agent without Jev, and README.md for
+# a with-vs-without comparison.
+#
+# Usage:
+#   export TYPESAFE_API_KEY=...
+#   rakitsu run examples/jev/07-severity-score-triage/config.yaml \
+#     "Finding: the /admin/reset-password endpoint does not verify the \
+#      caller's session before issuing a new password, so any authenticated \
+#      user can reset any other user's password."
+#
+# Runs keyless against local Ollama by default (https://ollama.com):
+#   ollama pull llama3.1:8b
+# Prefer a cloud model? Uncomment a provider under settings.providers below.
+
+name: Severity Score Triage
+version: "1.0"
+description: Score a review finding's severity with Jev's score question type, then triage by threshold.
+
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://localhost:11434/v1
+    # Alternatives — uncomment one and set default_provider + defaults.model above:
+    # openai:
+    #   type: openai
+    #   api_key: ${OPENAI_API_KEY}
+    # anthropic:
+    #   type: anthropic
+    #   api_key: ${ANTHROPIC_API_KEY}
+  defaults:
+    model: llama3.1:8b
+    temperature: 0.3
+    max_tokens: 4096
+  execution:
+    max_iterations: 6
+    timeout_seconds: 120
+
+tools:
+  - name: jev
+    type: jev
+    description: Ask TypeSafe AI's Jev model a typed score question about a proposed change or incident.
+
+skills:
+  # Shared Jev usage rules — see examples/jev/01-command-safety-gate's
+  # config.yaml comment for why, and examples/jev/_shared/jev-usage-skill.md
+  # for the content.
+  - name: jev-usage
+    description: General rules for calling the jev tool correctly.
+    tools: [jev]
+    prompt_template: file:../_shared/jev-usage-skill.md
+
+agents:
+  - name: SeverityTriage
+    role: worker
+    system_prompt: |
+      You triage a review finding or incident description supplied by the
+      user. You MUST call jev exactly once with:
+        state: the finding or incident text, verbatim
+        questions:
+          severity: { type: score, instructions:
+            "Score how severe this is. Judge impact and likelihood
+             together, not just how alarming the wording sounds.",
+            criteria: [ "cosmetic, no real consequence",
+                        "moderate — real but contained impact",
+                        "critical — data loss, security breach, or outage" ] }
+
+      Map Jev's returned severity score to an action band yourself:
+        >= 0.7  -> BLOCK: must be fixed before merge/deploy
+        0.3-0.69 -> WARN: needs human review, not automatically blocking
+        <  0.3  -> INFO: worth noting, not urgent
+
+      Report: the severity score, the action band, and a one-line reason
+      referencing the specific finding — not a generic restatement of the
+      band's definition.
+    tools:
+      - jev
+    skills:
+      - jev-usage
+    settings:
+      max_iterations: 3

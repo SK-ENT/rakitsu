@@ -72,6 +72,17 @@ tools:
     type: jev
     description: Ask TypeSafe AI's Jev model typed questions about a proposed action before taking it.
 
+skills:
+  # Shared Jev usage rules (question-type selection, per-type criteria
+  # shape, state/confidence guidance) — one source of truth referenced by
+  # every example in this directory instead of copy-pasted into each
+  # agent's own system_prompt — see
+  # examples/jev/_shared/jev-usage-skill.md.
+  - name: jev-usage
+    description: General rules for calling the jev tool correctly.
+    tools: [jev]
+    prompt_template: file:../_shared/jev-usage-skill.md
+
 agents:
   - name: SafeShell
     role: worker
@@ -92,5 +103,7 @@ agents:
     tools:
       - run_command
       - jev
+    skills:
+      - jev-usage
     settings:
       max_iterations: 8

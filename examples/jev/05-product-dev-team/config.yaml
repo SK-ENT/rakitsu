@@ -69,6 +69,15 @@ tools:
     type: jev
     description: Ask TypeSafe AI's Jev model typed questions.
 
+skills:
+  # Shared Jev usage rules — see examples/jev/01-command-safety-gate's
+  # config.yaml comment for why, and examples/jev/_shared/jev-usage-skill.md
+  # for the content.
+  - name: jev-usage
+    description: General rules for calling the jev tool correctly.
+    tools: [jev]
+    prompt_template: file:../_shared/jev-usage-skill.md
+
 agents:
   - name: Planner
     role: worker
@@ -107,6 +116,8 @@ agents:
       output exactly FAIL. Output no other text.
     tools:
       - jev
+    skills:
+      - jev-usage
     settings:
       max_iterations: 2
 
@@ -125,6 +136,8 @@ agents:
       call any other tool.
     tools:
       - jev
+    skills:
+      - jev-usage
     settings:
       max_iterations: 3
 

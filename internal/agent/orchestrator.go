@@ -83,6 +83,17 @@ type ToolCallReporter interface {
 	ToolCallsForRun(runID uint64) []llm.ToolCall
 }
 
+// ToolOutputReporter is implemented by Runner-typed workers (currently
+// *Agent) that can report every tool call's actual output made during a
+// specific Run invocation. The Pipeline strategy's require_tool_call step
+// gate uses this — when configured with output_json_path — to check a
+// tool's real JSON response against value bounds, mechanically, instead of
+// trusting the agent's own self-reported summary of what the tool returned.
+// Same run-ID-keying rationale as ToolCallReporter.
+type ToolOutputReporter interface {
+	ToolOutputsForRun(runID uint64) []ToolOutput
+}
+
 // orchestratorRunState holds the fallback/salvage-tracking state scoped to a
 // single runReAct() invocation. This used to live directly on the long-lived
 // *Orchestrator (guarded by lastWorkerMu/salvageMu), which was only correct

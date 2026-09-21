@@ -86,7 +86,18 @@ func (t *Tool) GetParametersSchema() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"type":         map[string]interface{}{"type": "string", "enum": []string{"noul", "choice", "score"}},
 			"instructions": map[string]interface{}{"type": "string"},
-			"criteria":     map[string]interface{}{},
+			// Shape depends on the sibling "type" field above — Jev's API
+			// (not this schema) enforces this, and a mismatch fails at call
+			// time with a 422, not here. Spelled out explicitly after a
+			// live 422 on a dict-shaped `score` criteria (a natural-looking
+			// but wrong shape) went undetected until runtime.
+			"criteria": map[string]interface{}{
+				"description": "Required for choice and score; optional for noul. " +
+					"noul: object with optional \"true\"/\"false\" keys describing each outcome. " +
+					"choice: object mapping each option name to its description (every option needs an entry). " +
+					"score: an ORDERED ARRAY (2-10 elements) of level descriptions, each a plain string or an object such as {\"what\": \"...\", \"examples\": [\"...\"]}. " +
+					"Levels are identified by their position in the array, not by any field inside the element — do not invent a numeric \"score\" field per element.",
+			},
 		},
 		"required": []string{"type", "instructions"},
 	}

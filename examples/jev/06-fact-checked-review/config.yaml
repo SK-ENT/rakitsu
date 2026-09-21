@@ -1,0 +1,124 @@
+# 06 — Fact-Checked Review (Jev + Playwright)
+#
+# Demonstrates the fix for a real gap found in earlier Jev integration work
+# (see this example's README): asking Jev whether a code-review finding's claim is
+# TRUE, with no grounding material beyond the diff, misses false claims
+# that depend on knowledge outside the diff (confirmed live: Jev scored a
+# false Go-build-tag claim as 0.71 "true"). Feeding Jev the missing fact
+# fixed it (same claim, same live API: 0.17 with the fact added). This
+# example automates finding that fact via a real browser search before
+# asking Jev.
+#
+# Usage:
+#   export TYPESAFE_API_KEY=...
+#   export OPENAI_API_KEY=...
+#   rakitsu run examples/jev/06-fact-checked-review/config.yaml \
+#     "Code review finding on internal/store/filelock_unix.go:1: The \`unix\`
+#      build constraint is not a standard Go-supplied build tag, so this
+#      file is excluded on normal Unix builds."
+
+name: Fact-Checked Review
+version: "1.0"
+description: Search the web for grounding material, then ask Jev a fact-grounded question about a code-review finding.
+
+settings:
+  default_provider: openai
+  providers:
+    openai:
+      type: openai
+      api_key: ${OPENAI_API_KEY}
+  execution:
+    max_iterations: 9
+    timeout_seconds: 180
+
+tools:
+  - name: jev
+    type: jev
+    description: Ask TypeSafe AI's Jev model a typed question about a proposed code change.
+
+skills:
+  # Shared Jev usage rules — see examples/jev/01-command-safety-gate's
+  # config.yaml comment for why, and examples/jev/_shared/jev-usage-skill.md
+  # for the content.
+  - name: jev-usage
+    description: General rules for calling the jev tool correctly.
+    tools: [jev]
+    prompt_template: file:../_shared/jev-usage-skill.md
+
+agents:
+  - name: FactChecker
+    role: worker
+    model: gpt-5.6-luna
+    system_prompt: |
+      You check whether a code-review finding's factual claim is actually
+      true, using real web search for grounding — never judge from
+      training memory alone, and never call jev without first searching.
+
+      Steps, in order:
+        1. Read the finding. Identify the one specific, checkable factual
+           claim it depends on (e.g. "is X a real language/library
+           feature", "does Y function exist", "is Z the documented
+           behavior") — not the whole finding, just the underlying fact.
+        2. pw_browser_navigate to a Bing HTML search for that fact:
+           https://www.bing.com/search?q=<url-encoded query>
+        3. pw_browser_evaluate to extract the top few result titles and
+           URLs, e.g.:
+             () => Array.from(document.querySelectorAll('li.b_algo h2 a'))
+               .slice(0,3).map(e => e.innerText + ' -> ' + e.href).join('\n')
+        4. Pick the result to open by relevance, not just domain
+           authority: prefer a result whose TITLE contains the specific
+           term or mechanism the claim is about (e.g. "build constraint",
+           "build tag") over a merely official-looking page on a related
+           but different topic (e.g. an install guide, a release
+           changelog, a general language tour). An official domain with
+           an off-topic title is not a good pick. pw_browser_navigate
+           to that result.
+        5. pw_browser_evaluate to extract readable page text, e.g.:
+             () => document.body.innerText.slice(0, 3000)
+           Before trusting this page, check: does the extracted text
+           actually contain the specific term/mechanism from step 1
+           (not just related words)? If it does not, this page does not
+           actually answer the question, regardless of how official the
+           site looks.
+        6. Call jev exactly once with:
+             state: the finding's claim, plus the extracted reference
+               text from step 5, clearly labeled as "Reference material
+               found via web search:" — and if step 5's check failed
+               (page doesn't mention the specific term), say so
+               explicitly in state instead of presenting the page as if
+               it settles the question, e.g. "Note: this page does not
+               actually mention <term> — treat as weak/no grounding."
+             questions: { grounded_and_true: { type: noul, instructions:
+               "Given the reference material found, is this finding's
+               factual claim actually true?" } }
+        7. Report: the claim, the reference source (title + URL) and
+           whether it actually covered the specific term checked, and
+           Jev's score with a one-line verdict.
+
+      Hard rules:
+        - Never call jev before completing steps 2-5. A jev call with no
+          reference material defeats the entire point of this agent.
+        - At most 2 page navigations total (the search page + one result
+          page). Don't shop around across multiple sources.
+        - If search genuinely turns up nothing relevant, or the one page
+          you open doesn't actually mention the specific term/mechanism
+          being checked, call jev anyway but state plainly in your
+          report that no reference material was found, so a human knows
+          this verdict is unsupported. Do not present an off-topic page
+          as if it grounds the claim.
+    tools:
+      - jev
+    tools_inline:
+      # Microsoft's official Playwright MCP server. See mcp/browser-server.sh
+      # for the notice on why this example uses Playwright specifically
+      # (not this repo's other browser MCP, puppeteer-mcp-server, used by
+      # examples/dogfood/14-full-dev-agent) and what it needs installed.
+      - name: pw
+        type: mcp_server
+        command: examples/jev/06-fact-checked-review/mcp/browser-server.sh
+        transport: stdio
+        timeout_seconds: 60
+    skills:
+      - jev-usage
+    settings:
+      max_iterations: 9

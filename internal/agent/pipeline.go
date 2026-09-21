@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -603,6 +604,9 @@ func releaseToolCallRun(runner Runner, runID uint64) {
 	if reporter, ok := runner.(ToolCallReporter); ok {
 		reporter.ToolCallsForRun(runID)
 	}
+	if reporter, ok := runner.(ToolOutputReporter); ok {
+		reporter.ToolOutputsForRun(runID)
+	}
 }
 
 // checkRequireToolCall mechanically cross-checks a step's require_tool_call
@@ -625,21 +629,130 @@ func checkRequireToolCall(step config.PipelineStep, runner Runner, runID uint64)
 	if !ok {
 		return fmt.Errorf("step %q requires a %q tool call but its runner (%T) doesn't report tool calls, so the gate can't be verified", step.Name, gate.Tool, runner)
 	}
+	wantsValue := gate.OutputJSONPath != ""
+
+	// Always drain toolOutputsByRun when the runner supports it, even for a
+	// gate that doesn't check output values — otherwise entries minted by
+	// NewToolCallRunContext but never read would leak for the life of the
+	// agent (see *Agent's toolOutputsByRun field doc). Only actually
+	// REQUIRED (fail-closed) when the gate needs a value check.
+	var outputs []ToolOutput
+	outputReporter, hasOutputs := runner.(ToolOutputReporter)
+	if hasOutputs {
+		outputs = outputReporter.ToolOutputsForRun(runID)
+	} else if wantsValue {
+		// Drain the call record before returning — NewToolCallRunContext
+		// already allocated this run's entry, and returning here without
+		// reading it back would leak it in toolCallsByRun for the life of
+		// the agent, same as the toolOutputsByRun leak this function
+		// already guards against above.
+		reporter.ToolCallsForRun(runID)
+		return fmt.Errorf("step %q requires a %q tool call's output value but its runner (%T) doesn't report tool outputs, so the gate can't be verified", step.Name, gate.Tool, runner)
+	}
+
+	var sawMatchingCall bool
 	for _, call := range reporter.ToolCallsForRun(runID) {
 		if call.Name != gate.Tool {
 			continue
 		}
-		if gate.CommandContains == "" {
+		if gate.CommandContains != "" {
+			arg, ok := commandArgValue(call, gate.ArgKey)
+			if !ok || !strings.Contains(arg, gate.CommandContains) {
+				continue
+			}
+		}
+		sawMatchingCall = true
+		if !wantsValue {
 			return nil
 		}
-		if arg, ok := commandArgValue(call, gate.ArgKey); ok && strings.Contains(arg, gate.CommandContains) {
-			return nil
+		output, found := outputForCall(outputs, call.ID)
+		if !found {
+			continue
 		}
+		if err := checkOutputValueBounds(output, gate); err != nil {
+			// This call matched by name/command but failed the value bound
+			// — keep scanning in case an earlier or later matching call
+			// (e.g. a retried tool call) satisfies it, only failing the
+			// gate once every matching call has been checked.
+			continue
+		}
+		return nil
 	}
-	if gate.CommandContains != "" {
+	switch {
+	case wantsValue && sawMatchingCall:
+		return fmt.Errorf("step %q required %q's %q value within bounds, no matching call's output satisfied it", step.Name, gate.Tool, gate.OutputJSONPath)
+	case gate.CommandContains != "":
 		return fmt.Errorf("step %q required a %q tool call matching %q, none occurred", step.Name, gate.Tool, gate.CommandContains)
+	default:
+		return fmt.Errorf("step %q required a %q tool call, none occurred", step.Name, gate.Tool)
 	}
-	return fmt.Errorf("step %q required a %q tool call, none occurred", step.Name, gate.Tool)
+}
+
+// outputForCall finds the ToolOutput recorded for a specific call ID.
+// Returns false if the call errored before producing output tracking, or if
+// output tracking and call tracking somehow disagree (shouldn't happen —
+// both are populated together in the same critical section — but a value
+// gate must not silently treat "can't find it" as "passes").
+func outputForCall(outputs []ToolOutput, callID string) (ToolOutput, bool) {
+	for _, o := range outputs {
+		if o.CallID == callID {
+			return o, true
+		}
+	}
+	return ToolOutput{}, false
+}
+
+// checkOutputValueBounds extracts the numeric value at gate.OutputJSONPath
+// from output.RawOutput (a dot-separated path into the tool's JSON
+// response, e.g. "answers.severity.score" for a Jev score question) and
+// checks it against gate.MinValue/MaxValue, inclusive.
+func checkOutputValueBounds(output ToolOutput, gate *config.RequireToolCallGate) error {
+	if output.Error != "" {
+		return fmt.Errorf("call errored: %s", output.Error)
+	}
+	value, err := extractJSONPathFloat(output.RawOutput, gate.OutputJSONPath)
+	if err != nil {
+		return err
+	}
+	if gate.MinValue != nil && value < *gate.MinValue {
+		return fmt.Errorf("value %v below min_value %v", value, *gate.MinValue)
+	}
+	if gate.MaxValue != nil && value > *gate.MaxValue {
+		return fmt.Errorf("value %v above max_value %v", value, *gate.MaxValue)
+	}
+	return nil
+}
+
+// extractJSONPathFloat parses rawJSON and walks a dot-separated path of
+// object keys (no array-index support — every question-typed API response
+// this targets, e.g. Jev's `answers.<question>.<field>`, is object-keyed
+// all the way down), returning the float64 at that path. Errors, rather
+// than silently defaulting, on malformed JSON, a missing key, a non-object
+// intermediate segment, or a non-numeric leaf — a pipeline value gate must
+// fail loudly on "can't tell", not treat it as passing.
+func extractJSONPathFloat(rawJSON, path string) (float64, error) {
+	var doc interface{}
+	if err := json.Unmarshal([]byte(rawJSON), &doc); err != nil {
+		return 0, fmt.Errorf("output_json_path %q: response is not valid JSON: %w", path, err)
+	}
+	cur := doc
+	segments := strings.Split(path, ".")
+	for i, seg := range segments {
+		obj, ok := cur.(map[string]interface{})
+		if !ok {
+			return 0, fmt.Errorf("output_json_path %q: segment %d (%q) expects an object, got %T", path, i, seg, cur)
+		}
+		next, ok := obj[seg]
+		if !ok {
+			return 0, fmt.Errorf("output_json_path %q: key %q not found in response", path, seg)
+		}
+		cur = next
+	}
+	num, ok := cur.(float64)
+	if !ok {
+		return 0, fmt.Errorf("output_json_path %q: value is %T, not a number", path, cur)
+	}
+	return num, nil
 }
 
 // commandArgValue returns the string argument a require_tool_call gate's

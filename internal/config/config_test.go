@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -393,6 +394,55 @@ agents:
 	}
 }
 
+// TestLoad_JevToolAPIKeyExpandsEnvVar mirrors
+// TestLoad_A2AToolAPIKeyExpandsEnvVar: the jev tool type follows the same
+// api_key convention (config-expanded ${VAR}) as a2a, for both a
+// globally-declared tool and one declared inline on an agent.
+func TestLoad_JevToolAPIKeyExpandsEnvVar(t *testing.T) {
+	t.Setenv("TEST_JEV_KEY", "resolved-jev-secret")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cfg.yaml")
+	yamlContent := `
+name: jev-expand-test
+version: "1.0"
+tools:
+  - name: jev
+    type: jev
+    api_key: ${TEST_JEV_KEY}
+agents:
+  - name: Coordinator
+    role: worker
+    tools_inline:
+      - name: jev_inline
+        type: jev
+        api_key: ${TEST_JEV_KEY}
+`
+	if err := os.WriteFile(path, []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	tool := cfg.GetTool("jev")
+	if tool == nil {
+		t.Fatal("global tool \"jev\" not found")
+	}
+	if tool.APIKey != "resolved-jev-secret" {
+		t.Errorf("global tool api_key = %q, want the expanded env var value", tool.APIKey)
+	}
+
+	if len(cfg.Agents) != 1 || len(cfg.Agents[0].ToolsInline) != 1 {
+		t.Fatalf("expected one agent with one inline tool, got agents=%d", len(cfg.Agents))
+	}
+	if got := cfg.Agents[0].ToolsInline[0].APIKey; got != "resolved-jev-secret" {
+		t.Errorf("inline tool api_key = %q, want the expanded env var value", got)
+	}
+}
+
 func TestLoad_MCPServerToolExpandsEnvVars(t *testing.T) {
 	t.Setenv("TEST_KG_MCP_URL", "http://kg.example:8111/mcp")
 	t.Setenv("TEST_MCP_COMMAND", "test-mcp-server")
@@ -633,4 +683,101 @@ func TestLoad_ConcurrentWithLoadWithEnvDoesNotRace(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+}
+
+// ============================================================
+// EffectiveSystemPrompt / skills prompt_template merge:
+// skills: was validated and exported but never actually affected an
+// agent's behavior. These cover the fix directly.
+// ============================================================
+
+func TestEffectiveSystemPrompt_NoSkills_Unchanged(t *testing.T) {
+	cfg := &Config{}
+	def := &AgentDefinition{SystemPrompt: "You are a helpful agent."}
+	if got := cfg.EffectiveSystemPrompt(def); got != "You are a helpful agent." {
+		t.Errorf("EffectiveSystemPrompt() = %q, want unchanged", got)
+	}
+}
+
+func TestEffectiveSystemPrompt_OneSkill_Appended(t *testing.T) {
+	cfg := &Config{Skills: []SkillDefinition{
+		{Name: "deep_analysis", PromptTemplate: "Perform a deep analysis:\n1. Scan all files"},
+	}}
+	def := &AgentDefinition{SystemPrompt: "You are a researcher.", Skills: []string{"deep_analysis"}}
+	want := "You are a researcher.\n\nPerform a deep analysis:\n1. Scan all files"
+	if got := cfg.EffectiveSystemPrompt(def); got != want {
+		t.Errorf("EffectiveSystemPrompt() = %q, want %q", got, want)
+	}
+}
+
+func TestEffectiveSystemPrompt_MultipleSkills_OrderPreserved(t *testing.T) {
+	cfg := &Config{Skills: []SkillDefinition{
+		{Name: "a", PromptTemplate: "A instructions"},
+		{Name: "b", PromptTemplate: "B instructions"},
+	}}
+	def := &AgentDefinition{SystemPrompt: "base", Skills: []string{"b", "a"}}
+	want := "base\n\nB instructions\n\nA instructions"
+	if got := cfg.EffectiveSystemPrompt(def); got != want {
+		t.Errorf("EffectiveSystemPrompt() = %q, want %q (declaration order: b then a)", got, want)
+	}
+}
+
+func TestEffectiveSystemPrompt_UnknownSkill_SkippedNotCrash(t *testing.T) {
+	cfg := &Config{}
+	def := &AgentDefinition{SystemPrompt: "base", Skills: []string{"does_not_exist"}}
+	if got := cfg.EffectiveSystemPrompt(def); got != "base" {
+		t.Errorf("EffectiveSystemPrompt() = %q, want %q (unknown skill skipped, not a crash — Validate() reports it separately)", got, "base")
+	}
+}
+
+func TestEffectiveSystemPrompt_EmptyPromptTemplate_Skipped(t *testing.T) {
+	cfg := &Config{Skills: []SkillDefinition{{Name: "empty", PromptTemplate: "  "}}}
+	def := &AgentDefinition{SystemPrompt: "base", Skills: []string{"empty"}}
+	if got := cfg.EffectiveSystemPrompt(def); got != "base" {
+		t.Errorf("EffectiveSystemPrompt() = %q, want %q (blank prompt_template contributes nothing)", got, "base")
+	}
+}
+
+// TestLoad_MergesSkillPromptTemplateIntoAgentSystemPrompt is the regression
+// test for the skills prompt_template merge fix, using the actual shape already shipping in
+// examples/single/08-full-featured/config.yaml: an agent that declares
+// skills: [deep_analysis] and expects that skill's procedural instructions
+// to actually apply. Before the fix, Load() left SystemPrompt untouched by
+// skills entirely.
+func TestLoad_MergesSkillPromptTemplateIntoAgentSystemPrompt(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cfg.yaml")
+	yamlContent := `
+name: skills-merge-test
+version: "1.0"
+skills:
+  - name: deep_analysis
+    description: Thorough multi-step analysis workflow
+    tools: [read_file]
+    prompt_template: |
+      Perform a deep analysis:
+      1. Scan all relevant files
+      2. Identify patterns and anomalies
+agents:
+  - name: Researcher
+    role: worker
+    system_prompt: You are a researcher.
+    skills: [deep_analysis]
+`
+	os.WriteFile(path, []byte(yamlContent), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	agent := cfg.GetAgent("Researcher")
+	if agent == nil {
+		t.Fatal("agent Researcher not found after Load")
+	}
+	if !strings.Contains(agent.SystemPrompt, "Perform a deep analysis") {
+		t.Errorf("agent.SystemPrompt = %q, want it to contain the deep_analysis skill's prompt_template", agent.SystemPrompt)
+	}
+	if !strings.Contains(agent.SystemPrompt, "You are a researcher.") {
+		t.Errorf("agent.SystemPrompt = %q, want it to still contain the agent's own system_prompt", agent.SystemPrompt)
+	}
 }
