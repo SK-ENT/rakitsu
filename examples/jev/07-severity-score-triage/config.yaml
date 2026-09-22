@@ -1,10 +1,18 @@
 # 07 — Severity Score Triage (Jev)
 #
 # Examples 01-06 all use Jev's `noul` (yes/no) and `choice` (category)
-# question types. None use `score` — a continuous 0.0-1.0 rating, the
-# right type when "yes/no" is too coarse and a fixed category list is too
-# rigid, e.g. ranking how severe a review finding or incident report is so
-# calling code can pick a threshold-based action.
+# question types. None use `score` — a continuous rating along an ordered
+# spectrum, the right type when "yes/no" is too coarse and a fixed category
+# list is too rigid, e.g. ranking how severe a review finding or incident
+# report is so calling code can pick a threshold-based action. IMPORTANT:
+# score's range is 0 to len(criteria)-1, NOT a fixed 0.0-1.0 — the action
+# thresholds below are pre-scaled to the raw 0-2 range rather than asking
+# the model to normalize the score itself (confirmed live: a genuinely
+# moderate finding scored ~0.98 raw against this 3-level criteria list —
+# a weak local model asked to "normalize, then compare" reported an
+# unnormalized 0.98 as if it already were the normalized value,
+# incorrectly landing in BLOCK; comparing the raw score directly against
+# pre-scaled thresholds removes that arithmetic step entirely).
 #
 # One agent takes a review finding or incident description as the query
 # and asks Jev a single `score` question for its severity, then maps the
@@ -79,14 +87,18 @@ agents:
                         "moderate — real but contained impact",
                         "critical — data loss, security breach, or outage" ] }
 
-      Map Jev's returned severity score to an action band yourself:
-        >= 0.7  -> BLOCK: must be fixed before merge/deploy
-        0.3-0.69 -> WARN: needs human review, not automatically blocking
-        <  0.3  -> INFO: worth noting, not urgent
+      Jev's returned severity value is NOT 0.0-1.0 — with 3 criteria levels
+      it ranges 0 to 2.0 (level 0 = cosmetic, level 2 = critical). Map the
+      RAW value directly to an action band using these pre-scaled
+      thresholds (do not divide the score yourself — just compare the raw
+      number you got back against these):
+        >= 1.4  -> BLOCK: must be fixed before merge/deploy
+        0.6-1.39 -> WARN: needs human review, not automatically blocking
+        <  0.6  -> INFO: worth noting, not urgent
 
-      Report: the severity score, the action band, and a one-line reason
-      referencing the specific finding — not a generic restatement of the
-      band's definition.
+      Report: the raw severity score, the action band, and a one-line
+      reason referencing the specific finding — not a generic restatement
+      of the band's definition.
     tools:
       - jev
     skills:
