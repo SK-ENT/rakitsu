@@ -1,9 +1,8 @@
 # Review-only config for scripts/ci-review.sh, used by the .github/workflows/
 # ai-review.yml GitHub Action. Talks to OpenAI directly (not via the
 # project's LiteLLM proxy, which is Tailscale-only and unreachable from a
-# GitHub-hosted runner). Model: gpt-5.6-luna — the same model this project
-# already uses elsewhere for "read a diff, find real bugs" review tasks.
-# Switched from the cheaper gpt-5-nano after it produced two false-positive
+# GitHub-hosted runner). Model: gpt-6-luna (was gpt-5.6-luna; before that
+# gpt-5-nano). gpt-5-nano was dropped after it produced two false-positive
 # findings on a real PR (one claiming a stray YAML line the existing
 # cleanup logic already strips, one claiming a Go syntax error inside what
 # is actually a raw string literal used as test data) — worth the higher
@@ -33,7 +32,7 @@
 # the same no-orchestrator shape. Do not add an orchestrator back without
 # re-deriving this.
 
-name: "Diff Reviewer (gpt-5.6-luna, direct OpenAI)"
+name: "Diff Reviewer (gpt-6-luna, direct OpenAI)"
 version: "1.0"
 description: "Single-pass, whole-diff PR reviewer via direct OpenAI. Used by scripts/ci-review.sh."
 
@@ -47,42 +46,38 @@ settings:
     max_iterations: 3
     # This is a hard wall-clock deadline over the whole run (internal/
     # config/config.go, applied in cmd/rakitsu/run.go), not a per-step
-    # hint. Raised alongside max_tokens below: at a realistic ~100
-    # tok/s, a full-budget 32768-token generation runs close to 330s —
-    # over the old 300s deadline — which would have silently turned the
-    # bigger token budget back into the same truncation failure it was
-    # meant to fix, just via a context-cancel instead of finish_reason=
-    # length. The job-level timeout-minutes: 10 in ai-review.yml has
-    # ample room above this.
+    # hint. Raised from 300s when the output budget grew: at a realistic
+    # ~100 tok/s, a 32768-token generation runs close to 330s. With no
+    # max_tokens cap on the Reviewer below, this deadline is now the only
+    # bound on a run. The job-level timeout-minutes: 10 in ai-review.yml
+    # has ample room above this.
     timeout_seconds: 540
 
 agents:
   - name: Reviewer
     role: worker
-    model: gpt-5.6-luna
+    model: gpt-6-luna
     model_config:
-      # temperature is a no-op here: gpt-5.6-luna is a reasoning-tier model
-      # (bare "gpt-5.6-luna" matches isReasoningModel's "gpt-5" prefix
-      # check, same as gpt-5-nano — the vendor-prefixed "openai/gpt-5.6-
-      # luna" LiteLLM uses elsewhere in the project is the form that
-      # misses this check, not this one), and rakitsu's OpenAI provider
-      # drops any temperature other than 1 for those (with a stderr
-      # warning) rather than sending it. Left set rather than removed so a
-      # future switch to a non-reasoning model doesn't silently inherit an
-      # unconsidered default.
-      temperature: 0.3
-      # gpt-5.6-luna is a reasoning-tier model: max_tokens caps the combined
-      # hidden-reasoning + visible-answer OUTPUT budget (rakitsu routes it
-      # to OpenAI's max_completion_tokens for these models), not just the
-      # visible text — a separate axis from MAX_DIFF_BYTES in ci-review.sh,
-      # which bounds INPUT size. Confirmed live: 8192 was too low for a
-      # diff of any real size — the model burned the whole budget on
-      # reasoning and returned finish_reason=length with zero visible
-      # answer. Raised to give real headroom for reasoning tokens on top
-      # of the actual FINDING text. See settings.execution.timeout_seconds
-      # above — raised alongside this so a bigger token budget doesn't
-      # just trade one truncation failure for a wall-clock-deadline one.
-      max_tokens: 32768
+      # gpt-6-luna is a reasoning-tier model, but the rakitsu binary CI
+      # installs (latest public release) only recognizes reasoning models
+      # by the o1/o3/o4/gpt-5 name prefixes (isReasoningModel in internal/
+      # llm/openai/provider.go). A "gpt-6" name misses that check, so two
+      # settings are chosen to work WITHOUT it:
+      #
+      # temperature: 1 — the only value reasoning models accept. Anything
+      # else would be sent as-is, rejected, and retried without it (with a
+      # stderr warning); 1 avoids relying on that retry.
+      temperature: 1
+      # No max_tokens, on purpose. For a model it doesn't recognize as
+      # reasoning-tier, rakitsu sends max_tokens as the legacy `max_tokens`
+      # field, which reasoning models reject with a 400 and nothing retries
+      # — the review would fail on every PR. Leaving it unset uses the
+      # model's own output limit. That also sidesteps the old failure where
+      # a too-small budget (8192) was burned on hidden reasoning and the
+      # answer came back empty (finish_reason=length). The run is still
+      # bounded by settings.execution.timeout_seconds above. Once a public
+      # release recognizes gpt-6 as reasoning-tier, a cap can come back
+      # (it is then sent as max_completion_tokens).
     # tools: [] alone isn't what makes this agent unable to DO anything —
     # rakitsu passes an agent the WHOLE global tool registry regardless of
     # a per-agent tools: list (confirmed: internal/agent/agent.go's
