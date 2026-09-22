@@ -10,12 +10,27 @@
 # This example closes that gap using rakitsu's own Pipeline mechanism.
 # `require_tool_call` already mechanically verifies a step's agent invoked
 # a named tool, instead of trusting the agent's self-report (see 03). That
-# gate can also go one step further: `output_json_path` +
+# gate can go one step further: `output_json_path` +
 # `min_value`/`max_value` check the tool's ACTUAL JSON response, not just
-# that it was called. Here, the "merge" step only runs at all if the
-# "safety-check" step's own Jev call returned a noul probability >= 0.5 —
-# checked by rakitsu's pipeline code directly against Jev's real API
-# response, not by trusting SafetyChecker's own text output.
+# that it was called. Here, "merge" only runs at all if BOTH the
+# "security-check" and "correctness-check" steps' own Jev calls came back
+# below the concern threshold — checked by rakitsu's pipeline code directly
+# against Jev's real API response, not by trusting either agent's own text
+# output.
+#
+# Two separate gated steps, not one combined question: an earlier version
+# of this example asked a single compound noul ("safe to merge, with no
+# security OR correctness concerns?"). Confirmed live that this loses
+# real information — the same test case gave an opaque
+# "0.03, not safe" from the compound question, versus
+# security_concern=0.16 (correctly low) and correctness_concern=0.97
+# (correctly high) from two atomic questions on the identical state. Split
+# into two gated steps so the mechanical check is on each concern
+# separately, and a failure clearly says WHICH concern failed — not just
+# that something did. (`RequireToolCall` is one gate per pipeline step in
+# rakitsu's current schema, so this is two small sequential steps rather
+# than one step checking two values — the correct minimal fix without a
+# bigger schema change.)
 #
 # Usage — safe finding (gate passes, both steps run):
 #   export TYPESAFE_API_KEY=...
@@ -36,7 +51,7 @@
 
 name: Enforced Pipeline Gate
 version: "1.0"
-description: A Jev noul verdict mechanically gates whether a later pipeline step is even allowed to run.
+description: Two atomic Jev noul verdicts mechanically gate whether a later pipeline step is even allowed to run.
 
 settings:
   default_provider: ollama
@@ -61,7 +76,7 @@ settings:
 tools:
   - name: jev
     type: jev
-    description: Ask TypeSafe AI's Jev model whether a change is safe to merge.
+    description: Ask TypeSafe AI's Jev model a single, atomic question about a proposed change.
 
 skills:
   # Shared Jev usage rules — see examples/jev/01-command-safety-gate's
@@ -73,16 +88,38 @@ skills:
     prompt_template: file:../_shared/jev-usage-skill.md
 
 agents:
-  - name: SafetyChecker
+  - name: SecurityChecker
     role: worker
     system_prompt: |
-      You check whether a described change is safe to merge. Call jev
-      exactly once with:
+      You check whether a described change introduces a security concern.
+      Call jev exactly once with:
         state: the change description, verbatim
         questions:
-          is_safe_to_merge: { type: noul, instructions:
-            "Is this change safe to merge as-is, with no security or
-             correctness concerns that would require blocking it?" }
+          security_concern: { type: noul, instructions:
+            "Does this change introduce a security vulnerability or
+             weakness?" }
+
+      Report Jev's probability and your own one-line read of it. Your
+      report is informational only — the pipeline step itself decides
+      pass/fail mechanically from Jev's actual response, not from what you
+      write here.
+    tools:
+      - jev
+    skills:
+      - jev-usage
+    settings:
+      max_iterations: 2
+
+  - name: CorrectnessChecker
+    role: worker
+    system_prompt: |
+      You check whether a described change breaks existing functionality.
+      Call jev exactly once with:
+        state: the change description, verbatim
+        questions:
+          correctness_concern: { type: noul, instructions:
+            "Does this change break existing functionality, fail to
+             compile, or fail to run correctly?" }
 
       Report Jev's probability and your own one-line read of it. Your
       report is informational only — the pipeline step itself decides
@@ -98,8 +135,8 @@ agents:
   - name: Merger
     role: worker
     system_prompt: |
-      The safety check already passed (this step only runs if it did).
-      Respond with exactly: Merged.
+      Both the security check and the correctness check already passed
+      (this step only runs if they both did). Respond with exactly: Merged.
     settings:
       max_iterations: 1
 
@@ -108,16 +145,23 @@ orchestrator:
   strategy: Pipeline
   provider: ollama
   model: llama3.1:8b
-  agents: [SafetyChecker, Merger]
+  agents: [SecurityChecker, CorrectnessChecker, Merger]
   pipeline:
     steps:
-      - name: safety-check
-        agent: SafetyChecker
-        task: Check whether the change described in the original request is safe to merge.
+      - name: security-check
+        agent: SecurityChecker
+        task: Check whether the change described in the original request introduces a security concern.
         require_tool_call:
           tool: jev
-          output_json_path: answers.is_safe_to_merge.noul
-          min_value: 0.5
+          output_json_path: answers.security_concern.noul
+          max_value: 0.5
+      - name: correctness-check
+        agent: CorrectnessChecker
+        task: Check whether the change described in the original request breaks existing functionality.
+        require_tool_call:
+          tool: jev
+          output_json_path: answers.correctness_concern.noul
+          max_value: 0.5
       - name: merge
         agent: Merger
         task: Merge the change.

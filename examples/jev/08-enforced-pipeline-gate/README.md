@@ -15,21 +15,38 @@ JSON response**, not just that it was called: `output_json_path` +
 `min_value`/`max_value` extract a value from the tool's real output and
 gate the step on it directly.
 
+**Two atomic gates, not one compound gate.**
+An earlier version of this example asked a single compound noul question
+("safe to merge, with no security **or** correctness concerns?"). Live
+testing confirmed this is exactly the compound-question anti-pattern
+TypeSafe's own docs warn against — the same real case (a rename that left
+3 call sites broken, no security issue) gave an opaque "0.03, not safe"
+from the compound question, versus `security_concern=0.16` (correctly
+low) and `correctness_concern=0.97` (correctly high) from two atomic
+questions on the identical state. Splitting the question is strictly more
+informative for the same underlying facts, so the example now uses two
+separate agents, two separate `jev` calls, and two separate gated
+pipeline steps.
+
 ## What's here
 
-A two-step pipeline:
-1. `safety-check` — `SafetyChecker` calls `jev` once with a `noul` question
-   ("is this change safe to merge?"). The step is gated:
+A three-step pipeline:
+1. `security-check` — `SecurityChecker` calls `jev` once with a `noul`
+   question ("does this introduce a security concern?"). Gated:
    ```yaml
    require_tool_call:
      tool: jev
-     output_json_path: answers.is_safe_to_merge.noul
-     min_value: 0.5
+     output_json_path: answers.security_concern.noul
+     max_value: 0.5
    ```
-2. `merge` — a stub `Merger` agent that only runs **if step 1 passed**.
-   `rakitsu`'s pipeline aborts the whole run on a step error
+2. `correctness-check` — `CorrectnessChecker` calls `jev` once with a
+   separate `noul` question ("does this break functionality?"). Gated the
+   same way on `answers.correctness_concern.noul`.
+3. `merge` — a stub `Merger` agent that only runs **if both prior steps
+   passed**. `rakitsu`'s pipeline aborts the whole run on a step error
    (`internal/agent/pipeline.go`'s `runPipeline`), so an unsatisfied gate
-   means `merge` never executes — not "executes but is told not to."
+   on either step means `merge` never executes — not "executes but is
+   told not to."
 
 ## Run
 
@@ -62,8 +79,17 @@ gate still fails the step. Reproducible directly:
 go test ./internal/agent/... -run RequireToolCall_ValueBound -v
 ```
 
-**Live proof (non-deterministic model, real Jev API — see
-`docs/JEV-BENCHMARKS.md`):** the local sanity run below (no `TYPESAFE_API_KEY` set, so the `jev` call
+**Live proof (non-deterministic model, real Jev API, this session's own
+throwaway-CI-PR convention — see `docs/JEV-BENCHMARKS.md`):** the trace
+below is preserved as originally captured, against this example's earlier
+single-compound-question design (`SafetyChecker`, `is_safe_to_merge`,
+`safety-check`) — it's genuine evidence and rewriting it to match the
+current split design would misrepresent what was actually observed. The
+underlying mechanism it proves is unchanged by the split: a gate that
+checks the tool's real output value, not the agent's self-report, still
+applies identically to each of the two atomic gates now in place.
+
+The local sanity run below (no `TYPESAFE_API_KEY` set, so the `jev` call
 itself failed) turned out to be a stronger real-world case than a staged
 one — the agent's own final answer claimed *"The change is safe to merge
 as-is, with no security or correctness concerns"* immediately after its own
@@ -88,8 +114,10 @@ arguments were fine, and the old check stops there. The new check is what
 actually catches it.
 
 Two further runs against Jev's real API (a genuinely low-risk change and
-the genuinely unsafe finding above, against `gpt-4o-mini`) are summarized
-in `docs/JEV-BENCHMARKS.md` alongside this example's live-CI verification.
+the genuinely unsafe finding above, via a throwaway CI PR against
+`gpt-4o-mini`) are recorded in `docs/JEV-BENCHMARKS.md`
+alongside this example's live-CI verification — also from before the
+split, same caveat as above.
 
 ## Design note
 
