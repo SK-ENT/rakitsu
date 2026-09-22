@@ -30,8 +30,8 @@ func NewProvider(ctx context.Context, config *llm.ProviderConfig) (*Provider, er
 	}
 
 	switch {
-	case config.APIKey != "":
-		cc.APIKey = config.APIKey
+	case !config.APIKey.IsEmpty():
+		cc.APIKey = config.APIKey.Reveal()
 	case config.CredentialsFile != "":
 		// Service account — use Vertex AI backend with credentials from file.
 		cc.Backend = genai.BackendVertexAI

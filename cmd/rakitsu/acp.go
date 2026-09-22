@@ -9,6 +9,7 @@ import (
 
 	"github.com/SK-ENT/rakitsu/internal/acp"
 	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -55,6 +56,11 @@ func runACP(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+
+	// Same reasoning as run.go: an ACP session runs agents and emits the
+	// same tool-call telemetry events, so it needs the same operator
+	// keyword extension applied before any session starts.
+	telemetry.SetExtraRedactKeywords(cfg.Settings.RedactKeywords)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

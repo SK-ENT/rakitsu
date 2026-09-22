@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/SK-ENT/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/secret"
 )
 
 // fakeEmbeddingResponse returns an OpenAI-compatible embeddings response.
@@ -54,7 +55,7 @@ func TestEmbeddingClient_Embed(t *testing.T) {
 	defer srv.Close()
 
 	client := NewEmbeddingClient(&llm.ProviderConfig{
-		APIKey:  "test-key",
+		APIKey:  secret.New("test-key"),
 		BaseURL: srv.URL,
 		Model:   "text-embedding-3-small",
 	})
@@ -88,7 +89,7 @@ func TestEmbeddingClient_EmptyResponse(t *testing.T) {
 	defer srv.Close()
 
 	client := NewEmbeddingClient(&llm.ProviderConfig{
-		APIKey:  "test-key",
+		APIKey:  secret.New("test-key"),
 		BaseURL: srv.URL,
 	})
 
@@ -105,7 +106,7 @@ func TestEmbeddingClient_APIError(t *testing.T) {
 	defer srv.Close()
 
 	client := NewEmbeddingClient(&llm.ProviderConfig{
-		APIKey:  "bad-key",
+		APIKey:  secret.New("bad-key"),
 		BaseURL: srv.URL,
 	})
 
@@ -118,12 +119,12 @@ func TestEmbeddingClient_APIError(t *testing.T) {
 // ─── TestEmbeddingClient_GetName ─────────────────────────────────────────────
 
 func TestEmbeddingClient_GetName(t *testing.T) {
-	c1 := NewEmbeddingClient(&llm.ProviderConfig{APIKey: "k"})
+	c1 := NewEmbeddingClient(&llm.ProviderConfig{APIKey: secret.New("k")})
 	if c1.GetName() != "openai" {
 		t.Errorf("want openai, got %q", c1.GetName())
 	}
 
-	c2 := NewEmbeddingClient(&llm.ProviderConfig{APIKey: "k", BaseURL: "http://localhost:4000"})
+	c2 := NewEmbeddingClient(&llm.ProviderConfig{APIKey: secret.New("k"), BaseURL: "http://localhost:4000"})
 	if c2.GetName() != "openai-compatible" {
 		t.Errorf("want openai-compatible, got %q", c2.GetName())
 	}
@@ -132,7 +133,7 @@ func TestEmbeddingClient_GetName(t *testing.T) {
 // ─── TestEmbeddingClient_DefaultModel ────────────────────────────────────────
 
 func TestEmbeddingClient_DefaultModel(t *testing.T) {
-	c := NewEmbeddingClient(&llm.ProviderConfig{APIKey: "k"})
+	c := NewEmbeddingClient(&llm.ProviderConfig{APIKey: secret.New("k")})
 	if c.model != "text-embedding-3-small" {
 		t.Errorf("want text-embedding-3-small, got %q", c.model)
 	}

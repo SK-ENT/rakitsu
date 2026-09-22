@@ -19,7 +19,7 @@ type EmbeddingClient struct {
 // NewEmbeddingClient constructs an EmbeddingClient from a ProviderConfig.
 // Reuses the same client construction pattern as NewProvider().
 func NewEmbeddingClient(config *llm.ProviderConfig) *EmbeddingClient {
-	clientConfig := openai.DefaultConfig(config.APIKey)
+	clientConfig := openai.DefaultConfig(config.APIKey.Reveal())
 	if config.BaseURL != "" {
 		clientConfig.BaseURL = config.BaseURL
 	}

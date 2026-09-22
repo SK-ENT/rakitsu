@@ -65,7 +65,7 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 // NewProvider creates a new OpenAI provider.
 // Supports custom BaseURL for OpenAI-compatible APIs (e.g., Ollama, LiteLLM).
 func NewProvider(config *llm.ProviderConfig) *Provider {
-	clientConfig := openai.DefaultConfig(config.APIKey)
+	clientConfig := openai.DefaultConfig(config.APIKey.Reveal())
 	if config.BaseURL != "" {
 		clientConfig.BaseURL = config.BaseURL
 	}

@@ -6,6 +6,8 @@ package llm
 import (
 	"context"
 	"strings"
+
+	"github.com/SK-ENT/rakitsu/internal/secret"
 )
 
 // ContentType identifies the kind of content carried by a ContentBlock.
@@ -222,7 +224,11 @@ type StreamingProvider interface {
 
 // ProviderConfig contains common configuration for LLM providers
 type ProviderConfig struct {
-	APIKey            string
+	// APIKey is wrapped in secret.Value so it can't be accidentally
+	// printed/logged by this or a future call site — use .Reveal() only
+	// at the point a provider constructor actually needs the raw string
+	// (building an Authorization/x-api-key header).
+	APIKey            secret.Value
 	Model             string
 	BaseURL           string // optional: custom endpoint (e.g., Ollama at http://localhost:11434/v1)
 	CredentialsFile   string // optional: path to service account JSON key file (Gemini)

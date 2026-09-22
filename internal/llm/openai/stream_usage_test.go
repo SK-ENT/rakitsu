@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/SK-ENT/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/secret"
 )
 
 // fakeStreamingServer replays a fixed SSE stream shaped like a real OpenAI
@@ -40,7 +41,7 @@ func TestGenerateStream_CapturesUsageFromFinalEmptyChoicesChunk(t *testing.T) {
 	srv := fakeStreamingServer(t)
 	defer srv.Close()
 
-	p := NewProvider(&llm.ProviderConfig{APIKey: "test-key", BaseURL: srv.URL, Model: "gpt-4o-mini"})
+	p := NewProvider(&llm.ProviderConfig{APIKey: secret.New("test-key"), BaseURL: srv.URL, Model: "gpt-4o-mini"})
 
 	result, err := p.GenerateStream(context.Background(), "", []llm.Message{llm.NewTextMessage("user", "hi")}, nil)
 	if err != nil {
