@@ -19,6 +19,7 @@ import (
 	"github.com/SK-ENT/rakitsu/internal/config"
 	"github.com/SK-ENT/rakitsu/internal/debug"
 	"github.com/SK-ENT/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/secret"
 	anthropicProvider "github.com/SK-ENT/rakitsu/internal/llm/anthropic"
 	codexProvider "github.com/SK-ENT/rakitsu/internal/llm/codex"
 	geminiProvider "github.com/SK-ENT/rakitsu/internal/llm/gemini"
@@ -344,6 +345,16 @@ func runAgent(cmd *cobra.Command, args []string) (runErr error) {
 	}
 
 	fmt.Printf("Loaded: %s (v%s)\n", cfg.Name, cfg.Version)
+
+	// Extend telemetry's credential-keyword redaction with any
+	// operator-supplied keywords from this run's config, before any
+	// agent starts and emits events. Deliberately called here (the
+	// primary run entry point), not inside config.Load itself — Load is
+	// also used to read secondary/nested configs (e.g. serve's MCP
+	// sub-config), and letting every Load call silently overwrite this
+	// process-global redaction state would let an incidental later load
+	// wipe out keywords the main run config set.
+	telemetry.SetExtraRedactKeywords(cfg.Settings.RedactKeywords)
 
 	// CLI --interactive is tri-state: absent = honor YAML; present = authoritative.
 	// This is the "force off" escape hatch: `rakitsu run cfg.yaml "q" --interactive=false`
@@ -1162,7 +1173,7 @@ func createLLMProvider(ctx context.Context, cfg *config.Config, providerName, mo
 	}
 
 	pc := &llm.ProviderConfig{
-		APIKey:          cfg.GetAPIKey(providerName),
+		APIKey:          secret.New(cfg.GetAPIKey(providerName)),
 		Model:           model,
 		BaseURL:         cfg.GetBaseURL(providerName),
 		CredentialsFile: cfg.GetCredentialsFile(providerName),
@@ -1198,8 +1209,8 @@ func createLLMProvider(ctx context.Context, cfg *config.Config, providerName, mo
 
 	// Ollama defaults — reuses OpenAI-compatible provider
 	if providerType == "ollama" {
-		if pc.APIKey == "" {
-			pc.APIKey = "ollama"
+		if pc.APIKey.IsEmpty() {
+			pc.APIKey = secret.New("ollama")
 		}
 		if pc.BaseURL == "" {
 			pc.BaseURL = "http://localhost:11434/v1"
@@ -1207,12 +1218,12 @@ func createLLMProvider(ctx context.Context, cfg *config.Config, providerName, mo
 	}
 
 	// LiteLLM proxies manage their own API keys — skip validation
-	if providerType == "litellm" && pc.APIKey == "" {
-		pc.APIKey = "not-needed" // placeholder for OpenAI client
+	if providerType == "litellm" && pc.APIKey.IsEmpty() {
+		pc.APIKey = secret.New("not-needed") // placeholder for OpenAI client
 	}
 
 	// Validate API key (except for ollama, gemini, litellm, and codex — codex uses the ChatGPT login)
-	if providerType != "ollama" && providerType != "gemini" && providerType != "litellm" && providerType != "codex" && pc.APIKey == "" {
+	if providerType != "ollama" && providerType != "gemini" && providerType != "litellm" && providerType != "codex" && pc.APIKey.IsEmpty() {
 		envVar := strings.ToUpper(providerName) + "_API_KEY"
 		return nil, fmt.Errorf("%s API key not set — export %s or add api_key to settings.providers.%s", providerName, envVar, providerName)
 	}
@@ -1260,7 +1271,7 @@ func createEmbeddingProvider(ctx context.Context, cfg *config.Config, rc config.
 	resolve := func(providerName, model string) llm.EmbeddingProvider {
 		providerType := cfg.GetProviderType(providerName)
 		pc := &llm.ProviderConfig{
-			APIKey:          cfg.GetAPIKey(providerName),
+			APIKey:          secret.New(cfg.GetAPIKey(providerName)),
 			BaseURL:         cfg.GetBaseURL(providerName),
 			CredentialsFile: cfg.GetCredentialsFile(providerName),
 			Location:        cfg.GetLocation(providerName),
@@ -1270,8 +1281,8 @@ func createEmbeddingProvider(ctx context.Context, cfg *config.Config, rc config.
 		switch providerType {
 		case "openai", "ollama", "litellm", "":
 			if providerType == "ollama" {
-				if pc.APIKey == "" {
-					pc.APIKey = "ollama"
+				if pc.APIKey.IsEmpty() {
+					pc.APIKey = secret.New("ollama")
 				}
 				if pc.BaseURL == "" {
 					pc.BaseURL = "http://localhost:11434/v1"
@@ -1316,7 +1327,7 @@ func createEmbeddingProvider(ctx context.Context, cfg *config.Config, rc config.
 			model = "nomic-embed-text"
 		}
 		return openaiProvider.NewEmbeddingClient(&llm.ProviderConfig{
-			APIKey:  "ollama",
+			APIKey:  secret.New("ollama"),
 			BaseURL: ollamaBase + "/v1",
 			Model:   model,
 		})

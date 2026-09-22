@@ -21,7 +21,7 @@ type Provider struct {
 // NewProvider creates a new Anthropic provider
 func NewProvider(config *llm.ProviderConfig) *Provider {
 	opts := []option.RequestOption{
-		option.WithAPIKey(config.APIKey),
+		option.WithAPIKey(config.APIKey.Reveal()),
 	}
 	if config.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(config.BaseURL))

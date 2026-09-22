@@ -251,12 +251,39 @@ credential-shaped (`token`, `api_key`, `password`, `secret`,
 `authorization`, case-insensitive) is masked to `[REDACTED]` before either
 sink sees it.
 
-This does **not** cover tool *output* — `TOOL_CALL_END.Output`/`.Error` is
-free-form text (e.g. whatever a `cat` or `curl` call printed), not a
-structured key/value map, so it isn't pattern-scanned yet. If a tool call
-prints a secret, that secret can still land in the session file or hub
-stream. Don't feed configs/agents that might do that into a shared or
-long-lived session without reviewing the log.
+Tool *output* (`TOOL_CALL_END.Output`/`.Error`) is free-form text (e.g.
+whatever a `cat` or `curl` call printed), not a structured key/value map, so
+the key-name rule above doesn't apply to it directly. If the output is
+itself a JSON document (a `cli`/`mcp_server` tool wrapping an API response,
+for example), it's parsed and the same key-name rule runs on it, whatever
+its formatting/indentation. Otherwise it gets a narrower, best-effort
+pattern pass: PEM private-key blocks, whole `Authorization:` header lines
+(any scheme, not just the first token), bare bearer tokens, whole
+`KEY=value`/`KEY: value` lines whose key looks credential-shaped, and
+userinfo passwords in connection-string URLs
+(`scheme://user:password@host`) are masked before either sink sees them.
+
+This is pattern matching on known shapes, not general secret detection —
+it will not catch a credential in a format it doesn't recognize, and it
+does not survive deliberate obfuscation (base64/URL-encoding, splitting a
+secret across output, etc.). Treat it as reducing exposure from ordinary
+debugging output, not as a guarantee. Don't feed configs/agents that might
+print secrets in unusual shapes into a shared or long-lived session without
+reviewing the log.
+
+If your project uses field names the built-in list doesn't know about
+(e.g. an internal `project_code` that's effectively a secret), add them to
+`settings.redact_keywords` in the config:
+
+```yaml
+settings:
+  redact_keywords:
+    - project_code
+    - internal_ticket_id
+```
+
+Each word extends the same key-name and free-text matching described
+above (case-insensitive substring match, literal — not a regex pattern).
 
 ## Reporting
 

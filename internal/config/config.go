@@ -55,6 +55,7 @@ type Settings struct {
 	Spawn            SpawnConfig                   `mapstructure:"spawn" yaml:"spawn,omitempty"`
 	AgentChat        AgentChatConfig               `mapstructure:"agent_chat" yaml:"agent_chat,omitempty"`
 	SessionMsg       SessionMsgConfig              `mapstructure:"session_msg" yaml:"session_msg,omitempty"`
+	RedactKeywords   []string                      `mapstructure:"redact_keywords" yaml:"redact_keywords,omitempty"` // extra credential-shaped keywords for telemetry redaction, on top of the built-in list
 }
 
 // SessionMsgConfig gates cross-session messaging for a session: whether it

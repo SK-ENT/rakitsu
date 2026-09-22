@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/SK-ENT/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/secret"
 )
 
 // paramRejectingServer replays a fixed sequence of chat-completion responses:
@@ -51,7 +52,7 @@ func TestGenerate_OmitsRejectedParamAndRetries(t *testing.T) {
 			srv, requests := paramRejectingServer(t, param, 1)
 			defer srv.Close()
 
-			cfg := &llm.ProviderConfig{APIKey: "test-key", BaseURL: srv.URL, Model: "openai/gpt-5.6-luna"}
+			cfg := &llm.ProviderConfig{APIKey: secret.New("test-key"), BaseURL: srv.URL, Model: "openai/gpt-5.6-luna"}
 			if param == "temperature" {
 				cfg.Temperature = 0.3
 			} else {
@@ -109,7 +110,7 @@ func TestGenerate_OmitsRejectedParamFromDoubleEncodedProxyMessage(t *testing.T) 
 	}))
 	defer srv.Close()
 
-	p := NewProvider(&llm.ProviderConfig{APIKey: "test-key", BaseURL: srv.URL, Model: "openai/gpt-5.6-luna", Temperature: 0.3})
+	p := NewProvider(&llm.ProviderConfig{APIKey: secret.New("test-key"), BaseURL: srv.URL, Model: "openai/gpt-5.6-luna", Temperature: 0.3})
 
 	result, err := p.Generate(context.Background(), "", []llm.Message{llm.NewTextMessage("user", "hi")}, nil)
 	if err != nil {
@@ -130,7 +131,7 @@ func TestGenerate_UnrelatedBadRequestIsNotRetried(t *testing.T) {
 	srv, requests := paramRejectingServer(t, "model", 5) // always rejects
 	defer srv.Close()
 
-	p := NewProvider(&llm.ProviderConfig{APIKey: "test-key", BaseURL: srv.URL, Model: "openai/gpt-5.6-luna", Temperature: 0.3})
+	p := NewProvider(&llm.ProviderConfig{APIKey: secret.New("test-key"), BaseURL: srv.URL, Model: "openai/gpt-5.6-luna", Temperature: 0.3})
 
 	_, err := p.Generate(context.Background(), "", []llm.Message{llm.NewTextMessage("user", "hi")}, nil)
 	if err == nil {
@@ -156,7 +157,7 @@ func TestGenerate_ParamRejectionWarningUsesWarnFn(t *testing.T) {
 	warnFn = func(s string) { got = append(got, s) }
 	t.Cleanup(func() { warnFn = orig })
 
-	p := NewProvider(&llm.ProviderConfig{APIKey: "test-key", BaseURL: srv.URL, Model: "openai/gpt-5.6-luna", Temperature: 0.3})
+	p := NewProvider(&llm.ProviderConfig{APIKey: secret.New("test-key"), BaseURL: srv.URL, Model: "openai/gpt-5.6-luna", Temperature: 0.3})
 	if _, err := p.Generate(context.Background(), "", []llm.Message{llm.NewTextMessage("user", "hi")}, nil); err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -199,7 +200,7 @@ func TestGenerate_RetriesWithReasoningEffortNone(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewProvider(&llm.ProviderConfig{APIKey: "test-key", BaseURL: srv.URL, Model: "gpt-5.6-luna"})
+	p := NewProvider(&llm.ProviderConfig{APIKey: secret.New("test-key"), BaseURL: srv.URL, Model: "gpt-5.6-luna"})
 
 	result, err := p.Generate(context.Background(), "", []llm.Message{llm.NewTextMessage("user", "hi")}, []llm.ToolDefinition{{Name: "noop"}})
 	if err != nil {
@@ -242,7 +243,7 @@ func TestGenerateStream_OmitsRejectedParamAndRetries(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewProvider(&llm.ProviderConfig{APIKey: "test-key", BaseURL: srv.URL, Model: "openai/gpt-5.6-luna", Temperature: 0.3})
+	p := NewProvider(&llm.ProviderConfig{APIKey: secret.New("test-key"), BaseURL: srv.URL, Model: "openai/gpt-5.6-luna", Temperature: 0.3})
 
 	result, err := p.GenerateStream(context.Background(), "", []llm.Message{llm.NewTextMessage("user", "hi")}, nil)
 	if err != nil {
