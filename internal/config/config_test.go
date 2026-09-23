@@ -1015,3 +1015,57 @@ func TestRedacted_SettingsEnvRefsWithSlashInNames(t *testing.T) {
 		}
 	}
 }
+
+// LoadWithEnv's overrides are request-scoped (the web UI's per-run env
+// vars). A plain Load running at the same time must never resolve ${VAR}
+// from another caller's overrides — on a hub that would put one request's
+// API key into another request's config.
+func TestLoad_NeverSeesConcurrentLoadWithEnvOverrides(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "c.yaml")
+	src := `name: probe
+version: "1.0"
+settings:
+  providers:
+    p:
+      type: openai
+      api_key: ${RKT_T_RACE_KEY:-none}
+agents:
+  - name: A
+    role: worker
+    system_prompt: hi
+`
+	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if _, err := LoadWithEnv(path, map[string]string{"RKT_T_RACE_KEY": "other-request-secret"}); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	}()
+	for i := 0; i < 300; i++ {
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := cfg.Settings.Providers["p"].APIKey; got != "none" {
+			close(stop)
+			wg.Wait()
+			t.Fatalf("Load resolved another request's override: api_key=%q (iteration %d)", got, i)
+		}
+	}
+	close(stop)
+	wg.Wait()
+}

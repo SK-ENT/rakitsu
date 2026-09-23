@@ -744,6 +744,10 @@ func (s *ChatSession) executeTurn(turn chatTurn) {
 	}
 
 	handleChunkEvent := func(ev telemetry.AgentEvent) {
+		// Tool args/output go to browsers and into the transcript persisted
+		// as .chat.json, so apply the same redaction the session JSONL gets.
+		// Safe for resume: history is rebuilt from user/assistant text only.
+		ev.Payload = telemetry.RedactEventPayload(ev.EventType, ev.Payload)
 		switch ev.EventType {
 		case telemetry.EventAgentStart:
 			var p telemetry.AgentStartPayload

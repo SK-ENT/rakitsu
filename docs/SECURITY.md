@@ -290,11 +290,14 @@ with a snapshot of the run's config: `api_key` values are masked to
 A secret typed literally into the YAML is stored as written.
 
 Tool-call events (`TOOL_CALL_START`'s and `THOUGHT_END`'s planned-call
-`Arguments`) are written to both `~/.rakitsu/sessions/<id>.jsonl` and, when
-connected to a hub, the hub's event stream. Any argument whose key looks
-credential-shaped (`token`, `api_key`, `password`, `secret`,
-`authorization`, case-insensitive) is masked to `[REDACTED]` before either
-sink sees it.
+`Arguments`) are written to `~/.rakitsu/sessions/<id>.jsonl`, sent to a
+connected hub, and — for runs started inside `rakitsu serve` — streamed to
+the browser (the `/events` stream, the web UI chat's tool blocks and its
+debugger event feed) and kept in the chat history saved as
+`<id>.chat.json`. Any argument whose key looks credential-shaped (`token`,
+`api_key`, `password`, `secret`, `authorization`, case-insensitive) is
+masked to `[REDACTED]` before any of these sees it. The hub also redacts
+events it receives from a CLI, in case the sender is an older version.
 
 Tool *output* (`TOOL_CALL_END.Output`/`.Error`) is free-form text (e.g.
 whatever a `cat` or `curl` call printed), not a structured key/value map, so
