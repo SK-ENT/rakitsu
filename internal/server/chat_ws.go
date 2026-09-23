@@ -206,6 +206,7 @@ func (c *chatClient) eventForwardPump() {
 				continue
 			}
 			evCopy := ev
+			evCopy.Payload = telemetry.RedactEventPayload(evCopy.EventType, evCopy.Payload)
 			c.send(serverMsg{Type: "event", Event: &evCopy})
 		}
 	}

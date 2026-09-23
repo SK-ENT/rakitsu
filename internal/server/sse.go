@@ -317,6 +317,9 @@ func (s *SSEServer) handleSSE(w http.ResponseWriter, r *http.Request) {
 			if sessionFilter != "" && event.SessionID != sessionFilter {
 				continue
 			}
+			// Runs started inside serve publish raw events on the bus;
+			// redact before they reach the browser, like the session JSONL.
+			event.Payload = telemetry.RedactEventPayload(event.EventType, event.Payload)
 			s.sendEvent(w, string(event.EventType), event)
 			flusher.Flush()
 		case <-r.Context().Done():

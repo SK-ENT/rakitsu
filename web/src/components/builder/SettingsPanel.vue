@@ -49,10 +49,41 @@ interface SavedProvider {
   def: ProviderDefinition;
 }
 
+// A base_url can carry a credential itself (https://user:pass@host/v1 or
+// ...?api_key=...). Before anything goes to localStorage, drop userinfo,
+// the fragment, and query parameters whose name looks like a credential.
+// Other parameters stay: some endpoints need them (Azure's api-version).
+// A ${VAR} reference or unparsable value is kept as-is.
+const CREDENTIAL_PARAM = /key|token|secret|pass|auth|sig|cred/i;
+
+function stripUrlCredentials(url: string | undefined): string | undefined {
+  if (!url || url.startsWith('${')) return url;
+  try {
+    const u = new URL(url);
+    u.username = '';
+    u.password = '';
+    u.hash = '';
+    for (const name of [...u.searchParams.keys()]) {
+      if (CREDENTIAL_PARAM.test(name)) u.searchParams.delete(name);
+    }
+    return u.toString();
+  } catch { return url; }
+}
+
 function getSavedProviders(): SavedProvider[] {
   try {
     const raw = localStorage.getItem(SAVED_PROVIDERS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const saved: SavedProvider[] = raw ? JSON.parse(raw) : [];
+    const cleaned = saved.map(s => ({ ...s, def: { ...s.def, base_url: stripUrlCredentials(s.def?.base_url) } }));
+    // Entries saved by older versions may still hold credentials in
+    // base_url — write the cleaned list back, not just return it.
+    // A failed write (quota, read-only storage) must not hide the list we
+    // already read, so it gets its own try.
+    const out = JSON.stringify(cleaned);
+    if (raw && out !== raw) {
+      try { localStorage.setItem(SAVED_PROVIDERS_KEY, out); } catch { /* keep the in-memory list */ }
+    }
+    return cleaned;
   } catch { return []; }
 }
 
@@ -65,7 +96,7 @@ function saveProviderToLibrary(name: string, def: ProviderDefinition) {
   // localStorage, even for this explicit "save for reuse" library.
   const entry: SavedProvider = {
     name, _id: id,
-    def: { ...def, _id: id, api_key: undefined, credentials_file: undefined },
+    def: { ...def, _id: id, api_key: undefined, credentials_file: undefined, base_url: stripUrlCredentials(def.base_url) },
   };
   if (idx >= 0) { saved[idx] = entry; } else { saved.push(entry); }
   localStorage.setItem(SAVED_PROVIDERS_KEY, JSON.stringify(saved));

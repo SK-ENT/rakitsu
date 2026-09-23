@@ -658,15 +658,15 @@ type SynthesisConfig struct {
 	Prompt string `mapstructure:"prompt"`
 }
 
-// Load loads configuration from a YAML file
 // envOverrides holds run-scoped env vars that take priority over os.Getenv.
 // envOverridesMu guards every read/write of envOverrides itself (including
 // from lookupEnv, reached by plain Load calls too — not just LoadWithEnv).
-// loadWithEnvMu is a separate lock serializing whole LoadWithEnv calls
-// end-to-end, so overrides from one call can never leak into or be
-// clobbered by another; it must stay distinct from envOverridesMu since
-// LoadWithEnv holds it across a nested Load() call that itself needs to
-// take envOverridesMu (a single non-reentrant mutex would deadlock there).
+// loadWithEnvMu serializes every load end-to-end — LoadWithEnv AND plain
+// Load — so one call's overrides can never leak into another: a Load that
+// ran while a LoadWithEnv had its overrides installed used to resolve
+// ${VAR} from them (on a hub, one request's API key in another request's
+// config). It must stay distinct from envOverridesMu, which lookupEnv takes
+// inside the load.
 var (
 	envOverrides   map[string]string
 	envOverridesMu sync.RWMutex
@@ -690,10 +690,19 @@ func LoadWithEnv(configPath string, overrides map[string]string) (*Config, error
 		envOverridesMu.Unlock()
 	}()
 
-	return Load(configPath)
+	return load(configPath)
 }
 
+// Load loads configuration from a YAML file. It is serialized with
+// LoadWithEnv (see loadWithEnvMu).
 func Load(configPath string) (*Config, error) {
+	loadWithEnvMu.Lock()
+	defer loadWithEnvMu.Unlock()
+	return load(configPath)
+}
+
+// load does the actual work; callers hold loadWithEnvMu.
+func load(configPath string) (*Config, error) {
 	v := viper.New()
 
 	v.SetConfigFile(configPath)

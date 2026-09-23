@@ -110,9 +110,12 @@ func (s *SSEServer) handleHubIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Buffer events per session and publish to EventBus
+	// Buffer events per session and publish to EventBus. Redact first: the
+	// buffer is replayed to browsers and served by /api/hub/sessions/events,
+	// and an older or third-party CLI may push unredacted events.
 	s.mu.Lock()
 	for i := range events {
+		events[i].Payload = telemetry.RedactEventPayload(events[i].EventType, events[i].Payload)
 		if sid := events[i].SessionID; sid != "" {
 			if sess, ok := s.activeSessions[sid]; ok {
 				sess.Events = append(sess.Events, events[i])
