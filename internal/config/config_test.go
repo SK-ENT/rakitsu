@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestResolveFileRef_ExplicitPrefix(t *testing.T) {
@@ -779,5 +781,237 @@ agents:
 	}
 	if !strings.Contains(agent.SystemPrompt, "You are a researcher.") {
 		t.Errorf("agent.SystemPrompt = %q, want it to still contain the agent's own system_prompt", agent.SystemPrompt)
+	}
+}
+
+// A resolved ${VAR} in a tool's args/url/command must not reach the
+// redacted snapshot (it is written into every session file and served to
+// the web UI). The snapshot keeps the ${VAR} reference instead, so a re-run
+// from it re-expands from the environment like the original config did.
+func TestRedacted_ToolEnvRefsKeepReferenceNotValue(t *testing.T) {
+	t.Setenv("RKT_TEST_ARG_TOKEN", "argsecret-111")
+	t.Setenv("RKT_TEST_URL", "https://mcp.internal.test/sse?key=urlsecret-222")
+	t.Setenv("RKT_TEST_CMD", "/opt/cmdsecret-333/bin/mcp")
+	t.Setenv("RKT_TEST_INLINE_TOKEN", "inlinesecret-444")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "c.yaml")
+	src := `name: probe
+version: "1.0"
+tools:
+  - name: gh
+    type: mcp_server
+    description: probe
+    command: ${RKT_TEST_CMD}
+    args: ["-y", "--token", "${RKT_TEST_ARG_TOKEN}", "--literal"]
+  - name: remote
+    type: mcp_server
+    description: probe
+    url: ${RKT_TEST_URL}
+agents:
+  - name: A
+    role: worker
+    system_prompt: hi
+    tools_inline:
+      - name: inl
+        type: mcp_server
+        description: probe
+        command: mcp
+        args: ["--api-key", "${RKT_TEST_INLINE_TOKEN}"]
+`
+	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	// The live config must still carry resolved values: tools need them.
+	if got := cfg.Tools[0].Args[2]; got != "argsecret-111" {
+		t.Fatalf("live config arg not expanded: %q", got)
+	}
+
+	b, err := yaml.Marshal(Redacted(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(b)
+	for _, secret := range []string{"argsecret-111", "urlsecret-222", "cmdsecret-333", "inlinesecret-444"} {
+		if strings.Contains(out, secret) {
+			t.Errorf("redacted snapshot contains resolved secret %q:\n%s", secret, out)
+		}
+	}
+	for _, ref := range []string{"${RKT_TEST_ARG_TOKEN}", "${RKT_TEST_URL}", "${RKT_TEST_CMD}", "${RKT_TEST_INLINE_TOKEN}", "--literal"} {
+		if !strings.Contains(out, ref) {
+			t.Errorf("redacted snapshot lost %q:\n%s", ref, out)
+		}
+	}
+	// Redacted must not mutate the live config.
+	if got := cfg.Tools[0].Args[2]; got != "argsecret-111" {
+		t.Errorf("Redacted mutated the live config: %q", got)
+	}
+}
+
+// Redacted's output is written into session files, so a YAML round-trip
+// failure must not fall back to returning the original (unredacted) config.
+func TestRedacted_FailsClosedOnMarshalError(t *testing.T) {
+	cfg := &Config{
+		Name: "probe",
+		Settings: Settings{
+			Providers: map[string]ProviderDefinition{"p": {Type: "openai", APIKey: "sk-live-should-not-leak"}},
+		},
+		Tools: []ToolDefinition{{
+			Name: "t", Type: "cli",
+			// A func value can't be YAML-marshaled, forcing the error path.
+			Parameters: map[string]Parameter{"x": {Type: "string", Default: func() {}}},
+		}},
+	}
+	got := Redacted(cfg)
+	if got == cfg {
+		t.Fatal("Redacted returned the original config on marshal error")
+	}
+	if p, ok := got.Settings.Providers["p"]; ok && p.APIKey == "sk-live-should-not-leak" {
+		t.Fatal("Redacted leaked the API key on marshal error")
+	}
+	if got.Name != "probe" {
+		t.Errorf("want name kept, got %q", got.Name)
+	}
+}
+
+// Provider/settings fields expanded from ${VAR} (base_url, default_model,
+// credentials_file, base_urls map, defaults.model) must not reach the
+// redacted snapshot as resolved values either: a submitted config could
+// point any of them at a server secret.
+func TestRedacted_SettingsEnvRefsKeepReferenceNotValue(t *testing.T) {
+	t.Setenv("RKT_T_BASE", "https://gw.test/v1?token=basesecret-1")
+	t.Setenv("RKT_T_MODEL", "modelsecret-2")
+	t.Setenv("RKT_T_CREDS", "/home/x/credsecret-3.json")
+	t.Setenv("RKT_T_LEGACY_BASE", "https://legacysecret-4.test")
+	t.Setenv("RKT_T_DEFAULT_MODEL", "defaultsecret-5")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "c.yaml")
+	src := `name: probe
+version: "1.0"
+settings:
+  base_urls:
+    openai: ${RKT_T_LEGACY_BASE}
+  defaults:
+    model: ${RKT_T_DEFAULT_MODEL}
+  providers:
+    gw:
+      type: openai
+      base_url: ${RKT_T_BASE}
+      default_model: ${RKT_T_MODEL}
+      credentials_file: ${RKT_T_CREDS}
+agents:
+  - name: A
+    role: worker
+    system_prompt: hi
+`
+	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := cfg.GetBaseURL("gw"); got != "https://gw.test/v1?token=basesecret-1" {
+		t.Fatalf("live config base_url not expanded: %q", got)
+	}
+
+	b, err := yaml.Marshal(Redacted(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(b)
+	for _, secret := range []string{"basesecret-1", "modelsecret-2", "credsecret-3", "legacysecret-4", "defaultsecret-5"} {
+		if strings.Contains(out, secret) {
+			t.Errorf("redacted snapshot contains resolved secret %q:\n%s", secret, out)
+		}
+	}
+	for _, ref := range []string{"${RKT_T_BASE}", "${RKT_T_MODEL}", "${RKT_T_CREDS}", "${RKT_T_LEGACY_BASE}", "${RKT_T_DEFAULT_MODEL}"} {
+		if !strings.Contains(out, ref) {
+			t.Errorf("redacted snapshot lost %q:\n%s", ref, out)
+		}
+	}
+}
+
+// Under `serve` (roots set), a file: reference must not escape the allowed
+// directories — not via ../ and not via a symlink — while references inside
+// them keep working. With no roots (the CLI), nothing changes.
+func TestFileRefRoots_ConfineReferences(t *testing.T) {
+	t.Cleanup(func() { SetFileRefRoots(nil) })
+
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret.md")
+	if err := os.WriteFile(secret, []byte("TOP-SECRET"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	cfgDir := filepath.Join(root, "cfg")
+	if err := os.MkdirAll(filepath.Join(root, "_shared"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "_shared", "ok.md"), []byte("shared prompt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(cfgDir, "link.md")); err != nil {
+		t.Fatal(err)
+	}
+	rel, err := filepath.Rel(cfgDir, secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	SetFileRefRoots([]string{root})
+	for _, ref := range []string{"file:" + rel, "file:link.md"} {
+		f := ref
+		if err := resolveFileRef(cfgDir, &f); err == nil || strings.Contains(f, "TOP-SECRET") {
+			t.Errorf("%s: escape not refused (err=%v, value=%q)", ref, err, f)
+		}
+	}
+	f := "file:../_shared/ok.md"
+	if err := resolveFileRef(cfgDir, &f); err != nil || f != "shared prompt" {
+		t.Errorf("in-root reference broke: err=%v value=%q", err, f)
+	}
+
+	SetFileRefRoots(nil)
+	f = "file:" + rel
+	if err := resolveFileRef(cfgDir, &f); err != nil || f != "TOP-SECRET" {
+		t.Errorf("CLI (no roots) behaviour changed: err=%v value=%q", err, f)
+	}
+}
+
+// Provider names and settings-map keys are free-form, so they may contain
+// "/" — the recorded ${VAR} must still be restored for them.
+func TestRedacted_SettingsEnvRefsWithSlashInNames(t *testing.T) {
+	t.Setenv("RKT_T_SLASH_BASE", "https://gw.test/v1?token=slashsecret-1")
+	t.Setenv("RKT_T_SLASH_MAP", "https://slashsecret-2.test")
+	cfg := &Config{Settings: Settings{
+		Providers: map[string]ProviderDefinition{"my/provider": {Type: "openai", BaseURL: "${RKT_T_SLASH_BASE}"}},
+		BaseURLs:  map[string]string{"team/openai": "${RKT_T_SLASH_MAP}"},
+	}}
+	// Same recording + expansion Load performs.
+	cfg.recordSettingsMapRefs("base_urls", cfg.Settings.BaseURLs)
+	cfg.Settings.BaseURLs = expandEnvVars(cfg.Settings.BaseURLs)
+	pd := cfg.Settings.Providers["my/provider"]
+	cfg.recordProviderRef("my/provider", "base_url", pd.BaseURL)
+	pd.BaseURL = expandEnvVar(pd.BaseURL)
+	cfg.Settings.Providers["my/provider"] = pd
+
+	b, err := yaml.Marshal(Redacted(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(b)
+	for _, secret := range []string{"slashsecret-1", "slashsecret-2"} {
+		if strings.Contains(out, secret) {
+			t.Errorf("redacted snapshot contains resolved secret %q:\n%s", secret, out)
+		}
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"os/signal"
 	"syscall"
 	"time"
@@ -116,6 +117,15 @@ func startServe() {
 		sseServer.SetConfigStore(configStore)
 		defer configStore.Cleanup()
 
+		// Configs here can arrive from the browser, so file: references may
+		// only resolve inside the served config directories, the upload
+		// directory, and the --config file's own directory.
+		roots := configStore.FileRefRoots()
+		if mcpConfig != "" {
+			roots = append(roots, filepath.Dir(mcpConfig))
+		}
+		config.SetFileRefRoots(roots)
+
 		// Agent runner — start runs from the browser
 		runner := server.NewAgentRunner(eventBus, sessionStore, configStore, sseServer, server.RunFunc(executeConfig))
 		sseServer.SetRunner(runner)
@@ -152,7 +162,7 @@ func startServe() {
 			mcpSrv := server.NewMCPServer(registry, Version)
 			mcpHTTP := &http.Server{
 				Addr:         fmt.Sprintf("%s:%d", serveHost, mcpPort),
-				Handler:      server.MCPListenerHandler(mcpSrv),
+				Handler:      server.MCPListenerHandler(serveHost, mcpSrv),
 				ReadTimeout:  30 * time.Second,
 				WriteTimeout: 30 * time.Second,
 				IdleTimeout:  60 * time.Second,
@@ -175,7 +185,7 @@ func startServe() {
 
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      server.CorsMiddleware(server.AuthMiddleware(mux)),
+		Handler:      server.GuardMiddleware(serveHost, server.CorsMiddleware(server.AuthMiddleware(mux))),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 0,
 		IdleTimeout:  60 * time.Second,

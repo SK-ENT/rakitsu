@@ -60,10 +60,9 @@ const actionError = ref<string | null>(null);
 // the existing envVarsMap() plumbing — also benefits Chat → + New.
 const ENV_OVERRIDES_KEY = 'rakitsu.envOverrides.v1';
 // These rows are conventionally *_API_KEY values (see comment above) — never
-// persist a secret-shaped value to localStorage, only the name. The in-memory
-// workspace push below keeps the real value; only the browser-storage copy
-// blanks it.
-const SECRET_LIKE_NAME = /key|token|secret|password|credential/i;
+// persist any value to localStorage, only the name (a name-based filter let
+// secrets under names like AUTH or DB_PWD through). The in-memory workspace
+// push below keeps the real value; only the browser-storage copy blanks it.
 const overrideRows = ref<{ key: string; value: string }[]>([]);
 const showOverrides = ref(false);
 
@@ -71,7 +70,7 @@ function syncOverridesToWorkspace() {
   const rows = overrideRows.value.filter((r) => r.key.trim());
   workspace.setEnvVars(rows.map((r) => ({ key: r.key.trim(), value: r.value })));
   try {
-    const forStorage = rows.map((r) => SECRET_LIKE_NAME.test(r.key) ? { key: r.key, value: '' } : r);
+    const forStorage = rows.map((r) => ({ key: r.key, value: '' }));
     localStorage.setItem(ENV_OVERRIDES_KEY, JSON.stringify(forStorage));
   } catch {
     /* quota or disabled; non-fatal */
@@ -93,8 +92,7 @@ function loadOverridesFromStorage() {
     /* ignore */
   }
   // Merge in the workspace's real values: a persisted row's value may have
-  // been blanked before storage (secret-shaped keys, see SECRET_LIKE_NAME
-  // above) — prefer the real workspace value over a blank persisted one so
+  // been blanked before storage (all values are, see above) — prefer the real workspace value over a blank persisted one so
   // reloading the page doesn't discard a secret that's still live in memory.
   // Also seeds any workspace env_vars that aren't already in localStorage
   // rows (e.g. Builder welcome screen wrote them via setEnvVars before the

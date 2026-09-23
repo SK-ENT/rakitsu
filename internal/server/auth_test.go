@@ -8,7 +8,7 @@ import (
 
 func TestIsLoopbackHost(t *testing.T) {
 	cases := map[string]bool{
-		"":             true,
+		"":             false, // ":port" listens on every interface
 		"localhost":    true,
 		"127.0.0.1":    true,
 		"::1":          true,

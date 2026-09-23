@@ -41,6 +41,13 @@ func NewConfigStore(searchPaths []string) (*ConfigStore, error) {
 	if err := os.MkdirAll(tempDir, 0700); err != nil {
 		return nil, err
 	}
+	// The path is fixed and os.TempDir() may be shared (/tmp on Linux), so
+	// another local user could have created it first — as a symlink, or a
+	// directory they own — and redirect or read uploaded configs. Refuse
+	// anything but a real directory owned by us, and make it private.
+	if err := checkPrivateDir(tempDir); err != nil {
+		return nil, err
+	}
 	return &ConfigStore{
 		searchPaths: searchPaths,
 		tempDir:     tempDir,
@@ -225,7 +232,18 @@ func (cs *ConfigStore) UploadZip(data []byte) (*ConfigEntry, error) {
 		return nil, fmt.Errorf("invalid zip: %w", err)
 	}
 
-	// Extract files, stripping common prefix if all files share one
+	// Extract files, stripping common prefix if all files share one. The
+	// per-file cap alone doesn't bound a zip of many small entries, so the
+	// file count and total extracted size are capped too.
+	const (
+		maxZipFiles      = 1000
+		maxZipTotalBytes = 50 << 20
+	)
+	if len(reader.File) > maxZipFiles {
+		os.RemoveAll(extractDir)
+		return nil, fmt.Errorf("zip has %d entries, max %d", len(reader.File), maxZipFiles)
+	}
+	var total int64
 	prefix := zipCommonPrefix(reader.File)
 	for _, f := range reader.File {
 		if f.FileInfo().IsDir() {
@@ -248,9 +266,13 @@ func (cs *ConfigStore) UploadZip(data []byte) (*ConfigEntry, error) {
 			rc.Close()
 			continue
 		}
-		io.Copy(out, io.LimitReader(rc, 2<<20)) // 2MB per file limit
+		n, _ := io.Copy(out, io.LimitReader(rc, 2<<20)) // 2MB per file limit
 		out.Close()
 		rc.Close()
+		if total += n; total > maxZipTotalBytes {
+			os.RemoveAll(extractDir)
+			return nil, fmt.Errorf("zip extracts to more than %d bytes", maxZipTotalBytes)
+		}
 	}
 
 	// Find the main config file
@@ -351,6 +373,13 @@ func (cs *ConfigStore) GetWithEnv(id string, envVars map[string]string) (*config
 }
 
 // Cleanup removes temp uploaded configs.
+// FileRefRoots returns the directories config file references may resolve
+// into when configs are loaded through this store: the scanned search paths
+// and the upload directory. See config.SetFileRefRoots.
+func (cs *ConfigStore) FileRefRoots() []string {
+	return append(append([]string{}, cs.searchPaths...), cs.tempDir)
+}
+
 func (cs *ConfigStore) Cleanup() {
 	os.RemoveAll(cs.tempDir)
 }

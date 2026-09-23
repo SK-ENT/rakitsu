@@ -20,6 +20,10 @@ import (
 func doReq(t *testing.T, h http.Handler, method, path, token string, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	// A real local client addresses the loopback listener; httptest's
+	// default example.com Host would be refused by GuardMiddleware's
+	// DNS-rebinding check.
+	req.Host = "localhost:9100"
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -115,7 +119,7 @@ func TestMCPListenerHandler_TokenCannotBeSidesteppedByPath(t *testing.T) {
 	t.Setenv(apiTokenEnv, "s3cret")
 	reg := neutools.NewToolRegistry()
 	reg.RegisterTool(&stubTool{name: "marker", result: "marker-ran"})
-	h := MCPListenerHandler(NewMCPServer(reg, "test"))
+	h := MCPListenerHandler("localhost", NewMCPServer(reg, "test"))
 
 	init := `{"jsonrpc":"2.0","id":"a","method":"initialize","params":{"protocolVersion":"2025-11-25"}}`
 
@@ -151,7 +155,7 @@ func TestMCPListenerHandler_TokenCannotBeSidesteppedByPath(t *testing.T) {
 
 func TestMCPListenerHandler_OpenWithoutTokenConfigured(t *testing.T) {
 	t.Setenv(apiTokenEnv, "")
-	h := MCPListenerHandler(NewMCPServer(neutools.NewToolRegistry(), "test"))
+	h := MCPListenerHandler("localhost", NewMCPServer(neutools.NewToolRegistry(), "test"))
 	init := `{"jsonrpc":"2.0","id":"a","method":"initialize","params":{"protocolVersion":"2025-11-25"}}`
 	if rec := doReq(t, h, "POST", "/mcp", "", init); rec.Code != http.StatusOK {
 		t.Errorf("POST /mcp with no token configured: %d, want 200", rec.Code)

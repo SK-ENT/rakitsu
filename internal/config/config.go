@@ -32,6 +32,12 @@ type Config struct {
 	Orchestrator       *OrchestratorConfig  `mapstructure:"orchestrator"`
 	Orchestrators      []OrchestratorConfig `mapstructure:"orchestrators" yaml:"orchestrators,omitempty"`
 	Workflows          []WorkflowDefinition `mapstructure:"workflows"`
+
+	// settingsEnvRefs maps a settings field (see settingsRefKey) to the
+	// ${VAR} text it held before Load expanded it, so Redacted can write the
+	// reference back instead of the resolved value. Unexported: never parsed
+	// from or written to YAML.
+	settingsEnvRefs map[settingsRefKey]string
 }
 
 // Settings contains global configuration settings
@@ -307,6 +313,20 @@ type ToolDefinition struct {
 	// api_key values (${VAR} / ${VAR:-default}); see the expansion loop in
 	// Load below.
 	APIKey string `mapstructure:"api_key,omitempty" yaml:"api_key,omitempty"`
+
+	// envRefs holds the original ${VAR} text of each url/command/args field
+	// expandToolDefEnvVars resolved, so Redacted can write the reference
+	// back into a snapshot instead of the resolved (possibly secret) value.
+	// Unexported: never parsed from or written to YAML.
+	envRefs *toolEnvRefs
+}
+
+// toolEnvRefs records pre-expansion ${VAR} references; an empty string
+// means that field was not a reference.
+type toolEnvRefs struct {
+	URL     string
+	Command string
+	Args    map[int]string
 }
 
 // Parameter defines a tool parameter
@@ -743,13 +763,22 @@ func Load(configPath string) (*Config, error) {
 
 	// Expand environment variables in API keys, base URLs, and credentials files
 	config.Settings.APIKeys = expandEnvVars(config.Settings.APIKeys)
+	config.recordSettingsMapRefs("base_urls", config.Settings.BaseURLs)
 	config.Settings.BaseURLs = expandEnvVars(config.Settings.BaseURLs)
+	config.recordSettingsMapRefs("credentials_files", config.Settings.CredentialsFiles)
 	config.Settings.CredentialsFiles = expandEnvVars(config.Settings.CredentialsFiles)
+	config.recordSettingsMapRefs("locations", config.Settings.Locations)
 	config.Settings.Locations = expandEnvVars(config.Settings.Locations)
+	config.recordSettingsMapRefs("projects", config.Settings.Projects)
 	config.Settings.Projects = expandEnvVars(config.Settings.Projects)
 
 	// Expand environment variables in named provider definitions
 	for name, pd := range config.Settings.Providers {
+		config.recordProviderRef(name, "base_url", pd.BaseURL)
+		config.recordProviderRef(name, "credentials_file", pd.CredentialsFile)
+		config.recordProviderRef(name, "location", pd.Location)
+		config.recordProviderRef(name, "project", pd.Project)
+		config.recordProviderRef(name, "default_model", pd.DefaultModel)
 		pd.APIKey = expandEnvVar(pd.APIKey)
 		pd.BaseURL = expandEnvVar(pd.BaseURL)
 		pd.CredentialsFile = expandEnvVar(pd.CredentialsFile)
@@ -760,6 +789,7 @@ func Load(configPath string) (*Config, error) {
 	}
 
 	// Expand environment variables in defaults
+	config.recordSettingsRef(settingsRefKey{section: "defaults", field: "model"}, config.Settings.Defaults.Model)
 	config.Settings.Defaults.Model = expandEnvVar(config.Settings.Defaults.Model)
 
 	// Filter out $ref placeholders (entries with no name from modular YAML references)
@@ -865,11 +895,131 @@ func expandEnvVar(v string) string {
 // ToolDefinition's credential and mcp_server connection fields (api_key,
 // url, command, args) in place.
 func expandToolDefEnvVars(t *ToolDefinition) {
+	refs := &toolEnvRefs{}
+	if isEnvRef(t.URL) {
+		refs.URL = t.URL
+	}
+	if isEnvRef(t.Command) {
+		refs.Command = t.Command
+	}
+	for i, a := range t.Args {
+		if isEnvRef(a) {
+			if refs.Args == nil {
+				refs.Args = map[int]string{}
+			}
+			refs.Args[i] = a
+		}
+	}
+	t.envRefs = refs
+
 	t.APIKey = expandEnvVar(t.APIKey)
 	t.URL = expandEnvVar(t.URL)
 	t.Command = expandEnvVar(t.Command)
 	for i := range t.Args {
 		t.Args[i] = expandEnvVar(t.Args[i])
+	}
+}
+
+// isEnvRef reports whether v is a whole-value ${VAR} reference, the only
+// form expandEnvVar resolves.
+func isEnvRef(v string) bool {
+	return strings.HasPrefix(v, "${") && strings.HasSuffix(v, "}")
+}
+
+// settingsRefKey identifies one expanded settings field. Provider names and
+// settings-map keys are free-form (they may contain "/"), so they are kept
+// as separate fields rather than joined into a path string.
+type settingsRefKey struct {
+	section string // "providers", "defaults", or a settings map name ("base_urls", ...)
+	name    string // provider name or map key; empty for defaults
+	field   string // provider field ("base_url", ...) or "model"; empty for maps
+}
+
+// recordSettingsRef remembers v under key if it is a ${VAR} reference.
+func (c *Config) recordSettingsRef(key settingsRefKey, v string) {
+	if !isEnvRef(v) {
+		return
+	}
+	if c.settingsEnvRefs == nil {
+		c.settingsEnvRefs = map[settingsRefKey]string{}
+	}
+	c.settingsEnvRefs[key] = v
+}
+
+// recordProviderRef records a named provider's field.
+func (c *Config) recordProviderRef(name, field, v string) {
+	c.recordSettingsRef(settingsRefKey{section: "providers", name: name, field: field}, v)
+}
+
+// recordSettingsMapRefs records each ${VAR} value of a settings map
+// (base_urls, credentials_files, ...).
+func (c *Config) recordSettingsMapRefs(section string, m map[string]string) {
+	for k, v := range m {
+		c.recordSettingsRef(settingsRefKey{section: section, name: k}, v)
+	}
+}
+
+// restoreSettingsEnvRefs writes src's recorded settings ${VAR} references
+// back over dst's resolved values. dst is a deep copy of src.
+func restoreSettingsEnvRefs(dst *Config, src *Config) {
+	for key, ref := range src.settingsEnvRefs {
+		switch key.section {
+		case "providers":
+			pd, ok := dst.Settings.Providers[key.name]
+			if !ok {
+				continue
+			}
+			switch key.field {
+			case "base_url":
+				pd.BaseURL = ref
+			case "credentials_file":
+				pd.CredentialsFile = ref
+			case "location":
+				pd.Location = ref
+			case "project":
+				pd.Project = ref
+			case "default_model":
+				pd.DefaultModel = ref
+			}
+			dst.Settings.Providers[key.name] = pd
+		case "defaults":
+			dst.Settings.Defaults.Model = ref
+		default:
+			var m map[string]string
+			switch key.section {
+			case "base_urls":
+				m = dst.Settings.BaseURLs
+			case "credentials_files":
+				m = dst.Settings.CredentialsFiles
+			case "locations":
+				m = dst.Settings.Locations
+			case "projects":
+				m = dst.Settings.Projects
+			}
+			if _, ok := m[key.name]; ok {
+				m[key.name] = ref
+			}
+		}
+	}
+}
+
+// restoreToolEnvRefs writes src's recorded ${VAR} references back over
+// dst's resolved values. dst is a deep copy of src (same field layout).
+func restoreToolEnvRefs(dst *ToolDefinition, src *ToolDefinition) {
+	r := src.envRefs
+	if r == nil {
+		return
+	}
+	if r.URL != "" {
+		dst.URL = r.URL
+	}
+	if r.Command != "" {
+		dst.Command = r.Command
+	}
+	for i, ref := range r.Args {
+		if i < len(dst.Args) {
+			dst.Args[i] = ref
+		}
 	}
 }
 
@@ -1065,19 +1215,44 @@ func (c *Config) EffectiveSystemPrompt(def *AgentDefinition) string {
 //
 // Redacted never returns nil. If c is nil, it returns a pointer to a
 // zero-value Config.
-func Redacted(c *Config) *Config {
+func Redacted(c *Config) (out *Config) {
 	if c == nil {
 		return &Config{}
 	}
+	// Fail closed: on a round-trip error return only the name, never the
+	// original — callers write the result into session files. yaml.v3
+	// panics (rather than erroring) on an unmarshalable value, so recover
+	// that too.
+	defer func() {
+		if recover() != nil {
+			out = &Config{Name: c.Name}
+		}
+	}()
 	data, err := yaml.Marshal(c)
 	if err != nil {
-		return c
+		return &Config{Name: c.Name}
 	}
 	var cp Config
 	if err := yaml.Unmarshal(data, &cp); err != nil {
-		return c
+		return &Config{Name: c.Name}
 	}
 	const mask = "[REDACTED]"
+	restoreSettingsEnvRefs(&cp, c)
+	if len(cp.Tools) == len(c.Tools) {
+		for i := range cp.Tools {
+			restoreToolEnvRefs(&cp.Tools[i], &c.Tools[i])
+		}
+	}
+	if len(cp.Agents) == len(c.Agents) {
+		for ai := range cp.Agents {
+			if len(cp.Agents[ai].ToolsInline) != len(c.Agents[ai].ToolsInline) {
+				continue
+			}
+			for ti := range cp.Agents[ai].ToolsInline {
+				restoreToolEnvRefs(&cp.Agents[ai].ToolsInline[ti], &c.Agents[ai].ToolsInline[ti])
+			}
+		}
+	}
 	if cp.Settings.Providers != nil {
 		for name, p := range cp.Settings.Providers {
 			if p.APIKey != "" {
@@ -1458,9 +1633,64 @@ func looksLikeFilePath(val string) bool {
 	return false
 }
 
+// fileRefRoots, when non-empty, confines file references (file: prefix and
+// auto-detected prompt paths) to these directories. The CLI leaves it empty:
+// a local config author can already read any file they own, and shipped
+// examples use file:../_shared/... . `rakitsu serve` sets it, because there
+// the config can come from a web request and a reference like
+// file:../../home/me/.ssh/id_rsa would pull a server file into the prompt
+// and the session snapshot.
+var (
+	fileRefRootsMu sync.RWMutex
+	fileRefRoots   []string
+)
+
+// SetFileRefRoots confines file references to roots (symlinks resolved).
+// An empty list removes the restriction.
+func SetFileRefRoots(roots []string) {
+	var resolved []string
+	for _, r := range roots {
+		abs, err := filepath.Abs(r)
+		if err != nil {
+			continue
+		}
+		if real, err := filepath.EvalSymlinks(abs); err == nil {
+			abs = real
+		}
+		resolved = append(resolved, abs)
+	}
+	fileRefRootsMu.Lock()
+	fileRefRoots = resolved
+	fileRefRootsMu.Unlock()
+}
+
+// checkFileRefAllowed returns an error if roots are set and path (after
+// resolving symlinks) is not inside one of them.
+func checkFileRefAllowed(path string) error {
+	fileRefRootsMu.RLock()
+	roots := fileRefRoots
+	fileRefRootsMu.RUnlock()
+	if len(roots) == 0 {
+		return nil
+	}
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return err
+	}
+	for _, root := range roots {
+		if rel, err := filepath.Rel(root, real); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return nil
+		}
+	}
+	return fmt.Errorf("file reference %s is outside the allowed config directories", path)
+}
+
 // readFileInto reads a file and stores its contents in the target field.
 func readFileInto(baseDir, relPath string, field *string) error {
 	absPath := filepath.Join(baseDir, relPath)
+	if err := checkFileRefAllowed(absPath); err != nil {
+		return fmt.Errorf("reading %s: %w", relPath, err)
+	}
 	data, err := os.ReadFile(absPath)
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", relPath, err)
