@@ -16,11 +16,10 @@
 
 Design multi-agent systems on a drag-and-drop canvas, debug with breakpoints and time-travel, deploy as a single zero-dependency binary. YAML-configured, multi-provider, open source.
 
-<!-- TODO: hero GIF — the visual builder in motion: drag two agents onto the
-     canvas, wire a tool between them, hit Run, watch the debugger stream the
-     execution tree live. ~10s loop, ~1200px wide, matches the app's theme. -->
-<!-- Alt text when the asset lands: "Rakitsu visual builder — two agents wired
-     on a drag-and-drop canvas with the live execution tree streaming below." -->
+<p align="center">
+  <img src="docs/assets/showcase/debugger.gif" width="880" alt="Rakitsu debugger: a Code Reviewer run pauses at a breakpoint before its read_file tool call, the detail panel shows token usage and the pending call, then the run resumes to its result">
+</p>
+<p align="center"><sub>A real run, nothing staged: breakpoint on <code>read_file</code>, pause, inspect, resume.</sub></p>
 
 ## Quick Start
 
@@ -63,6 +62,22 @@ before writing a config.
 > If that happens: `xattr -cr $(command -v rakitsu)`, and if it's still
 > killed, `sudo spctl --add $(command -v rakitsu)` or System Settings →
 > Privacy & Security → **Open Anyway**.
+
+## See it run
+
+Recorded against a local model with the [Code Reviewer config](#example-config) below. Nothing staged.
+
+**Chat.** Open a chat on the same config. The chat host hands the review to the pipeline, shows the nested tool calls, and comes back with the real bugs in the sample file.
+
+<p align="center">
+  <img src="docs/assets/showcase/chat.gif" width="880" alt="Rakitsu web chat: the chat host delegates a code review to the Reviewer agent, nested invoke_config and read_file tool blocks appear, then a markdown list of the top issues">
+</p>
+
+**Terminal and browser at once.** The same run, watched from the chat TUI and the web hub side by side.
+
+<p align="center">
+  <img src="docs/assets/showcase/tui-web.gif" width="880" alt="Split screen: the rakitsu chat TUI on the left and the web hub on the right, both following the same run in real time">
+</p>
 
 ## Why Rakitsu?
 
@@ -112,6 +127,32 @@ before writing a config.
 - `rakitsu serve` exposes an MCP server at `/mcp` (legacy era, ≤2025-11-25 revision) so external MCP clients can discover and call rakitsu's tools
 - `rakitsu serve` exposes an A2A endpoint at `/a2a` (real A2A v1.0.1) plus agent-card discovery, so a rakitsu agent can delegate to a named agent in a different rakitsu process
 - Tool types `mcp_server`, `a2a`, and `jev` let a rakitsu agent call *out* to other MCP servers, A2A agents, or TypeSafe AI's Jev model for typed yes/no, pick-one, or scored questions
+
+## Wallpapers
+
+Something to watch while an agent thinks. The Builder canvas can run an animated shader behind your agents: seven presets, off by default, picked in the Settings panel.
+
+One of the presets, Water Ripple, is a koi pond. Press **F** to drop food and the koi show up. Press **Shift+F** to fish them instead (they forgive you, they're pixels). **R** makes it rain. The clip below is the real thing: an agent run going on in the background, koi doing their own thing in front.
+
+<p align="center">
+  <img src="docs/assets/showcase/wallpaper-koi-pond.gif" width="640" alt="Water wallpaper: koi swimming and feeding on pellets over the Builder canvas while an agent run is in progress">
+</p>
+
+<details>
+<summary>Why is there a koi pond in an agent IDE?</summary>
+
+I was debugging something ugly at 11pm, doing the classic dev thing: staring at a spinner like it owes me money. My daughter walked by, looked at my screen, and said: *"you're always stressed when you do this. Why don't you just... put koi on it? Something nice to look at while it thinks."*
+
+A child roasted my life choices and fixed my UX in one sentence.
+
+</details>
+
+The other six:
+
+| | | |
+|:-:|:-:|:-:|
+| <img src="docs/assets/showcase/wallpaper-flow.jpg" width="260" alt="Circuit Flow wallpaper"><br>Circuit Flow | <img src="docs/assets/showcase/wallpaper-lattice.jpg" width="260" alt="Plasma Lattice wallpaper"><br>Plasma Lattice | <img src="docs/assets/showcase/wallpaper-fog.jpg" width="260" alt="Volumetric Fog wallpaper"><br>Volumetric Fog |
+| <img src="docs/assets/showcase/wallpaper-cells.jpg" width="260" alt="Voronoi Cells wallpaper"><br>Voronoi Cells | <img src="docs/assets/showcase/wallpaper-aurora.jpg" width="260" alt="Aurora Waves wallpaper"><br>Aurora Waves | <img src="docs/assets/showcase/wallpaper-sumi.jpg" width="260" alt="Suminagashi wallpaper"><br>Suminagashi |
 
 ## CLI
 
