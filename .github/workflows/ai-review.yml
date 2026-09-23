@@ -176,8 +176,18 @@ jobs:
             echo "FATAL: no release found on ${{ github.repository }} (rebuild in progress? nothing tagged yet?) — nothing to install." >&2
             exit 1
           fi
-          gh release download "$TAG" --repo "${{ github.repository }}" \
-            --pattern 'rakitsu-linux-amd64' --pattern 'checksums.txt' --clobber
+          # Download by release id, not `gh release download <tag>`: GitHub's
+          # by-tag endpoint can return the release with an empty asset list
+          # (seen on v0.3.0-alpha.11) while the assets endpoint lists them all.
+          REL_ID=$(gh api "repos/${{ github.repository }}/releases/tags/$TAG" -q .id)
+          for f in rakitsu-linux-amd64 checksums.txt; do
+            AID=$(gh api "repos/${{ github.repository }}/releases/$REL_ID/assets?per_page=100" -q ".[] | select(.name == \"$f\") | .id")
+            if [ -z "$AID" ]; then
+              echo "FATAL: $f not found in release $TAG" >&2
+              exit 1
+            fi
+            gh api -H 'Accept: application/octet-stream' "repos/${{ github.repository }}/releases/assets/$AID" > "$f"
+          done
           grep linux-amd64 checksums.txt | shasum -a 256 -c -
           sudo install -m 755 rakitsu-linux-amd64 /usr/local/bin/rakitsu
 
