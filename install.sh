@@ -66,13 +66,49 @@ BINARY="rakitsu-${OS}-${ARCH}"
 echo "Detected: ${OS}/${ARCH}"
 
 # Get latest release tag.
-# Uses /releases (plural) and picks the first entry instead of /releases/latest,
-# because /releases/latest skips prereleases and early alpha/beta tags would be invisible.
+# Uses /releases (plural) instead of /releases/latest, because /releases/latest
+# skips prereleases and early alpha/beta tags would be invisible. Picks the
+# highest version rather than the first entry: GitHub doesn't guarantee the
+# list order (it once listed v0.3.0-alpha.9 above alpha.11). Order: X.Y.Z
+# numerically, then alpha < beta < rc < final, then the prerelease number.
+# Tags that don't parse are ignored.
 # VERSION env var overrides auto-detection (e.g. VERSION=v0.1.0-alpha.3 curl ... | sh).
 if [ -n "$VERSION" ]; then
   LATEST="$VERSION"
 else
-  LATEST=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases" | grep '"tag_name"' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+  # Read every page (100 per page) so a newer release can't be missed
+  # once there are more than 100.
+  TAGS=""
+  PAGE=1
+  while :; do
+    PAGE_TAGS=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=100&page=${PAGE}" \
+      | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+    [ -z "$PAGE_TAGS" ] && break
+    TAGS="${TAGS}${PAGE_TAGS}
+"
+    [ "$(printf '%s\n' "$PAGE_TAGS" | wc -l)" -lt 100 ] && break
+    PAGE=$((PAGE + 1))
+  done
+  LATEST=$(printf '%s' "$TAGS" \
+    | awk '{
+        v = $0; sub(/^v/, "", v)
+        core = v; pre = ""
+        i = index(v, "-")
+        if (i > 0) { core = substr(v, 1, i - 1); pre = substr(v, i + 1) }
+        if (split(core, c, ".") != 3) next
+        if (c[1] !~ /^[0-9]+$/ || c[2] !~ /^[0-9]+$/ || c[3] !~ /^[0-9]+$/) next
+        rank = 4; num = 0
+        if (pre != "") {
+          split(pre, p, ".")
+          if (p[1] == "alpha") rank = 1
+          else if (p[1] == "beta") rank = 2
+          else if (p[1] == "rc") rank = 3
+          else next
+          if (p[2] ~ /^[0-9]+$/) num = p[2]
+        }
+        print c[1], c[2], c[3], rank, num, $0
+      }' \
+    | sort -k1,1n -k2,2n -k3,3n -k4,4n -k5,5n | tail -1 | awk '{print $6}')
 fi
 if [ -z "$LATEST" ]; then
   echo "Could not determine latest release. Check https://github.com/${REPO}/releases"
