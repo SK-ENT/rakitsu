@@ -295,7 +295,7 @@ async function discoverModels() {
       ? new URLSearchParams({ type: 'codex', credentials_file: (localSettings.value.providers?.[provider] as ProviderDefinition | undefined)?.credentials_file ?? '' })
       : new URLSearchParams({ base_url: baseUrl });
     const headers: HeadersInit = {};
-    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+    if (apiKey) headers['X-Provider-Key'] = apiKey;
     const [modelsRes, infoRes] = await Promise.allSettled([
       fetch(`/api/providers/models?${params}`, { headers }),
       // Codex has no model-info endpoint; skip it instead of 404-ing.
@@ -382,7 +382,7 @@ async function discoverProviderModels(providerName: string) {
       ? new URLSearchParams({ type: 'codex', credentials_file: (localSettings.value.providers?.[providerName] as ProviderDefinition | undefined)?.credentials_file ?? '' })
       : new URLSearchParams({ base_url: baseUrl });
     const headers: HeadersInit = {};
-    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+    if (apiKey) headers['X-Provider-Key'] = apiKey;
     const res = await fetch(`/api/providers/models?${params}`, { headers });
     if (res.ok) {
       const data = await res.json() as { models?: string[] };

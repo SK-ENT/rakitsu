@@ -15,7 +15,7 @@ import (
 // process, so two separate rakitsu processes racing to update sessions.json
 // (the documented rakitsu serve + rakitsu run workflow) need this too.
 func lockFile(path string, fn func() error) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return err
 	}

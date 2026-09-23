@@ -3,9 +3,10 @@ import { ref, watch } from 'vue';
 import type { CanvasMode } from './VisualBuilder.vue';
 
 const RUNBAR_STORAGE_KEY = 'rakitsu-runbar-state';
-// Env-var names that look secret-shaped never get their value persisted to
-// localStorage — only the name is remembered, so the value must be re-typed.
-const SECRET_LIKE_NAME = /key|token|secret|password|credential/i;
+// Env-var values are never persisted to localStorage — only the names are
+// remembered, so values must be re-typed. A name-based filter (the old
+// /key|token|secret|.../ check) let secrets under names like AUTH or DB_PWD
+// through.
 
 const props = defineProps<{
   canvasMode: CanvasMode;
@@ -73,7 +74,7 @@ function persistRunBarState() {
         workdir: workdir.value,
         envVars: envVars.value
           .filter(e => e.key.trim())
-          .map(e => SECRET_LIKE_NAME.test(e.key) ? { key: e.key, value: '' } : e),
+          .map(e => ({ key: e.key, value: '' })),
       }));
     } catch { /* ignore */ }
   }, 1000);

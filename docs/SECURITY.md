@@ -184,8 +184,9 @@ without authentication.
 
 ### Network exposure requires an API token
 
-Binding a non-loopback host (`--host 0.0.0.0`, a LAN IP, a Tailscale address)
-is **refused** unless you set an API token:
+Binding a non-loopback host (`--host 0.0.0.0`, a LAN IP, a Tailscale address,
+or an empty `--host ""`, which listens on every interface) is **refused**
+unless you set an API token:
 
 ```bash
 export RAKITSU_API_TOKEN="$(openssl rand -hex 32 | tr -d '\n')"
@@ -239,10 +240,54 @@ subprocesses it spawns so an agent cannot read it back.
   refusal remains the backstop for all of it — keep it behind a tunnel or a
   trusted network.
 - WebSocket upgrades are restricted to localhost/same-origin (so a random web
-  page cannot drive your agent), but there is no CSRF token on same-origin
-  POSTs yet.
+  page cannot drive your agent). There is no CSRF token on same-origin POSTs.
+
+### Browser-driven attacks (all modes)
+
+- **Cross-site requests are refused.** A `POST`/`DELETE` carrying an `Origin`
+  that is neither a localhost origin nor the hub's own origin gets a 403, so
+  a web page you visit cannot upload a config and start it on your local hub
+  (CORS alone would only hide the response, not stop the request). Clients
+  that send no `Origin` (the CLI, curl) are unaffected.
+- **DNS rebinding is refused.** On a loopback bind, a request whose `Host`
+  header isn't `localhost`, `127.0.0.1` or `[::1]` gets a 403.
+- **Provider keys use their own header.** The model-discovery endpoints
+  (`/api/providers/models`, `/api/providers/model-info`) take the provider
+  key in `X-Provider-Key`. When `RAKITSU_API_TOKEN` is set, the
+  `Authorization` header is never used as a provider key, so the control
+  token is never forwarded to a caller-chosen `base_url`.
+
+### Configs submitted to the hub
+
+- `file:` prompt references in configs loaded by `rakitsu serve` must
+  resolve (after symlinks) inside the served config directories (`.`,
+  `./examples`, `./configs`, `--config-dir`), the upload directory, or the
+  `--config` file's own directory. `file:../../home/you/.ssh/id_rsa` in an
+  uploaded config is rejected. The CLI (`rakitsu run`) keeps allowing any
+  path the config author can read.
+- `${VAR}` references in a submitted config still resolve from the hub's
+  environment, and `base_url` may point at loopback/private addresses —
+  local providers (Ollama, a LiteLLM proxy) need both. This is safe because
+  only a trusted operator can submit configs (loopback, or the API token on
+  a network bind); treat anyone who can reach the hub that way as able to
+  run code and read the hub's environment.
+- Uploads are capped (1 MB single config, 10 MB zip, at most 1000 zip
+  entries and 50 MB extracted). The upload directory
+  (`$TMPDIR/rakitsu-configs`) must be a real directory owned by the hub's
+  user; a symlink or someone else's directory there is refused.
+- The web UI never stores provider/tool API keys, credentials files or run
+  env var values in `localStorage`; keys saved there by older versions are
+  removed on next load.
 
 ## Telemetry & session logs
+
+Session files live in `~/.rakitsu/sessions/` (directory `0700`, files `0600`,
+tightened on start if an older version created them more open). Each starts
+with a snapshot of the run's config: `api_key` values are masked to
+`[REDACTED]`, and any other field written as a `${VAR}` reference (tool
+`args`/`url`/`command`, provider `base_url`/`default_model`/
+`credentials_file`, …) is stored as that reference, not its resolved value.
+A secret typed literally into the YAML is stored as written.
 
 Tool-call events (`TOOL_CALL_START`'s and `THOUGHT_END`'s planned-call
 `Arguments`) are written to both `~/.rakitsu/sessions/<id>.jsonl` and, when

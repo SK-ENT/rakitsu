@@ -3805,13 +3805,39 @@ const BOOT_ID_KEY = 'rakitsu-canvas-boot-id';
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 let autoSaveEnabled = false;
 
+// localStorage outlives the session and is readable by any script on this
+// origin, so credentials never go there: provider api_key/credentials_file,
+// the flat api_keys/credentials_files maps, a tool's api_key, and any tool
+// env value that is a literal rather than a ${VAR} reference. Applied on
+// save and on restore, so state written by older versions is cleaned too.
+function isEnvRef(v: unknown): boolean {
+  return typeof v === 'string' && v.startsWith('${') && v.endsWith('}');
+}
+
+function stripSecretsFromSettings(settings: Record<string, any>): Record<string, any> {
+  const providers: Record<string, any> = {};
+  for (const [name, p] of Object.entries(settings.providers ?? {})) {
+    const { api_key: _k, credentials_file: _c, ...rest } = (p ?? {}) as Record<string, any>;
+    providers[name] = rest;
+  }
+  return { ...settings, api_keys: {}, credentials_files: {}, providers };
+}
+
+function stripSecretsFromNodeData(data: Record<string, any>): Record<string, any> {
+  const { api_key: _k, ...rest } = data ?? {};
+  if (rest.env && typeof rest.env === 'object') {
+    rest.env = Object.fromEntries(Object.entries(rest.env).filter(([, v]) => isEnvRef(v)));
+  }
+  return rest;
+}
+
 function saveCanvasToStorage() {
   if (!autoSaveEnabled) return;
   try {
     const state = {
       nodes: nodes.value.map(n => ({
         id: n.id, type: n.type, position: n.position,
-        data: { ...n.data, _runStatus: undefined, _tokenCount: undefined, _iterationCount: undefined, _lastThought: undefined, _errorMessage: undefined, _hasBreakpoint: undefined },
+        data: stripSecretsFromNodeData({ ...n.data, _runStatus: undefined, _tokenCount: undefined, _iterationCount: undefined, _lastThought: undefined, _errorMessage: undefined, _hasBreakpoint: undefined }),
         parentNode: n.parentNode, extent: n.extent, expandParent: n.expandParent,
         style: n.style, hidden: n.hidden,
       })),
@@ -3821,9 +3847,7 @@ function saveCanvasToStorage() {
       })),
       projectName: projectName.value,
       projectId: projectId.value,
-      // api_keys/credentials_files hold real secrets — never persist them to
-      // localStorage; base_urls/spawn/etc. aren't credentials and stay.
-      settings: { ...projectSettings.value, api_keys: {}, credentials_files: {} },
+      settings: stripSecretsFromSettings(projectSettings.value as Record<string, any>),
     };
     localStorage.setItem(CANVAS_STORAGE_KEY, JSON.stringify(state));
   } catch { /* localStorage may be full or unavailable */ }
@@ -3840,11 +3864,11 @@ function restoreCanvasFromStorage(): boolean {
     if (!raw) return false;
     const state = JSON.parse(raw);
     if (!state.nodes?.length) return false;
-    nodes.value = state.nodes;
+    nodes.value = state.nodes.map((n: any) => ({ ...n, data: stripSecretsFromNodeData(n.data) }));
     edges.value = state.edges ?? [];
     if (state.projectName) projectName.value = state.projectName;
     if (state.projectId) projectId.value = state.projectId;
-    if (state.settings) projectSettings.value = { ...createDefaultSettings(), ...state.settings };
+    if (state.settings) projectSettings.value = { ...createDefaultSettings(), ...stripSecretsFromSettings(state.settings) };
     return true;
   } catch {
     return false;

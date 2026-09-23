@@ -250,7 +250,7 @@ func (s *SSEServer) Start() error {
 	addr := fmt.Sprintf("%s:%d", s.host, s.port)
 	s.server = &http.Server{
 		Addr:         addr,
-		Handler:      CorsMiddleware(AuthMiddleware(mux)),
+		Handler:      GuardMiddleware(s.host, CorsMiddleware(AuthMiddleware(mux))),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 0, // SSE requires no write timeout
 	}
@@ -1049,13 +1049,26 @@ func (s *SSEServer) handleBrowse(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// providerKeyHeader carries the provider API key for model-discovery
+// probes. It is separate from Authorization, which carries the Rakitsu
+// control-plane token when RAKITSU_API_TOKEN is set.
+const providerKeyHeader = "X-Provider-Key"
+
 // providerAPIKeyFromRequest reads the provider API key to use for an
-// outbound probe. Prefers the Authorization header (never logged or kept in
-// browser history) and falls back to the legacy ?api_key= query param for
-// backward compatibility.
+// outbound probe: the X-Provider-Key header first (never logged or kept in
+// browser history). A bearer Authorization header is only accepted as the
+// provider key when no control-plane token is configured — otherwise it IS
+// that token, and forwarding it to a caller-chosen base_url would hand the
+// control plane to whoever runs that URL. Falls back to the legacy
+// ?api_key= query param for backward compatibility.
 func providerAPIKeyFromRequest(r *http.Request) string {
-	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-		return strings.TrimPrefix(auth, "Bearer ")
+	if k := r.Header.Get(providerKeyHeader); k != "" {
+		return k
+	}
+	if !TokenConfigured() {
+		if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+			return strings.TrimPrefix(auth, "Bearer ")
+		}
 	}
 	return r.URL.Query().Get("api_key")
 }
@@ -1332,6 +1345,9 @@ func (s *SSEServer) handleConfigUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ParseMultipartForm's argument is only the in-memory threshold — larger
+	// parts spill to temp files — so cap the whole body first.
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20+64<<10)
 	r.ParseMultipartForm(1 << 20) // 1MB max
 	file, header, err := r.FormFile("config")
 	if err != nil {
@@ -1466,6 +1482,7 @@ func (s *SSEServer) handleConfigUploadZip(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20+64<<10) // see handleConfigUpload
 	r.ParseMultipartForm(10 << 20) // 10MB max
 	file, _, err := r.FormFile("config")
 	if err != nil {
@@ -1516,7 +1533,7 @@ func CorsMiddleware(next http.Handler) http.Handler {
 		if isAllowedOrigin(origin) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, "+providerKeyHeader)
 			w.Header().Set("Vary", "Origin")
 		}
 

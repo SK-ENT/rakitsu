@@ -4,6 +4,7 @@ import (
 	"crypto/subtle"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -30,11 +31,11 @@ func withinDir(p, base string) bool {
 }
 
 // isLoopbackHost reports whether host binds only to the local machine.
-// The empty host is treated as loopback (net/http defaults are localhost in
-// this codebase; the real bind host is always set explicitly by serve/run).
+// The empty host is NOT loopback: net/http turns ":port" into a listener on
+// every interface, so `--host ""` must need a token like any network bind.
 func isLoopbackHost(host string) bool {
 	switch host {
-	case "", "localhost", "127.0.0.1", "::1", "[::1]":
+	case "localhost", "127.0.0.1", "::1", "[::1]":
 		return true
 	}
 	if ip := net.ParseIP(strings.Trim(host, "[]")); ip != nil {
@@ -129,10 +130,60 @@ func requiresAuth(r *http.Request) bool {
 // execute tools for — any path; requiresAuth is default-deny, but the mux is
 // what guarantees nothing other than /mcp can reach the handler regardless
 // of how the auth policy evolves.
-func MCPListenerHandler(mcp *MCPServer) http.Handler {
+func MCPListenerHandler(bindHost string, mcp *MCPServer) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", mcp)
-	return CorsMiddleware(AuthMiddleware(mux))
+	return GuardMiddleware(bindHost, CorsMiddleware(AuthMiddleware(mux)))
+}
+
+// GuardMiddleware blocks two browser-driven attacks CORS alone does not:
+//
+//   - Cross-site request forgery: CorsMiddleware only withholds response
+//     headers, the request itself still runs. A page on any site could POST
+//     a config to /api/configs/inline and start it via /api/run. So a
+//     state-changing request carrying an Origin that is neither an allowed
+//     localhost origin nor this server's own origin is refused. Non-browser
+//     clients (the CLI hub forwarder, curl) send no Origin and are
+//     unaffected.
+//   - DNS rebinding: on a loopback bind, a request whose Host is not a
+//     loopback name came through a rebound hostname, so it is refused.
+func GuardMiddleware(bindHost string, next http.Handler) http.Handler {
+	loopback := isLoopbackHost(bindHost)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if loopback && !isLoopbackHostHeader(r.Host) {
+			http.Error(w, `{"error":"forbidden host"}`, http.StatusForbidden)
+			return
+		}
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+		default:
+			if origin := r.Header.Get("Origin"); origin != "" && !isAllowedOrigin(origin) && !isSameOrigin(origin, r.Host) {
+				http.Error(w, `{"error":"cross-origin request refused"}`, http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// isLoopbackHostHeader reports whether a Host header (host or host:port)
+// names the local machine.
+func isLoopbackHostHeader(hostport string) bool {
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	return isLoopbackHost(host)
+}
+
+// isSameOrigin reports whether origin (scheme://host[:port]) names the host
+// the request was sent to, i.e. the UI served by this server itself.
+func isSameOrigin(origin, host string) bool {
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return strings.EqualFold(u.Host, host)
 }
 
 // AuthMiddleware enforces the API token on control-plane endpoints when

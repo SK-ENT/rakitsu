@@ -408,7 +408,7 @@ async function discoverModels(provider: string) {
       ? new URLSearchParams({ type: 'codex', credentials_file: props.providerMap[provider]?.credentials_file ?? '' })
       : new URLSearchParams({ base_url: baseUrl });
     const headers: HeadersInit = {};
-    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+    if (apiKey) headers['X-Provider-Key'] = apiKey;
     const res = await fetch(`/api/providers/models?${params}`, { headers });
     const data = await res.json() as { models?: string[] };
     discoveredModels.value = data.models ?? [];
@@ -451,7 +451,7 @@ async function fetchModelInfo(provider: string) {
     const apiKey = props.apiKeys[provider] ?? '';
     const params = new URLSearchParams({ base_url: baseUrl });
     const headers: HeadersInit = {};
-    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+    if (apiKey) headers['X-Provider-Key'] = apiKey;
     const res = await fetch(`/api/providers/model-info?${params}`, { headers });
     const data = await res.json();
     // LiteLLM returns { data: [{ model_name, model_info: {...} }] }

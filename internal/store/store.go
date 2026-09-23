@@ -61,9 +61,18 @@ func NewSessionStore() (*SessionStore, error) {
 		return nil, fmt.Errorf("cannot resolve home directory: %w", err)
 	}
 
-	dir := filepath.Join(home, ".rakitsu", "sessions")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	return newSessionStoreAt(filepath.Join(home, ".rakitsu", "sessions"))
+}
+
+// newSessionStoreAt creates a session store at dir. Session files hold
+// config snapshots and tool output, so the directory is owner-only (0700);
+// an existing, more open directory from an older version is tightened.
+func newSessionStoreAt(dir string) (*SessionStore, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("cannot create sessions directory: %w", err)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("cannot restrict sessions directory: %w", err)
 	}
 
 	return &SessionStore{dir: dir}, nil
@@ -80,7 +89,7 @@ func (s *SessionStore) StartSession(meta SessionMeta) error {
 
 	// Open JSONL file
 	path := filepath.Join(s.dir, meta.ID+".jsonl")
-	f, err := os.Create(path)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("cannot create session file: %w", err)
 	}
@@ -344,7 +353,7 @@ func (s *SessionStore) writeIndex(sessions []SessionMeta) error {
 	// updateIndex below.
 	path := s.indexPath()
 	tmp := fmt.Sprintf("%s.tmp.%d.%d", path, os.Getpid(), time.Now().UnixNano())
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		os.Remove(tmp)
 		return fmt.Errorf("write index: write tmp: %w", err)
 	}
@@ -503,7 +512,7 @@ func (s *SessionStore) SaveChatTree(id string, raw []byte) error {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0644); err != nil {
+	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
 		return fmt.Errorf("chat tree: write tmp: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
@@ -587,7 +596,7 @@ func (s *SessionStore) WriteCheckpoint(data StoreCheckpointData) error {
 	// current one — could observe a half-written file if it runs mid-write.
 	path := filepath.Join(s.dir, s.current.ID+".checkpoint.json")
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0644); err != nil {
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return fmt.Errorf("checkpoint: write tmp: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
