@@ -22,6 +22,9 @@ MAX_DIFF_BYTES=120000  # kept under Linux's per-argv MAX_ARG_STRLEN (128 KiB):
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="$SCRIPT_DIR/review-config-openai.yaml"
+# The preamble names the model; read it from the config so the label can't
+# drift from what actually ran (it once said gpt-5.6-luna after the switch).
+REVIEW_MODEL=$(sed -n 's/^[[:space:]]*model:[[:space:]]*\([^[:space:]#]*\).*/\1/p' "$CONFIG" | head -1)
 RAKITSU_BIN="${RAKITSU_BIN:-rakitsu}"
 
 if [ $# -ne 5 ]; then
@@ -79,7 +82,7 @@ preamble() {
 ## Automated review
 
 This review was generated automatically by this repo's automated review
-pipeline, not a human — it ran rakitsu against openai/gpt-5.6-luna over
+pipeline, not a human — it ran rakitsu against openai/${REVIEW_MODEL:-unknown-model} over
 $SCOPE_TEXT, reading file content and diffs as text only, no code
 execution. Treat findings as a starting point to verify, not a final word.
 

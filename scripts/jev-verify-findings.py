@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """scripts/jev-verify-findings.py — check each finding from
-scripts/ci-review.sh's gpt-5.6-luna pass is GROUNDED in the diff before
+scripts/ci-review.sh's model pass is GROUNDED in the diff before
 scripts/post-review.py posts it to GitHub.
 
 Reads the {"body", "comments": [{"path","line","body"}, ...]} JSON that
