@@ -582,11 +582,12 @@ func (a *Agent) RunWithAttachments(ctx context.Context, query string, history []
 	if history == nil {
 		history = []llm.Message{}
 	}
-	// Tool images in the history a run is given (e.g. a replayed
-	// transcript) follow the same rules as ones added during it: none at
-	// all for `vision: false`, else the size budget.
+	// Images in the history a run is given (e.g. a replayed transcript)
+	// follow the same rules as ones added during it: none at all for
+	// `vision: false` (user images too), else the tool-image
+	// size budget.
 	if a.vision != nil && !*a.vision {
-		history, _ = toolImagesToNotes(history, "this agent has `vision: false`")
+		history, _ = imagesToNotes(history, "this agent has `vision: false`")
 	}
 	history = capToolImages(history, maxToolImageHistoryBytes)
 
@@ -850,10 +851,10 @@ func (a *Agent) RunWithAttachments(ctx context.Context, query string, history []
 		// notes and one retry; later tool images in this run skip straight to
 		// the note. Explicit `vision: true` keeps the provider error.
 		if err != nil && a.vision == nil && isImageUnsupportedError(err) {
-			if noted, changed := toolImagesToNotes(history, "the model does not accept images"); changed {
+			if noted, changed := imagesToNotes(history, "the model does not accept images"); changed {
 				a.visionRejected.Store(true)
 				history = noted
-				llmHistory, _ = toolImagesToNotes(llmHistory, "the model does not accept images")
+				llmHistory, _ = imagesToNotes(llmHistory, "the model does not accept images")
 				a.eventBus.Emit(a.name, telemetry.EventError, telemetry.ErrorPayload{
 					ErrorType:   "vision_unsupported",
 					Message:     "model rejected image input; retrying with images replaced by text notes",
@@ -2114,13 +2115,14 @@ func capToolImages(history []llm.Message, maxBytes int) []llm.Message {
 	return out
 }
 
-// toolImagesToNotes returns history with every image in a tool message
-// replaced by a note giving reason. history is not modified; changed is false when there
-// was nothing to replace.
-func toolImagesToNotes(history []llm.Message, reason string) (out []llm.Message, changed bool) {
+// imagesToNotes returns history with every image replaced by a note giving
+// reason, in any role: tool results and images a user attached earlier.
+// history is not modified; changed is false when there was nothing to
+// replace.
+func imagesToNotes(history []llm.Message, reason string) (out []llm.Message, changed bool) {
 	out = history
 	for i, m := range history {
-		if m.Role != "tool" || !m.HasNonTextContent() {
+		if !m.HasNonTextContent() {
 			continue
 		}
 		if !changed {

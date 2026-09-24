@@ -326,3 +326,45 @@ func TestAgent_ToolImage_VisionFalseStripsStartingHistory(t *testing.T) {
 		}
 	}
 }
+
+// Images a user attached earlier in the transcript are covered too,
+// not only tool results.
+func userImageHistory() []llm.Message {
+	img := llm.ContentBlock{Type: llm.ContentTypeImage, MIMEType: "image/png",
+		Source: &llm.BlockSource{Kind: llm.SourceKindBase64, Base64: "iVBORw=="}}
+	return []llm.Message{
+		{Role: "user", Content: []llm.ContentBlock{{Type: llm.ContentTypeText, Text: "what is this?"}, img}},
+		llm.NewTextMessage("assistant", "a screenshot"),
+	}
+}
+
+func TestAgent_VisionFalseStripsUserImagesInHistory(t *testing.T) {
+	provider := newSequenceProvider(stopResponse("done"))
+	def := &config.AgentDefinition{Name: "viewer", SystemPrompt: "x", Vision: boolPtr(false)}
+	ag := NewAgent(def, provider, tools.NewToolRegistry(), telemetry.NewEventBus(64), nil)
+	if _, err := ag.RunWithHistory(context.Background(), "and now?", userImageHistory()); err != nil {
+		t.Fatalf("RunWithHistory: %v", err)
+	}
+	h := provider.getCall(0).History
+	for _, m := range h {
+		if m.HasNonTextContent() {
+			t.Fatalf("vision: false sent a user image from the starting history: %+v", m)
+		}
+	}
+	if got := h[0].AsText(); !strings.Contains(got, "what is this?") || !strings.Contains(got, "[image omitted: image/png") {
+		t.Errorf("user message = %q, want its text plus an image-omitted note", got)
+	}
+}
+
+func TestAgent_AutoVisionFallbackCoversUserImages(t *testing.T) {
+	provider := &textOnlyProvider{sequenceProvider: newSequenceProvider(stopResponse("no images here"))}
+	def := &config.AgentDefinition{Name: "viewer", SystemPrompt: "x"}
+	ag := NewAgent(def, provider, tools.NewToolRegistry(), telemetry.NewEventBus(64), nil)
+	out, err := ag.RunWithHistory(context.Background(), "and now?", userImageHistory())
+	if err != nil {
+		t.Fatalf("RunWithHistory: %v — auto mode must recover from the rejection", err)
+	}
+	if out != "no images here" || provider.rejected != 1 {
+		t.Errorf("out = %q, rejected = %d; want the answer after exactly 1 rejection", out, provider.rejected)
+	}
+}
