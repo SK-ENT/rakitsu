@@ -30,6 +30,7 @@ so no row becomes harder to actually locate, just less prominent by default.
 
 | Version | First published (UTC) | Converts to Apache 2.0 (UTC) |
 |---|---|---|
+| [v0.3.0-alpha.12](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.12) | 2026-09-24T14:48:29Z | 2030-09-24T14:48:29Z |
 | [v0.3.0-alpha.11](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.11) | 2026-09-23T08:09:04Z | 2030-09-23T08:09:04Z |
 | [v0.3.0-alpha.10](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.10) | 2026-09-23T04:16:21Z | 2030-09-23T04:16:21Z |
 | [v0.3.0-alpha.9](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.9) | 2026-09-23T00:19:52Z | 2030-09-23T00:19:52Z |
