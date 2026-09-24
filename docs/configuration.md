@@ -320,8 +320,8 @@ settings:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `max_iterations` | int | 10 | Max ReAct loop iterations (`internal/agent/agent.go`) |
-| `timeout_seconds` | int | 300 | Execution timeout — this is the `--timeout`/`-t` CLI flag's default; setting `execution.timeout_seconds` overrides it (`cmd/rakitsu/run.go`) |
+| `max_iterations` | int | unset | Default max ReAct loop iterations for agents that do not set their own. `-1` = no cap. Unset: no cap when there is no run timeout, else 10 (`cmd/rakitsu/run.go`) |
+| `timeout_seconds` | int | 0 (off) | Execution timeout in seconds (per turn in `--interactive`); overrides the `--timeout`/`-t` default, an explicit flag wins. Unset or negative = no time limit, and agents without `max_iterations` then have no iteration cap (`cmd/rakitsu/run.go`) |
 | `retry_attempts` | int | **5**, not 3 | Retry count on failure. When `settings.retry.max_attempts` and this legacy field are both unset, the actual default is 5 attempts (`internal/agent/retry.go`'s `defaultRetryConfig`), not 3 |
 | `max_total_tokens` | int | 0 | Hard token budget across all agents (0 = unlimited) |
 | `max_cost` | float | 0 | Hard cost budget in USD across all agents (0 = unlimited) |
@@ -421,7 +421,7 @@ tools:
 | `type` | string | **Required.** Tool type: `cli`, `fs`, `mcp_server`, `a2a`, `jev` |
 | `description` | string | What the tool does (shown to LLM) |
 | `command` | string | Shell command (for `cli` type) |
-| `operation` | string | Operation name (for `fs` type): `read`, `write`, `search`, `list` |
+| `operation` | string | Operation name (for `fs` type): `read`, `read_image`, `write`, `search`, `list`. `read_image` loads a png/jpeg/gif/webp file (max 20 MB, same `allowed_paths` fence) and gives the image itself to a `vision: true` agent |
 | `method` | string | HTTP method (for future `http` type) |
 | `executable` | string | Path to executable |
 | `script` | string | Script content |
@@ -548,7 +548,7 @@ agents:
 | `tools` | []string | Tool names this agent can use |
 | `skills` | []string | Skill names this agent can use |
 | `tools_inline` | ToolDefinition[] | Agent-specific inline tool definitions |
-| `vision` | bool | Agent accepts image inputs |
+| `vision` | bool | Image input. Unset (default) = auto: images returned by tools (fs `read_image`, MCP tools such as screenshots) are sent to the model; if the model rejects image input, they are replaced by a one-line `[image omitted: ...]` note for the rest of the run. `true` = always send (and required for `--attach`). `false` = never send, note only |
 | `settings` | AgentSettings | Agent behavior settings |
 
 ### ModelConfig
@@ -572,7 +572,7 @@ Per-agent model parameter overrides.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `max_iterations` | int | 10 | Max ReAct loop iterations |
+| `max_iterations` | int | 10 | Max ReAct loop iterations. `-1` = no cap. Unset: `settings.execution.max_iterations` if set, else no cap when there is no run timeout |
 | `max_total_tokens` | int | 0 | Per-agent token budget (0 = unlimited). Overrides global `execution.max_total_tokens` for this agent. |
 | `max_cost` | float | 0 | Per-agent cost budget in USD (0 = unlimited). Overrides global `execution.max_cost` for this agent. |
 | `verbose` | bool | false | Enable verbose output |

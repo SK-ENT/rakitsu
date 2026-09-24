@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 	"github.com/SK-ENT/rakitsu/internal/tools"
 )
 
@@ -34,6 +35,12 @@ func (t *MCPTool) GetParametersSchema() map[string]interface{} { return t.def.In
 
 func (t *MCPTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
 	return t.client.CallTool(ctx, t.def.Name, args)
+}
+
+// ExecuteContent implements tools.ContentTool: text plus any images the
+// server returned (e.g. a screenshot).
+func (t *MCPTool) ExecuteContent(ctx context.Context, args map[string]interface{}) (string, []llm.ContentBlock, error) {
+	return t.client.CallToolContent(ctx, t.def.Name, args)
 }
 
 // NewMCPServer creates an MCP client from a ToolDefinition, runs the

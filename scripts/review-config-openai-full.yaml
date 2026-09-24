@@ -1,0 +1,106 @@
+# Full-review config for scripts/ci-review.sh (full mode only; incremental
+# follow-up reviews keep the diff-only scripts/review-config-openai.yaml).
+# See that file's header for the model choice, the direct-OpenAI provider,
+# and why there is no `orchestrator:` block — all of it applies here too.
+#
+# The difference: the reviewer can read the whole repo AT THE PR
+# HEAD, so it can check callers, limits, and handling elsewhere before
+# reporting a finding. A diff-only reviewer kept reporting things the
+# surrounding code already handled.
+#
+# Safety: ci-review.sh runs this with --workdir pointing at a fresh temp
+# dir filled by `git archive <head> | tar -x` (plain files — nothing from
+# the PR is ever executed), with every symlink deleted. The tools below are
+# read-only fs operations fenced to that dir (allowed_paths "." resolves
+# against --workdir). No write, no cli, no network tools.
+
+name: "Full Reviewer (gpt-6-luna, direct OpenAI, read-only repo access)"
+version: "1.0"
+description: "PR reviewer with read-only access to the PR head tree. Used by scripts/ci-review.sh in full mode."
+
+settings:
+  default_provider: openai
+  providers:
+    openai:
+      type: openai
+      api_key: ${OPENAI_API_KEY}
+  execution:
+    # Inside the workflow's 10-minute job limit, with room for install,
+    # parsing, and posting.
+    timeout_seconds: 420
+
+tools:
+  - name: read_file
+    type: fs
+    operation: read
+    allowed_paths: ["."]
+    description: Read a file of the repo at the PR head (path relative to the repo root)
+    parameters:
+      path: { type: string, description: "Repo-relative file path", required: true }
+    sandbox:
+      resource_limits:
+        max_output_bytes: 200000 # one huge file must not flood the context
+  - name: list_dir
+    type: fs
+    operation: list
+    allowed_paths: ["."]
+    description: List a directory of the repo at the PR head
+    parameters:
+      path: { type: string, description: "Repo-relative directory path (\".\" for the root)", required: true }
+  - name: search_code
+    type: fs
+    operation: search
+    allowed_paths: ["."]
+    description: Search the repo at the PR head for a regex (find callers, definitions, other handling)
+    parameters:
+      pattern: { type: string, description: "Regex to search for", required: true }
+      path: { type: string, description: "Repo-relative directory to search in (\".\" for everything)", required: true }
+      file_pattern: { type: string, description: "Optional file glob, e.g. \"*.go\"" }
+
+agents:
+  - name: Reviewer
+    role: worker
+    model: gpt-6-luna
+    model_config:
+      temperature: 1
+    tools: [read_file, list_dir, search_code]
+    settings:
+      max_iterations: 40
+    system_prompt: |
+      You are a senior code reviewer. You will be given the unified diff of
+      one pull request. You also have read-only tools over the WHOLE
+      repository at the PR's head commit: read_file, list_dir, search_code
+      (paths are repo-relative).
+
+      Find real correctness bugs, race conditions, resource leaks, and
+      security issues introduced or exposed by this diff. Do not comment on
+      style.
+
+      Use the tools. Before you report anything, check it against the code
+      around the change: read the changed functions in full, search for
+      their callers, and look for limits, locks, validation, or handling
+      elsewhere in the repo that already prevents the problem. A finding
+      that the rest of the code already handles is a false positive — do
+      not report it. Only report what you have verified in the code you
+      read.
+
+      When a diff adds or changes a bound, clamp, or length check on some
+      value, do not stop at confirming the clamp exists — trace every other
+      value that combines with it into the same final result (a sum, a
+      concatenation, an offset) and check whether each of those is actually
+      bounded too.
+
+      For each real issue found, output a block in exactly this form:
+      ### FINDING
+      FILE: <the file's repo-relative path, WITHOUT the diff's "a/" or "b/" prefix>
+      LINE: <line number in the NEW file version, on a line the diff changed>
+      SEVERITY: CRITICAL|MAJOR|MINOR
+      BODY: <one paragraph: what the bug is, why it's reachable, concrete
+      failure scenario, and what you checked in the repo to confirm it>
+      ### END
+
+      If you find nothing real, output exactly: NO FINDINGS
+      Output ONLY ### FINDING blocks, or the literal text NO FINDINGS —
+      nothing else. No greeting, no summary, no style suggestions, no offers
+      to do further work. This is a one-shot automated job; nothing will
+      read a reply.

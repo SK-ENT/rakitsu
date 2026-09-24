@@ -84,7 +84,7 @@ func TestEnsureDefaultConfig_IncludesReadOnlyFsTools(t *testing.T) {
 		t.Fatalf("loading generated config: %v", err)
 	}
 
-	wantTools := map[string]bool{"list_files": false, "read_file": false, "search_files": false}
+	wantTools := map[string]bool{"list_files": false, "read_file": false, "search_files": false, "read_image": false}
 	for _, tool := range cfg.Tools {
 		if _, ok := wantTools[tool.Name]; ok {
 			wantTools[tool.Name] = true
@@ -103,11 +103,15 @@ func TestEnsureDefaultConfig_IncludesReadOnlyFsTools(t *testing.T) {
 		t.Fatalf("got %d agents, want 1", len(cfg.Agents))
 	}
 	agent := cfg.Agents[0]
-	if agent.Settings == nil {
-		t.Fatal("agent.Settings is nil, want max_iterations set")
+	// no fixed step cap in the default chat, so a run with no
+	// --timeout can take as many steps as the task needs.
+	if agent.Settings != nil && agent.Settings.MaxIterations != 0 {
+		t.Errorf("got max_iterations %d, want unset", agent.Settings.MaxIterations)
 	}
-	if agent.Settings.MaxIterations != 6 {
-		t.Errorf("got max_iterations %d, want 6", agent.Settings.MaxIterations)
+	// vision left unset = auto — images reach a vision model, and a
+	// text-only model (the llama3.1 default) falls back to a note.
+	if agent.Vision != nil {
+		t.Errorf("vision = %v, want unset (auto)", *agent.Vision)
 	}
 }
 

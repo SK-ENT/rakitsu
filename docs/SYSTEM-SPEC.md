@@ -300,7 +300,7 @@ Execute agents for a given query.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--timeout, -t` | 300s | Execution timeout (`<=0` disables it) |
+| `--timeout, -t` | off | Execution timeout in seconds, per turn in `--interactive`. Unset or `<=0` = no time limit, and agents without `max_iterations` then have no iteration cap |
 | `--idle-timeout` | 0 (disabled) | Cancel the run after N seconds with no streaming activity |
 | `--trace` | false | Color-coded trace to stderr |
 | `--verbose, -v` | false | Print agent/model info (root persistent flag) |

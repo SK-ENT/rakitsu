@@ -21,10 +21,6 @@ MAX_DIFF_BYTES=120000  # kept under Linux's per-argv MAX_ARG_STRLEN (128 KiB):
 # through that then fail with a bare "Argument list too long".
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG="$SCRIPT_DIR/review-config-openai.yaml"
-# The preamble names the model; read it from the config so the label can't
-# drift from what actually ran (it once said gpt-5.6-luna after the switch).
-REVIEW_MODEL=$(sed -n 's/^[[:space:]]*model:[[:space:]]*\([^[:space:]#]*\).*/\1/p' "$CONFIG" | head -1)
 RAKITSU_BIN="${RAKITSU_BIN:-rakitsu}"
 
 if [ $# -ne 5 ]; then
@@ -36,11 +32,20 @@ MODE="$1"; BASE="$2"; HEAD="$3"; OUTPUT="$4"; PR_BASE="$5"
 # now — what full mode's own $BASE already is). Only incremental mode uses
 # it, as a file-scope filter — see below.
 
+# Full reviews read the whole repo at the PR head (read-only tools);
+# incremental follow-ups stay diff-only.
 case "$MODE" in
-  full) SCOPE_TEXT="the full PR diff" ;;
-  incremental) SCOPE_TEXT="the diff since the last commit" ;;
+  full)
+    SCOPE_TEXT="the full PR diff, with read-only access to the whole repo at the PR head"
+    CONFIG="$SCRIPT_DIR/review-config-openai-full.yaml" ;;
+  incremental)
+    SCOPE_TEXT="the diff since the last commit only (follow-up review)"
+    CONFIG="$SCRIPT_DIR/review-config-openai.yaml" ;;
   *) echo "FATAL: mode must be 'full' or 'incremental', got: $MODE" >&2; exit 1 ;;
 esac
+# The preamble names the model; read it from the config so the label can't
+# drift from what actually ran (it once said gpt-5.6-luna after the switch).
+REVIEW_MODEL=$(sed -n 's/^[[:space:]]*model:[[:space:]]*\([^[:space:]#]*\).*/\1/p' "$CONFIG" | head -1)
 
 # `^{commit}` matters: a bare 40-hex string always "verifies" under
 # `git rev-parse --verify` whether or not the object actually exists
@@ -83,7 +88,7 @@ preamble() {
 
 This review was generated automatically by this repo's automated review
 pipeline, not a human — it ran rakitsu against openai/${REVIEW_MODEL:-unknown-model} over
-$SCOPE_TEXT, reading file content and diffs as text only, no code
+$SCOPE_TEXT, reading code as text only, no code
 execution. Treat findings as a starting point to verify, not a final word.
 
 ---
@@ -123,10 +128,25 @@ FINDINGS_TXT=$(mktemp)
 PREAMBLE_TXT=$(mktemp)
 PARSED_JSON=$(mktemp)
 DIFF_TXT=$(mktemp)
-trap 'rm -f "$TMP_STDERR" "$FINDINGS_TXT" "$PREAMBLE_TXT" "$PARSED_JSON" "$DIFF_TXT"' EXIT
+SNAPSHOT=""
+trap 'rm -f "$TMP_STDERR" "$FINDINGS_TXT" "$PREAMBLE_TXT" "$PARSED_JSON" "$DIFF_TXT"; if [ -n "$SNAPSHOT" ]; then rm -rf "$SNAPSHOT"; fi' EXIT
+
+# Full mode: the PR head as plain files in a fresh temp dir, for the
+# reviewer's read-only fs tools (fenced to it via --workdir). snapshot-tree.py
+# copies raw blobs — not `git archive`, which applies the PR's own
+# .gitattributes and would let a PR hide or rewrite files the reviewer
+# reads. It writes no symlinks, so no path in the snapshot leads outside it
+# (the fs tool's fence also resolves symlinks). Nothing from the PR is ever
+# executed or checked out next to these scripts.
+run_args=(--no-hub)
+if [ "$MODE" = "full" ]; then
+  SNAPSHOT=$(mktemp -d)
+  python3 "$SCRIPT_DIR/snapshot-tree.py" "$HEAD" "$SNAPSHOT"
+  run_args+=(--workdir "$SNAPSHOT")
+fi
 
 set +e
-raw_output=$("$RAKITSU_BIN" run "$CONFIG" "$query" --no-hub 2>"$TMP_STDERR")
+raw_output=$("$RAKITSU_BIN" run "$CONFIG" "$query" "${run_args[@]}" 2>"$TMP_STDERR")
 rc=$?
 set -e
 

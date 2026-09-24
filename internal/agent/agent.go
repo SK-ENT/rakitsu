@@ -70,8 +70,14 @@ type Agent struct {
 	// iteration; returned messages (already fenced by the caller — see
 	// chat.WrapSessionMessage) are appended to history. Set only on the
 	// top-level runner of a steerable one-shot run.
-	steering         func() []llm.Message
-	maxIterations    int
+	steering      func() []llm.Message
+	maxIterations int // 0 = no cap (max_iterations: -1)
+	// vision is the config's image-input setting: true = always send tool
+	// images, false = never (note only), nil = auto — send them until the
+	// model rejects one, then note only for the rest of that run
+	// (visionRejected, reset at run start).
+	vision           *bool
+	visionRejected   atomic.Bool
 	reflection       config.ReflectionConfig
 	groundCheck      config.GroundCheckConfig
 	contextMon       *ContextMonitor
@@ -183,6 +189,8 @@ func NewAgent(
 	if def.Settings != nil {
 		if def.Settings.MaxIterations > 0 {
 			maxIter = def.Settings.MaxIterations
+		} else if def.Settings.MaxIterations < 0 {
+			maxIter = 0 // unlimited — see iterationsLeft
 		}
 		reflection = def.Settings.Reflection
 		groundCheck = def.Settings.GroundCheck
@@ -250,6 +258,7 @@ func NewAgent(
 		toolRegistry:     toolRegistry,
 		eventBus:         eventBus,
 		maxIterations:    maxIter,
+		vision:           def.Vision,
 		reflection:       reflection,
 		groundCheck:      groundCheck,
 		contextMon:       contextMon,
@@ -501,6 +510,9 @@ func (a *Agent) RunWithAttachments(ctx context.Context, query string, history []
 	a.lastRunSalvaged.Store(false)
 	// Reset broader unproductive flag for the same reason.
 	a.lastRunUnproductive.Store(false)
+	// The auto-vision fallback is per run: a later run (next chat turn, or
+	// after a /model swap) tries sending images again.
+	a.visionRejected.Store(false)
 	// Tool-call tracking (toolCallsByRun) is NOT reset here — unlike the two
 	// flags above, it's keyed by a caller-supplied run ID from ctx (see
 	// NewToolCallRunContext), not a single "last run" slot, specifically so
@@ -570,6 +582,13 @@ func (a *Agent) RunWithAttachments(ctx context.Context, query string, history []
 	if history == nil {
 		history = []llm.Message{}
 	}
+	// Tool images in the history a run is given (e.g. a replayed
+	// transcript) follow the same rules as ones added during it: none at
+	// all for `vision: false`, else the size budget.
+	if a.vision != nil && !*a.vision {
+		history, _ = toolImagesToNotes(history, "this agent has `vision: false`")
+	}
+	history = capToolImages(history, maxToolImageHistoryBytes)
 
 	// Add the query as a user message, folding in any attachments (e.g.
 	// --attach images) alongside the text. Text block goes first.
@@ -681,7 +700,10 @@ func (a *Agent) RunWithAttachments(ctx context.Context, query string, history []
 	// spent, so an exploring model starts synthesizing instead of burning its
 	// whole budget on tool calls and exiting with nothing.
 	convergenceNudged := false
-	for i := 0; i < effectiveMaxIter; i++ {
+	for i := 0; effectiveMaxIter <= 0 || i < effectiveMaxIter; i++ {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		iterationsReached = i
 		// Steerable one-shot (spec §6): fold any queued cross-session
 		// steering messages into history at this iteration boundary. The
@@ -824,6 +846,22 @@ func (a *Agent) RunWithAttachments(ctx context.Context, query string, history []
 		// Call LLM with retry — use streaming when available for real-time output
 		startTime := time.Now()
 		result, err := a.generateWithRetry(ctx, provider, effectivePrompt, llmHistory, effectiveToolDefs, i)
+		// Auto vision: a model that rejects images gets them replaced by
+		// notes and one retry; later tool images in this run skip straight to
+		// the note. Explicit `vision: true` keeps the provider error.
+		if err != nil && a.vision == nil && isImageUnsupportedError(err) {
+			if noted, changed := toolImagesToNotes(history, "the model does not accept images"); changed {
+				a.visionRejected.Store(true)
+				history = noted
+				llmHistory, _ = toolImagesToNotes(llmHistory, "the model does not accept images")
+				a.eventBus.Emit(a.name, telemetry.EventError, telemetry.ErrorPayload{
+					ErrorType:   "vision_unsupported",
+					Message:     "model rejected image input; retrying with images replaced by text notes",
+					Recoverable: true,
+				})
+				result, err = a.generateWithRetry(ctx, provider, effectivePrompt, llmHistory, effectiveToolDefs, i)
+			}
+		}
 		duration := time.Since(startTime).Milliseconds()
 
 		if err != nil {
@@ -942,7 +980,7 @@ func (a *Agent) RunWithAttachments(ctx context.Context, query string, history []
 				if len(preview) > 200 {
 					preview = preview[:200]
 				}
-				if i+1 < effectiveMaxIter {
+				if iterationsLeft(i, effectiveMaxIter) {
 					a.eventBus.Emit(a.name, telemetry.EventSalvagedOutput, telemetry.SalvagedOutputPayload{
 						Agent:          a.name,
 						Iteration:      i + 1,
@@ -1089,7 +1127,7 @@ func (a *Agent) RunWithAttachments(ctx context.Context, query string, history []
 				memoryWriteCount:   memoryWriteCount,
 				spawnCalled:        spawnCalled,
 			}); marker != "" {
-				if !guardRetried && i+1 < effectiveMaxIter {
+				if !guardRetried && iterationsLeft(i, effectiveMaxIter) {
 					guardRetried = true
 					a.eventBus.Emit(a.name, telemetry.EventError, telemetry.ErrorPayload{
 						ErrorType:   "turn_guard_retry",
@@ -1155,6 +1193,7 @@ func (a *Agent) RunWithAttachments(ctx context.Context, query string, history []
 			output string
 			err    error
 			dur    int64
+			blocks []llm.ContentBlock // non-text tool output (tools.ContentTool)
 		}
 
 		results := make([]toolResult, len(result.ToolCalls))
@@ -1200,8 +1239,8 @@ func (a *Agent) RunWithAttachments(ctx context.Context, query string, history []
 					}
 				}()
 				start := time.Now()
-				output, err := a.executeTool(ctx, c)
-				results[i] = toolResult{c, output, err, time.Since(start).Milliseconds()}
+				output, blocks, err := a.executeTool(ctx, c)
+				results[i] = toolResult{c, output, err, time.Since(start).Milliseconds(), blocks}
 			}(idx, call)
 		}
 		wg.Wait()
@@ -1310,12 +1349,16 @@ func (a *Agent) RunWithAttachments(ctx context.Context, query string, history []
 
 			history = append(history, llm.Message{
 				Role:       "tool",
-				Content:    []llm.ContentBlock{{Type: llm.ContentTypeText, Text: sanitized}},
+				Content:    a.toolResultContent(sanitized, r.call.Name, r.blocks),
 				ToolCallID: r.call.ID,
 				Name:       r.call.Name,
 				Metadata:   r.call.Metadata,
 			})
 		}
+
+		// Tool images stay in history and are re-sent every iteration, so
+		// keep their total bounded.
+		history = capToolImages(history, maxToolImageHistoryBytes)
 
 		// When any tool has failed 3+ times with the same error,
 		// inject a system-level hint so the LLM changes strategy instead
@@ -1340,7 +1383,7 @@ func (a *Agent) RunWithAttachments(ctx context.Context, query string, history []
 		// first; the opt-in LLM self-judge is consulted only as a fallback
 		// hint. Capped by MaxRollbacks; once exhausted the loop proceeds
 		// normally (the retry-budget hint / max_iterations / unproductive cap remain the backstop).
-		if a.rollback.Enabled && rollbacksUsed < a.rollback.MaxRollbacks && i+1 < effectiveMaxIter {
+		if a.rollback.Enabled && rollbacksUsed < a.rollback.MaxRollbacks && iterationsLeft(i, effectiveMaxIter) {
 			allToolsFailed := len(results) > 0
 			for _, r := range results {
 				if r.err == nil {
@@ -1482,6 +1525,12 @@ func (a *Agent) RunWithAttachments(ctx context.Context, query string, history []
 	// unchanged — but a consumer recording this run must not label it done.
 	stopReason = ErrMaxIterations
 	return maxIterAnswer, nil
+}
+
+// iterationsLeft reports whether another loop iteration follows iteration i.
+// maxIter <= 0 means no iteration cap (max_iterations: -1).
+func iterationsLeft(i, maxIter int) bool {
+	return maxIter <= 0 || i+1 < maxIter
 }
 
 // rollbackTrigger evaluates the configured deterministic rollback triggers
@@ -1973,14 +2022,151 @@ func (a *Agent) generateWithRetry(
 	return nil, fmt.Errorf("LLM error for agent %q after %d attempt(s): %w\n  hint: check API key, network connectivity, and provider rate limits", a.name, cfg.MaxAttempts, lastErr)
 }
 
-// executeTool executes a tool call
-func (a *Agent) executeTool(ctx context.Context, call llm.ToolCall) (string, error) {
+// executeTool executes a tool call. A tools.ContentTool may also return
+// non-text blocks (e.g. an image) next to its text.
+func (a *Agent) executeTool(ctx context.Context, call llm.ToolCall) (string, []llm.ContentBlock, error) {
+	if ct, ok := a.toolRegistry.GetTool(call.Name).(tools.ContentTool); ok {
+		return ct.ExecuteContent(ctx, call.Arguments)
+	}
 	toolCall := tools.ToolCall{
 		ID:        call.ID,
 		Name:      call.Name,
 		Arguments: call.Arguments,
 	}
-	return a.toolRegistry.ExecuteToolCall(ctx, toolCall)
+	out, err := a.toolRegistry.ExecuteToolCall(ctx, toolCall)
+	return out, nil, err
+}
+
+// sendsImages reports whether tool-returned images go to the model.
+func (a *Agent) sendsImages() bool {
+	if a.vision != nil {
+		return *a.vision
+	}
+	return !a.visionRejected.Load()
+}
+
+// imageOmittedNote is the text that stands in for an image the model does
+// not get, so it knows the content existed rather than it vanishing.
+func imageOmittedNote(b llm.ContentBlock, reason string) string {
+	size, _ := b.Metadata["size_bytes"].(int64)
+	return fmt.Sprintf("\n[image omitted: %s, %d bytes — %s]", b.MIMEType, size, reason)
+}
+
+// isImageUnsupportedError reports whether a provider error says the model
+// does not accept image input (e.g. Ollama's "does not support multimodal
+// requests", OpenAI's "image_url is only supported by certain models").
+// Size errors (413) do not match.
+func isImageUnsupportedError(err error) bool {
+	msg := strings.ToLower(err.Error())
+	mentionsImage := strings.Contains(msg, "multimodal") || strings.Contains(msg, "image") || strings.Contains(msg, "vision")
+	return mentionsImage && strings.Contains(msg, "support")
+}
+
+// maxToolImageHistoryBytes bounds the base64 image data that tool results
+// keep in one run's history. A var so tests can shrink it.
+var maxToolImageHistoryBytes = 20 << 20
+
+// capToolImages keeps the newest tool-result images whose combined base64
+// size fits maxBytes and replaces older ones with notes. history is not
+// modified; it is returned as-is when everything fits.
+func capToolImages(history []llm.Message, maxBytes int) []llm.Message {
+	out := history
+	copied := false
+	used := 0
+	for i := len(history) - 1; i >= 0; i-- {
+		m := history[i]
+		if m.Role != "tool" || !m.HasNonTextContent() {
+			continue
+		}
+		var content []llm.ContentBlock
+		var notes string
+		for _, b := range m.Content {
+			if b.Type == llm.ContentTypeText {
+				content = append(content, b)
+				continue
+			}
+			size := 0
+			if b.Source != nil {
+				size = len(b.Source.Base64)
+			}
+			if used+size <= maxBytes {
+				used += size
+				content = append(content, b)
+				continue
+			}
+			notes += imageOmittedNote(b, "dropped to keep this run's images under the size budget")
+		}
+		if notes == "" {
+			continue
+		}
+		if !copied {
+			out = append([]llm.Message(nil), history...)
+			copied = true
+		}
+		if len(content) > 0 && content[0].Type == llm.ContentTypeText {
+			content[0].Text += notes
+		} else {
+			content = append([]llm.ContentBlock{{Type: llm.ContentTypeText, Text: notes}}, content...)
+		}
+		m.Content = content
+		out[i] = m
+	}
+	return out
+}
+
+// toolImagesToNotes returns history with every image in a tool message
+// replaced by a note giving reason. history is not modified; changed is false when there
+// was nothing to replace.
+func toolImagesToNotes(history []llm.Message, reason string) (out []llm.Message, changed bool) {
+	out = history
+	for i, m := range history {
+		if m.Role != "tool" || !m.HasNonTextContent() {
+			continue
+		}
+		if !changed {
+			out = append([]llm.Message(nil), history...)
+			changed = true
+		}
+		text := llm.ContentBlock{Type: llm.ContentTypeText}
+		for _, b := range m.Content {
+			if b.Type == llm.ContentTypeText {
+				text.Text += b.Text
+			} else {
+				text.Text += imageOmittedNote(b, reason)
+			}
+		}
+		m.Content = []llm.ContentBlock{text}
+		out[i] = m
+	}
+	return out, changed
+}
+
+// toolResultContent builds a tool-result message's content: the sanitized
+// text, then any non-text blocks the tool returned. When images are not
+// sent (see sendsImages) each becomes a one-line note instead.
+func (a *Agent) toolResultContent(text, toolName string, blocks []llm.ContentBlock) []llm.ContentBlock {
+	content := []llm.ContentBlock{{Type: llm.ContentTypeText, Text: text}}
+	for _, b := range blocks {
+		size, _ := b.Metadata["size_bytes"].(int64)
+		if !a.sendsImages() {
+			reason := "the model does not accept images"
+			if a.vision != nil {
+				reason = "this agent has `vision: false`"
+			}
+			content[0].Text += imageOmittedNote(b, reason)
+			continue
+		}
+		content = append(content, b)
+		path, _ := b.Metadata["path"].(string)
+		a.eventBus.Emit(a.name, telemetry.EventMediaAttached, telemetry.MediaAttachedPayload{
+			Modality:  string(b.Type),
+			Via:       "tool:" + toolName,
+			Path:      path,
+			SizeBytes: size,
+			MIMEType:  b.MIMEType,
+		})
+	}
+	return content
 }
 
 // convertToolCalls converts LLM tool calls to telemetry format. Carries the

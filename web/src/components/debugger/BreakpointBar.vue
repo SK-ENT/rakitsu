@@ -109,7 +109,7 @@ function addBreakpoint() {
       <span class="pause-text">
         Paused{{ pausedAgent ? ` at ${pausedAgent}` : '' }}{{ pausedCheckpoint ? ` (${pausedCheckpoint})` : '' }}
         <template v-if="pausedContext">
-          — iter {{ pausedContext.iteration }}/{{ pausedContext.max_iterations }}<template v-if="pausedContext.total_tokens_in || pausedContext.total_tokens_out">, {{ (((pausedContext.total_tokens_in ?? 0) + (pausedContext.total_tokens_out ?? 0)) / 1000).toFixed(1) }}K tokens</template>
+          — iter {{ pausedContext.iteration }}/{{ pausedContext.max_iterations || '∞' }}<template v-if="pausedContext.total_tokens_in || pausedContext.total_tokens_out">, {{ (((pausedContext.total_tokens_in ?? 0) + (pausedContext.total_tokens_out ?? 0)) / 1000).toFixed(1) }}K tokens</template>
         </template>
       </span>
     </div>

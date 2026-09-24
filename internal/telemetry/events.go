@@ -125,7 +125,8 @@ const (
 	// accepts a cross-session message into its turn queue (web chat) or
 	// consumes it from the hub command poll (interactive TUI).
 	EventSessionMsgReceived EventType = "SESSION_MSG_RECEIVED"
-	// EventMediaAttached is emitted once per file loaded via --attach. The
+	// EventMediaAttached is emitted once per file loaded via --attach or
+	// returned by a tool to a vision agent (Via tells which). The
 	// audit trail for "what non-text content actually entered this run" —
 	// session replay / debug tree can show which turn had which
 	// attachments. Later phases (attach_media builtin tool, chat drag-drop)
@@ -322,13 +323,12 @@ type SessionMsgReceivedPayload struct {
 	Status string `json:"status,omitempty"`
 }
 
-// MediaAttachedPayload records one file attached to a run via --attach.
-// Deliberately minimal for M1.5 phase 1 (images, CLI-only): a fuller shape
-// could add a Via field ("cli_attach" | "attach_media_tool" | "chat_upload")
-// once those other ingress points exist — until then there is exactly one
-// source, so the field would always read "cli_attach" and add nothing.
+// MediaAttachedPayload records one file that entered a run as non-text
+// content: via --attach, or returned by a tool (e.g. fs read_image) to a
+// vision agent.
 type MediaAttachedPayload struct {
-	Modality  string `json:"modality"` // "image" — the only value this phase produces
+	Modality  string `json:"modality"`      // "image" — the only value this phase produces
+	Via       string `json:"via,omitempty"` // "cli_attach" | "tool:<tool name>"
 	Path      string `json:"path"`
 	SizeBytes int64  `json:"size_bytes"`
 	MIMEType  string `json:"mime_type"`
