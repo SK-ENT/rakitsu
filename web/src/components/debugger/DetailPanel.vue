@@ -530,7 +530,7 @@ const tokenizerSegments = computed<TokenizerSegment[]>(() => {
 
       <!-- Progress -->
       <div class="kv-list" style="margin-top: 6px;">
-        <div class="kv"><span class="k">Iteration</span><span class="v">{{ pauseCtx.iteration }} / {{ pauseCtx.max_iterations }}</span></div>
+        <div class="kv"><span class="k">Iteration</span><span class="v">{{ pauseCtx.iteration }} / {{ pauseCtx.max_iterations || '∞' }}</span></div>
         <div class="kv"><span class="k">History</span><span class="v">{{ pauseCtx.history_length }} messages</span></div>
         <div v-if="pauseCtx.max_tokens" class="kv"><span class="k">Max Tokens</span><span class="v">{{ fmtTokens(pauseCtx.max_tokens) }}</span></div>
       </div>

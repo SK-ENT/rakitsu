@@ -294,7 +294,7 @@ rakitsu serve --port 8080
 rakitsu run config.yaml "query" --trace --verbose
 ```
 
-**Multi-agent run times out** — Default is 300s. Increase with `--timeout`:
+**Run stops too early, or runs too long** — By default there is no time limit, and agents without `max_iterations` have no iteration cap: a run ends on its answer, a budget (`max_cost` / `max_total_tokens`), `--idle-timeout`, or Ctrl+C. Set a limit with `--timeout` (seconds; per turn in `--interactive`):
 ```bash
 rakitsu run config.yaml "query" --timeout 600
 ```

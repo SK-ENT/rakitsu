@@ -15,6 +15,7 @@ import (
 	"syscall"
 
 	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // DefaultMaxReadBytes caps how much of a file readFile loads into memory
@@ -29,7 +30,7 @@ const DefaultMaxReadBytes = 10 * 1024 * 1024 // 10MB
 type Tool struct {
 	name         string
 	description  string
-	operation    string   // "read", "write", "list", "search"
+	operation    string   // "read", "read_image", "write", "list", "search"
 	allowedPaths []string // Security: restrict file access
 	workingDir   string   // resolve relative paths against this
 	parameters   map[string]config.Parameter
@@ -118,6 +119,33 @@ func (t *Tool) GetParametersSchema() map[string]interface{} {
 
 // Execute performs the file system operation
 func (t *Tool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
+	text, _, err := t.ExecuteContent(ctx, args)
+	return text, err
+}
+
+// ExecuteContent implements tools.ContentTool. Only read_image returns a
+// content block (the image); every other operation is text only.
+func (t *Tool) ExecuteContent(ctx context.Context, args map[string]interface{}) (string, []llm.ContentBlock, error) {
+	path, err := t.resolvePath(args)
+	if err != nil {
+		return "", nil, err
+	}
+	if t.operation == "read_image" {
+		block, err := llm.LoadImageAttachment(path)
+		if err != nil {
+			return "", nil, err
+		}
+		block.Metadata["path"] = path
+		size, _ := block.Metadata["size_bytes"].(int64)
+		return fmt.Sprintf("Loaded image %s (%s, %d bytes).", path, block.MIMEType, size), []llm.ContentBlock{block}, nil
+	}
+	text, err := t.execute(ctx, path, args)
+	return text, nil, err
+}
+
+// resolvePath returns the call's path argument, resolved against the working
+// directory and checked against allowed_paths.
+func (t *Tool) resolvePath(args map[string]interface{}) (string, error) {
 	// Get path argument — fall back to first allowed path if omitted
 	pathVal, ok := args["path"]
 	pathStr := ""
@@ -145,8 +173,11 @@ func (t *Tool) Execute(ctx context.Context, args map[string]interface{}) (string
 			Allowed: t.allowedPaths,
 		}
 	}
+	return path, nil
+}
 
-	// Execute based on operation type
+// execute runs a text operation on an already-resolved, allowed path.
+func (t *Tool) execute(ctx context.Context, path string, args map[string]interface{}) (string, error) {
 	switch t.operation {
 	case "read":
 		return t.readFile(ctx, path)

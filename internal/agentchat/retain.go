@@ -170,12 +170,13 @@ func messageBytes(m llm.Message) int {
 		case llm.ContentTypeText:
 			n += len(b.Text)
 		default:
-			// Phase 0: unreachable — no code path builds non-text blocks yet.
-			// Phase 1 must replace this with a real per-modality size estimate
-			// (Source.Base64 length, a File-API remote-size lookup, etc.) —
-			// falling through to zero-cost accounting here would silently let
-			// a multi-MB image block bypass the transcript budget entirely.
+			// Non-text blocks (tool-returned images) count by their
+			// payload, so a multi-MB image cannot slip past the transcript
+			// budget as if it were a few bytes.
 			n += len(b.MIMEType) + 64
+			if b.Source != nil {
+				n += len(b.Source.Base64) + len(b.Source.URL) + len(b.Source.FileID)
+			}
 		}
 	}
 	for _, tc := range m.ToolCalls {

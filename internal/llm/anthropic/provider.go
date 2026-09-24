@@ -212,6 +212,14 @@ func (p *Provider) buildMessages(history []llm.Message) []anthropic.MessageParam
 			// we need to merge them into one user message since Anthropic requires
 			// alternating roles.
 			toolBlock := anthropic.NewToolResultBlock(msg.ToolCallID, msg.AsText(), false)
+			// Tool-returned images go inside the tool_result itself.
+			for _, b := range msg.Content {
+				if b.Type == llm.ContentTypeImage && b.Source != nil {
+					img := anthropic.NewImageBlockBase64(b.MIMEType, b.Source.Base64)
+					toolBlock.OfToolResult.Content = append(toolBlock.OfToolResult.Content,
+						anthropic.ToolResultBlockParamContentUnion{OfImage: img.OfImage})
+				}
+			}
 
 			if len(messages) > 0 {
 				lastMsg := &messages[len(messages)-1]

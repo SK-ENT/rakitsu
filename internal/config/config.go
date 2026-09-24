@@ -247,11 +247,16 @@ type DefaultSettings struct {
 
 // ExecutionSettings contains execution-related settings
 type ExecutionSettings struct {
+	// MaxIterations is the default for agents that do not set their own
+	// max_iterations. -1 = no cap. 0 = unset: no cap when the run has no
+	// timeout, else the agent default (10).
 	MaxIterations int `mapstructure:"max_iterations"`
-	// TimeoutSeconds is the total wall-clock budget for a run. It overrides the
-	// --timeout default (300s) when set; the --timeout CLI flag takes precedence
-	// when explicitly passed. A negative value means "no timeout" (run until
-	// completion / max_iterations / budget / Ctrl+C). 0 = unset (use the flag).
+	// TimeoutSeconds is the total wall-clock budget for a run (per turn in
+	// interactive chat). It overrides the --timeout default (off) when set; the
+	// --timeout CLI flag takes precedence when explicitly passed. A negative
+	// value means "no timeout" (run until completion / budget / Ctrl+C).
+	// 0 = unset (use the flag). With no timeout, agents that leave
+	// max_iterations unset get no iteration cap.
 	TimeoutSeconds int `mapstructure:"timeout_seconds"`
 	// IdleTimeoutSeconds cancels the run if no telemetry events (token /
 	// reasoning chunks, tool calls, ...) arrive for this many seconds. This is
@@ -446,7 +451,7 @@ type AgentDefinition struct {
 	Tools        []string         `mapstructure:"tools,omitempty" yaml:"tools,omitempty"`
 	Skills       []string         `mapstructure:"skills,omitempty" yaml:"skills,omitempty"`
 	ToolsInline  []ToolDefinition `mapstructure:"tools_inline,omitempty" yaml:"tools_inline,omitempty"`
-	Vision       bool             `mapstructure:"vision,omitempty" yaml:"vision,omitempty"` // agent accepts image inputs
+	Vision       *bool            `mapstructure:"vision,omitempty" yaml:"vision,omitempty"` // image input: true = always, false = never, unset = auto (sent; a model that rejects images falls back to a text note)
 	Settings     *AgentSettings   `mapstructure:"settings,omitempty" yaml:"settings,omitempty"`
 }
 

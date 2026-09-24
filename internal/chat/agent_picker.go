@@ -352,10 +352,12 @@ func (m Model) submitToAgent(name, query string) (tea.Model, tea.Cmd) {
 	// Registered with the shutdown tracker before the Cmd is handed to
 	// bubbletea, which runs it detached and never waits on it: without this,
 	// exit can close the tool registry this send is holding mid-call.
-	ctx, cancel, done := m.inFlight.Begin(context.Background())
+	turnCtx, stopTurn := m.turnContext()
+	ctx, cancel, done := m.inFlight.Begin(turnCtx)
 	m.cancelGen = cancel
 	roster := m.roster
 	return m, func() tea.Msg {
+		defer stopTurn()
 		defer done()
 		reply, err := roster.Send(ctx, name, query)
 		return AgentChatDoneMsg{Agent: name, Token: token, Reply: reply, Err: err}

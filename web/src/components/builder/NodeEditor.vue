@@ -550,6 +550,7 @@ const sandboxTypes = [
 
 const fsOperations = [
   { value: 'read', label: 'Read' },
+  { value: 'read_image', label: 'Read image' },
   { value: 'write', label: 'Write' },
   { value: 'list', label: 'List' },
   { value: 'search', label: 'Search' },

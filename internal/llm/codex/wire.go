@@ -62,14 +62,41 @@ func textMessage(role, contentType, text string) json.RawMessage {
 	})
 }
 
-// buildInput maps rakitsu history onto Responses input items.
+// userMessage builds a user input item with its text and image blocks.
+// Returns nil when the message has neither.
+func userMessage(msg llm.Message) json.RawMessage {
+	var content []map[string]string
+	for _, b := range msg.Content {
+		switch b.Type {
+		case llm.ContentTypeText:
+			if b.Text != "" {
+				content = append(content, map[string]string{"type": "input_text", "text": b.Text})
+			}
+		case llm.ContentTypeImage:
+			if b.Source != nil && b.Source.Base64 != "" {
+				content = append(content, map[string]string{
+					"type":      "input_image",
+					"image_url": "data:" + b.MIMEType + ";base64," + b.Source.Base64,
+				})
+			}
+		}
+	}
+	if len(content) == 0 {
+		return nil
+	}
+	return rawItem(map[string]interface{}{"type": "message", "role": "user", "content": content})
+}
+
+// buildInput maps rakitsu history onto Responses input items. A
+// function_call_output is text-only here, so tool-returned images travel in
+// a user message after the tool results.
 func buildInput(history []llm.Message) []json.RawMessage {
 	var items []json.RawMessage
-	for _, msg := range history {
+	for _, msg := range llm.MoveToolImagesToUser(history) {
 		switch msg.Role {
 		case "user":
-			if text := msg.AsText(); text != "" {
-				items = append(items, textMessage("user", "input_text", text))
+			if item := userMessage(msg); item != nil {
+				items = append(items, item)
 			}
 		case "assistant":
 			items = append(items, storedReasoningItems(msg.Metadata)...)

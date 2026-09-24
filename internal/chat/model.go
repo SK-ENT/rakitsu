@@ -91,6 +91,10 @@ type Config struct {
 	// (no hub / remote wait unsupported), matching InboundCh's own
 	// nil-disables convention.
 	PostMessageResult func(waitToken, final string, interrupted bool, errText string)
+
+	// TurnTimeout bounds each chat turn (--timeout /
+	// settings.execution.timeout_seconds). Zero means no deadline.
+	TurnTimeout time.Duration
 }
 
 // blockSpan is the line range a block occupies in the rendered viewport
@@ -265,6 +269,8 @@ type Model struct {
 	// inFlight tracks running directed sends so shutdown can cancel and wait
 	// them out before tool registries are closed — see InFlight.
 	inFlight *InFlight
+	// turnTimeout bounds each turn; zero = none. See turnContext.
+	turnTimeout time.Duration
 }
 
 // Styles
@@ -338,7 +344,17 @@ func NewModel(cfg Config) Model {
 		inFlight:          cfg.InFlight,
 		inboundCh:         cfg.InboundCh,
 		postMessageResult: cfg.PostMessageResult,
+		turnTimeout:       cfg.TurnTimeout,
 	}
+}
+
+// turnContext returns the context for one chat turn: cancellable (Ctrl+C),
+// with a deadline only when a turn timeout is configured.
+func (m Model) turnContext() (context.Context, context.CancelFunc) {
+	if m.turnTimeout > 0 {
+		return context.WithTimeout(context.Background(), m.turnTimeout)
+	}
+	return context.WithCancel(context.Background())
 }
 
 // Close ends the model's background event bridge. The caller (the process
@@ -1342,7 +1358,7 @@ func (m Model) submitQuery(query string) (tea.Model, tea.Cmd) {
 	copy(historyCopy, m.history)
 	priorHistory := historyCopy[:len(historyCopy)-1]
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := m.turnContext()
 	m.cancelGen = cancel
 
 	// Dispatch: single-agent uses RunWithHistory (rich structured history);
@@ -1416,7 +1432,7 @@ func (m Model) submitExternal(msg InboundSessionMsg) (tea.Model, tea.Cmd) {
 	copy(historyCopy, m.history)
 	priorHistory := historyCopy[:len(historyCopy)-1]
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := m.turnContext()
 	m.cancelGen = cancel
 
 	llmText := WrapSessionMessage(msg.Text, msg.FromSessionID, msg.FromName)

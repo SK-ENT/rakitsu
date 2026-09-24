@@ -14,10 +14,10 @@ import (
 // newTimeoutTestCmd builds a fresh command bound to the same package-level flag
 // vars as runCmd, so resolve* precedence can be exercised without the global
 // runCmd state. Binding via pflag resets timeoutSeconds/idleTimeoutSeconds to
-// their defaults (300 / 0).
+// their defaults (off / 0).
 func newTimeoutTestCmd() *cobra.Command {
 	c := &cobra.Command{Use: "run"}
-	c.Flags().IntVarP(&timeoutSeconds, "timeout", "t", 300, "")
+	c.Flags().IntVarP(&timeoutSeconds, "timeout", "t", defaultTimeoutSeconds, "")
 	c.Flags().IntVar(&idleTimeoutSeconds, "idle-timeout", 0, "")
 	return c
 }
@@ -50,7 +50,7 @@ func TestResolveTimeoutSeconds_WiresYAMLField(t *testing.T) {
 		flagSet   string // "" = leave --timeout untouched
 		wantValue int
 	}{
-		{"unset everywhere -> flag default", 0, "", 300},
+		{"unset everywhere -> off", 0, "", 0},
 		{"yaml override honored", 1800, "", 1800},
 		{"yaml unlimited (negative)", -1, "", -1},
 		{"flag wins over yaml", 1800, "600", 600},
@@ -179,5 +179,57 @@ func TestStartIdleWatchdog_DisabledWhenNonPositive(t *testing.T) {
 	}
 	if ctx.Err() != nil {
 		t.Fatal("ctx must not be cancelled when the watchdog is disabled")
+	}
+}
+
+// TestResolveAgentIterations: an agent without its own
+// max_iterations uses settings.execution.max_iterations; with neither set and
+// the run timeout off it gets no cap (-1). An agent's explicit value is always
+// kept, and with a timeout on and no global value the agent default (10)
+// stays.
+func TestResolveAgentIterations(t *testing.T) {
+	newCfg := func(global int) *config.Config {
+		cfg := &config.Config{Agents: []config.AgentDefinition{
+			{Name: "no-settings"},
+			{Name: "unset", Settings: &config.AgentSettings{}},
+			{Name: "explicit", Settings: &config.AgentSettings{MaxIterations: 6}},
+		}}
+		cfg.Settings.Execution.MaxIterations = global
+		return cfg
+	}
+	iters := func(cfg *config.Config) []int {
+		out := make([]int, len(cfg.Agents))
+		for i, a := range cfg.Agents {
+			if a.Settings != nil {
+				out[i] = a.Settings.MaxIterations
+			}
+		}
+		return out
+	}
+
+	tests := []struct {
+		name       string
+		global     int
+		timeoutSec int
+		want       []int
+	}{
+		{"timeout off, no global -> no cap", 0, 0, []int{-1, -1, 6}},
+		{"timeout negative, no global -> no cap", 0, -1, []int{-1, -1, 6}},
+		{"timeout on, no global -> agent default", 0, 600, []int{0, 0, 6}},
+		{"global cap wins over no-timeout", 5, 0, []int{5, 5, 6}},
+		{"global cap with timeout on", 5, 600, []int{5, 5, 6}},
+		{"global -1 = no cap even with timeout on", -1, 600, []int{-1, -1, 6}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := newCfg(tc.global)
+			resolveAgentIterations(cfg, tc.timeoutSec)
+			got := iters(cfg)
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("max_iterations = %v, want %v", got, tc.want)
+				}
+			}
+		})
 	}
 }

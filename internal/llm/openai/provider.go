@@ -360,8 +360,9 @@ func (p *Provider) buildMessages(systemPrompt string, history []llm.Message) []o
 		})
 	}
 
-	// Add history
-	for _, msg := range history {
+	// Add history. Tool messages are text-only on Chat Completions, so
+	// tool-returned images travel in a user message after them.
+	for _, msg := range llm.MoveToolImagesToUser(history) {
 		messages = append(messages, p.convertMessage(msg))
 	}
 

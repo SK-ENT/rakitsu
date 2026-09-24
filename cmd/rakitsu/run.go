@@ -113,7 +113,7 @@ var (
 
 func init() {
 	rootCmd.AddCommand(runCmd)
-	runCmd.Flags().IntVarP(&timeoutSeconds, "timeout", "t", 300, "total execution timeout in seconds (<=0 disables it; also via settings.execution.timeout_seconds)")
+	runCmd.Flags().IntVarP(&timeoutSeconds, "timeout", "t", defaultTimeoutSeconds, "total execution timeout in seconds, per turn in --interactive (unset or <=0 = no time limit, and agents without max_iterations then have no iteration cap; also via settings.execution.timeout_seconds)")
 	runCmd.Flags().IntVar(&idleTimeoutSeconds, "idle-timeout", 0, "cancel the run after N seconds with no streaming activity (0=disabled); a slow-but-progressing model never trips this")
 	runCmd.Flags().BoolVar(&traceEnabled, "trace", false, "show real-time agent execution trace on stderr")
 	runCmd.Flags().IntVar(&debugPort, "debug-port", 0, "start debug SSE server on this port (e.g. 9100) for web UI inspector")
@@ -131,9 +131,13 @@ func init() {
 	runCmd.Flags().StringArrayVar(&attachPaths, "attach", nil, "attach a local image file to the query (repeatable, e.g. --attach a.png --attach b.png); requires the resolved agent's `vision: true`")
 }
 
+// defaultTimeoutSeconds is the --timeout default: off. Long agent operations
+// run until they finish unless the user sets a limit.
+const defaultTimeoutSeconds = 0
+
 // resolveTimeoutSeconds returns the effective total run timeout in seconds.
 // Precedence: explicit --timeout flag > settings.execution.timeout_seconds >
-// the --timeout default (300). A returned value <= 0 means "no timeout".
+// the --timeout default (off). A returned value <= 0 means "no timeout".
 func resolveTimeoutSeconds(cmd *cobra.Command, cfg *config.Config) int {
 	if cmd.Flags().Changed("timeout") {
 		return timeoutSeconds
@@ -152,6 +156,30 @@ func resolveIdleSeconds(cmd *cobra.Command, cfg *config.Config) int {
 		return idleTimeoutSeconds
 	}
 	return cfg.Settings.Execution.IdleTimeoutSeconds
+}
+
+// resolveAgentIterations fills max_iterations for every agent that left it
+// unset: settings.execution.max_iterations when set (-1 = no cap), else no
+// cap (-1) when the run has no timeout. With neither limit set, a run ends on
+// its answer, a budget guard (max_cost / max_total_tokens), the idle timeout,
+// or Ctrl+C. An agent's explicit max_iterations is always kept.
+func resolveAgentIterations(cfg *config.Config, timeoutSec int) {
+	value := cfg.Settings.Execution.MaxIterations
+	if value == 0 {
+		if timeoutSec > 0 {
+			return // agent default (10) applies
+		}
+		value = -1
+	}
+	for i := range cfg.Agents {
+		a := &cfg.Agents[i]
+		if a.Settings == nil {
+			a.Settings = &config.AgentSettings{}
+		}
+		if a.Settings.MaxIterations == 0 {
+			a.Settings.MaxIterations = value
+		}
+	}
 }
 
 // contextWithOptionalTimeout returns a cancellable context. A non-positive
@@ -244,7 +272,7 @@ func ensureDefaultConfig(path string) error {
 
 name: Default Assistant
 version: "1.0"
-description: Conversational assistant with read-only access to the current directory.
+description: Conversational assistant with read-only access to the current directory, including images.
 interactive: true
 
 settings:
@@ -298,6 +326,18 @@ tools:
       pattern: { type: string, description: "Search pattern (regex)", required: true }
       path: { type: string, description: "Directory to search in", required: true }
 
+  # Lets the model see an image file (png/jpg/gif/webp). Needs a model that
+  # accepts images (e.g. a vision model in Ollama, or most cloud models);
+  # with a text-only model the agent gets a note instead and says so.
+  - name: read_image
+    type: fs
+    operation: read_image
+    allowed_paths:
+      - "."
+    description: Load an image file so you can see it
+    parameters:
+      path: { type: string, description: "Image file path", required: true }
+
 agents:
   - name: Assistant
     role: worker
@@ -306,9 +346,8 @@ agents:
       If you don't know something, say so honestly. You have read-only access to
       files in the current directory via list_files, read_file, and search_files —
       use them when a question is about a local file; you cannot write, delete, or
-      run commands, and you cannot see images unless one was attached to the query.
-    settings:
-      max_iterations: 6
+      run commands. To look at an image file, call read_image; if its result says
+      the image was omitted, tell the user you cannot see it with this model.
 `
 	return os.WriteFile(path, []byte(defaultConfigYAML), 0o644)
 }
@@ -498,7 +537,7 @@ func runAgent(cmd *cobra.Command, args []string) (runErr error) {
 		// Same "use the first agent" resolution the single-agent execution
 		// path below applies.
 		visionAgent := &cfg.Agents[0]
-		if !visionAgent.Vision {
+		if visionAgent.Vision == nil || !*visionAgent.Vision {
 			return fmt.Errorf("agent %q does not accept image input (set `vision: true` in its config) — cannot use --attach", visionAgent.Name)
 		}
 		for _, p := range attachPaths {
@@ -517,6 +556,9 @@ func runAgent(cmd *cobra.Command, args []string) (runErr error) {
 		hubURL = cfg.Settings.HubURL
 	}
 
+	timeoutSec := resolveTimeoutSeconds(cmd, cfg)
+	resolveAgentIterations(cfg, timeoutSec)
+
 	// Interactive mode: hand off to chat TUI (after provider/model/workdir overrides).
 	if cfg.Interactive {
 		// The TUI has no history-replay path yet — reject instead of
@@ -524,9 +566,16 @@ func runAgent(cmd *cobra.Command, args []string) (runErr error) {
 		if resumeSessionID != "" {
 			return fmt.Errorf("--resume is not supported with interactive chat yet — resume with history via the web UI (rakitsu serve → Sessions → Resume), or drop --interactive")
 		}
-		ctx, cancel := contextWithOptionalTimeout(context.Background(), resolveTimeoutSeconds(cmd, cfg))
+		// The timeout applies to each chat turn, not to the whole session:
+		// the session context also owns providers and MCP servers, which must
+		// outlive any single turn's deadline.
+		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		return runInteractive(ctx, cfg, query)
+		var turnTimeout time.Duration
+		if timeoutSec > 0 {
+			turnTimeout = time.Duration(timeoutSec) * time.Second
+		}
+		return runInteractive(ctx, cfg, query, turnTimeout)
 	}
 
 	// Dry-run: estimate cost and exit before any LLM calls or session recording.
@@ -537,7 +586,7 @@ func runAgent(cmd *cobra.Command, args []string) (runErr error) {
 	// Set up context with timeout and cancellation. A non-positive effective
 	// timeout disables the deadline (run until completion / max_iterations /
 	// budget / Ctrl+C) — see contextWithOptionalTimeout.
-	ctx, cancel := contextWithOptionalTimeout(context.Background(), resolveTimeoutSeconds(cmd, cfg))
+	ctx, cancel := contextWithOptionalTimeout(context.Background(), timeoutSec)
 	defer cancel()
 
 	// idleTimedOut is set by the idle watchdog (started after the event bus is
@@ -990,6 +1039,7 @@ func runAgent(cmd *cobra.Command, args []string) (runErr error) {
 			sizeBytes, _ := block.Metadata["size_bytes"].(int64)
 			eventBus.Emit(agentDef.Name, telemetry.EventMediaAttached, telemetry.MediaAttachedPayload{
 				Modality:  string(block.Type),
+				Via:       "cli_attach",
 				Path:      attachPaths[i],
 				SizeBytes: sizeBytes,
 				MIMEType:  block.MIMEType,

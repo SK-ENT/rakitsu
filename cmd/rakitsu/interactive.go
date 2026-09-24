@@ -83,7 +83,7 @@ func shutdownChat(sends *chat.InFlight, cleanup func()) {
 //
 // initialQuery is optional; if set, it's auto-submitted as the first turn
 // (same effect as the user typing it on open).
-func runInteractive(ctx context.Context, cfg *config.Config, initialQuery string) (runErr error) {
+func runInteractive(ctx context.Context, cfg *config.Config, initialQuery string, turnTimeout time.Duration) (runErr error) {
 	if len(cfg.Agents) == 0 {
 		return fmt.Errorf("no agents defined in config")
 	}
@@ -337,6 +337,7 @@ func runInteractive(ctx context.Context, cfg *config.Config, initialQuery string
 		InFlight:          sends,
 		InboundCh:         inboundCh,
 		PostMessageResult: postMessageResult,
+		TurnTimeout:       turnTimeout,
 	})
 
 	// No mouse ProgramOption: the terminal keeps mouse input, so native

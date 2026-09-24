@@ -3,6 +3,7 @@ package llm
 import (
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 )
@@ -24,6 +25,12 @@ var allowedImageMIMETypes = map[string]bool{
 	"image/webp": true,
 }
 
+// IsSupportedImageMIME reports whether every provider accepts this image
+// type inline (see allowedImageMIMETypes).
+func IsSupportedImageMIME(mimeType string) bool {
+	return allowedImageMIMETypes[mimeType]
+}
+
 // LoadImageAttachment reads a local image file at path, content-sniffs its
 // MIME type, and returns it as a base64-encoded ContentTypeImage
 // ContentBlock ready to append to a user message.
@@ -38,13 +45,28 @@ func LoadImageAttachment(path string) (ContentBlock, error) {
 	if info.IsDir() {
 		return ContentBlock{}, fmt.Errorf("%s is a directory, not a file", path)
 	}
+	// A named pipe or device reports size 0 and would then block or read
+	// without end.
+	if !info.Mode().IsRegular() {
+		return ContentBlock{}, fmt.Errorf("%s is not a regular file", path)
+	}
 	if info.Size() > MaxAttachmentBytes {
 		return ContentBlock{}, fmt.Errorf("%s is %d bytes, exceeds the %.2f MB (%d bytes) attachment size limit", path, info.Size(), float64(MaxAttachmentBytes)/(1024*1024), MaxAttachmentBytes)
 	}
 
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return ContentBlock{}, fmt.Errorf("cannot read %s: %w", path, err)
+	}
+	defer f.Close()
+	// Bounded read: a file that grew after the size check still can't
+	// exceed the limit.
+	data, err := io.ReadAll(io.LimitReader(f, MaxAttachmentBytes+1))
+	if err != nil {
+		return ContentBlock{}, fmt.Errorf("cannot read %s: %w", path, err)
+	}
+	if int64(len(data)) > MaxAttachmentBytes {
+		return ContentBlock{}, fmt.Errorf("%s grew past the %.2f MB (%d bytes) attachment size limit while being read", path, float64(MaxAttachmentBytes)/(1024*1024), MaxAttachmentBytes)
 	}
 
 	mimeType := sniffMIMEType(data)

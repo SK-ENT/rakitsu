@@ -293,17 +293,36 @@ func (p *Provider) buildContents(history []llm.Message) []*genai.Content {
 				}
 			}
 
+			// Tool-returned images ride in the same user turn as
+			// inline data, after all of that turn's function responses.
+			var imageParts []*genai.Part
+			for _, b := range msg.Content {
+				if b.Type != llm.ContentTypeImage || b.Source == nil {
+					continue
+				}
+				if decoded, err := base64.StdEncoding.DecodeString(b.Source.Base64); err == nil {
+					imageParts = append(imageParts, genai.NewPartFromBytes(decoded, b.MIMEType))
+				}
+			}
+
 			// Merge consecutive tool results into one user message
 			if len(contents) > 0 {
 				lastContent := contents[len(contents)-1]
 				if lastContent.Role == "user" && hasFunctionResponse(lastContent) {
-					lastContent.Parts = append(lastContent.Parts, funcResp)
+					at := 0
+					for i, part := range lastContent.Parts {
+						if part.FunctionResponse != nil {
+							at = i + 1
+						}
+					}
+					parts := append(append(lastContent.Parts[:at:at], funcResp), lastContent.Parts[at:]...)
+					lastContent.Parts = append(parts, imageParts...)
 					continue
 				}
 			}
 			contents = append(contents, &genai.Content{
 				Role:  "user",
-				Parts: []*genai.Part{funcResp},
+				Parts: append([]*genai.Part{funcResp}, imageParts...),
 			})
 
 		case "system":

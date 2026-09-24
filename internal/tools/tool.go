@@ -9,6 +9,8 @@ import (
 	"log"
 	"strings"
 	"sync"
+
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // Tool is the interface for all tools that agents can use.
@@ -30,6 +32,15 @@ type Tool interface {
 	// The context allows for cancellation and timeout.
 	// Arguments are already parsed from JSON into a structured map.
 	Execute(ctx context.Context, args map[string]interface{}) (string, error)
+}
+
+// ContentTool is an optional interface for a Tool whose result can carry
+// non-text content (e.g. an image) next to its text. The agent loop calls
+// ExecuteContent instead of Execute when a tool implements it, and passes
+// the blocks to the model only when the agent has `vision: true`.
+// Execute stays the text-only path for every other caller.
+type ContentTool interface {
+	ExecuteContent(ctx context.Context, args map[string]interface{}) (string, []llm.ContentBlock, error)
 }
 
 // TurnResetter is an optional interface a Tool may implement to clear

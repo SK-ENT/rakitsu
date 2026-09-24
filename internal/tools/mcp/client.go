@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,6 +21,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // ToolDef describes a single tool exposed by an MCP server.
@@ -37,6 +40,8 @@ type MCPClient interface {
 	ListTools(ctx context.Context) ([]ToolDef, error)
 	// CallTool invokes a named tool and returns its text output.
 	CallTool(ctx context.Context, name string, args map[string]interface{}) (string, error)
+	// CallToolContent is CallTool plus the result's image content.
+	CallToolContent(ctx context.Context, name string, args map[string]interface{}) (string, []llm.ContentBlock, error)
 	// Close shuts down the connection / subprocess.
 	Close() error
 }
@@ -264,15 +269,21 @@ func (c *StdioClient) ListTools(ctx context.Context) ([]ToolDef, error) {
 
 // CallTool calls tools/call and concatenates text content from the result.
 func (c *StdioClient) CallTool(ctx context.Context, name string, args map[string]interface{}) (string, error) {
+	text, _, err := c.CallToolContent(ctx, name, args)
+	return text, err
+}
+
+// CallToolContent calls tools/call and returns its text and image content.
+func (c *StdioClient) CallToolContent(ctx context.Context, name string, args map[string]interface{}) (string, []llm.ContentBlock, error) {
 	params := map[string]interface{}{"name": name, "arguments": args}
 	resp, err := c.send(ctx, "tools/call", params)
 	if err != nil {
-		return "", fmt.Errorf("mcp tools/call %q: %w", name, err)
+		return "", nil, fmt.Errorf("mcp tools/call %q: %w", name, err)
 	}
 	if resp.Error != nil {
-		return "", resp.Error
+		return "", nil, resp.Error
 	}
-	return parseToolCallResult(resp.Result)
+	return parseToolCallContent(resp.Result)
 }
 
 // Close kills the subprocess.
@@ -442,15 +453,21 @@ func (c *HTTPClient) ListTools(ctx context.Context) ([]ToolDef, error) {
 
 // CallTool calls tools/call.
 func (c *HTTPClient) CallTool(ctx context.Context, name string, args map[string]interface{}) (string, error) {
+	text, _, err := c.CallToolContent(ctx, name, args)
+	return text, err
+}
+
+// CallToolContent calls tools/call and returns its text and image content.
+func (c *HTTPClient) CallToolContent(ctx context.Context, name string, args map[string]interface{}) (string, []llm.ContentBlock, error) {
 	params := map[string]interface{}{"name": name, "arguments": args}
 	resp, err := c.send(ctx, "tools/call", params)
 	if err != nil {
-		return "", fmt.Errorf("mcp http tools/call %q: %w", name, err)
+		return "", nil, fmt.Errorf("mcp http tools/call %q: %w", name, err)
 	}
 	if resp.Error != nil {
-		return "", resp.Error
+		return "", nil, resp.Error
 	}
-	return parseToolCallResult(resp.Result)
+	return parseToolCallContent(resp.Result)
 }
 
 // Close is a no-op for HTTP (stateless).
@@ -481,15 +498,33 @@ func parseToolsListResult(raw json.RawMessage) ([]ToolDef, error) {
 }
 
 func parseToolCallResult(raw json.RawMessage) (string, error) {
+	text, _, err := parseToolCallContent(raw)
+	return text, err
+}
+
+// parseToolCallContent returns a tools/call result's text (items joined by
+// newlines) and its image content: "image" items and "resource" items whose
+// mimeType is an image. An image type no provider accepts becomes an
+// "[image omitted: ...]" note in the text. Size needs no check here: both
+// transports cap a whole response at 1 MiB before it is parsed (readLoop,
+// decodeMCPBody), which bounds every image and their total.
+func parseToolCallContent(raw json.RawMessage) (string, []llm.ContentBlock, error) {
+	type resource struct {
+		MIMEType string `json:"mimeType"`
+		Blob     string `json:"blob"`
+	}
 	var result struct {
 		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
+			Type     string    `json:"type"`
+			Text     string    `json:"text"`
+			Data     string    `json:"data"`
+			MIMEType string    `json:"mimeType"`
+			Resource *resource `json:"resource"`
 		} `json:"content"`
 		IsError bool `json:"isError"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		return "", fmt.Errorf("mcp tools/call parse: %w", err)
+		return "", nil, fmt.Errorf("mcp tools/call parse: %w", err)
 	}
 	if result.IsError {
 		// Collect error text from content
@@ -499,16 +534,32 @@ func parseToolCallResult(raw json.RawMessage) (string, error) {
 				sb = append(sb, c.Text...)
 			}
 		}
-		return "", fmt.Errorf("mcp tool error: %s", string(sb))
+		return "", nil, fmt.Errorf("mcp tool error: %s", string(sb))
 	}
-	var out []byte
+	var lines []string
+	var blocks []llm.ContentBlock
 	for _, c := range result.Content {
-		if c.Type == "text" {
-			if len(out) > 0 {
-				out = append(out, '\n')
-			}
-			out = append(out, c.Text...)
+		data, mimeType := c.Data, c.MIMEType
+		switch {
+		case c.Type == "text":
+			lines = append(lines, c.Text)
+			continue
+		case c.Type == "resource" && c.Resource != nil && strings.HasPrefix(c.Resource.MIMEType, "image/"):
+			data, mimeType = c.Resource.Blob, c.Resource.MIMEType
+		case c.Type != "image":
+			continue
 		}
+		size := base64.StdEncoding.DecodedLen(len(data))
+		if !llm.IsSupportedImageMIME(mimeType) {
+			lines = append(lines, fmt.Sprintf("[image omitted: %s, %d bytes — unsupported image type]", mimeType, size))
+			continue
+		}
+		blocks = append(blocks, llm.ContentBlock{
+			Type:     llm.ContentTypeImage,
+			MIMEType: mimeType,
+			Source:   &llm.BlockSource{Kind: llm.SourceKindBase64, Base64: data},
+			Metadata: map[string]any{"size_bytes": int64(size)},
+		})
 	}
-	return string(out), nil
+	return strings.Join(lines, "\n"), blocks, nil
 }
