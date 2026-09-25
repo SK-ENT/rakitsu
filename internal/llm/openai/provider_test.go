@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/SK-ENT/rakitsu/internal/llm"
@@ -104,5 +105,68 @@ func TestConvertMessage_ToolAndAssistantUnaffected(t *testing.T) {
 	om = p.convertMessage(assistantMsg)
 	if om.Content != "here you go" || om.MultiContent != nil {
 		t.Errorf("assistant message: Content = %q, MultiContent = %+v, want plain Content only", om.Content, om.MultiContent)
+	}
+}
+
+// TestConvertMessage_ToolCallOnly_ContentFieldSurvivesWireMarshal is a
+// regression test: a tool-call-only assistant turn (no text) has
+// Content == "" here, and go-openai's ChatCompletionMessage.MarshalJSON
+// tags Content as `json:"content,omitempty"`, so an empty string drops the
+// "content" key from the outgoing JSON entirely. Real OpenAI tolerates the
+// missing field, but Ollama's OpenAI-compat endpoint does not — it 400s
+// with "invalid message content type: <nil>". The fix must keep the
+// "content" key present (even if blank) on the wire for this message shape.
+func TestConvertMessage_ToolCallOnly_ContentFieldSurvivesWireMarshal(t *testing.T) {
+	p := &Provider{}
+	msg := llm.Message{
+		Role: "assistant",
+		ToolCalls: []llm.ToolCall{
+			{ID: "call_1", Name: "run_command", Arguments: map[string]interface{}{"command": "go build"}},
+		},
+	}
+
+	om := p.convertMessage(msg)
+
+	raw, err := json.Marshal(om)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatalf("json.Unmarshal wire form: %v", err)
+	}
+	if _, present := wire["content"]; !present {
+		t.Fatalf("wire JSON %s: \"content\" key missing — Ollama's OpenAI-compat endpoint rejects this as \"invalid message content type: <nil>\"", raw)
+	}
+}
+
+// TestConvertMessage_ToolResponseEmptyResult_ContentFieldSurvivesWireMarshal
+// is a regression test: the same omitempty gap fixed above for a
+// tool-call-only assistant turn also applies one branch earlier, to a
+// role=="tool" response message — a tool call with a legitimately empty
+// result (e.g. a shell command producing 0 bytes of stdout) leaves
+// Content == "" here too, dropping the "content" key from the wire the
+// same way and 400ing on Ollama with the same "invalid message content
+// type: <nil>" error.
+func TestConvertMessage_ToolResponseEmptyResult_ContentFieldSurvivesWireMarshal(t *testing.T) {
+	p := &Provider{}
+	msg := llm.Message{
+		Role:       "tool",
+		ToolCallID: "call_1",
+		Content:    []llm.ContentBlock{{Type: llm.ContentTypeText, Text: ""}},
+	}
+
+	om := p.convertMessage(msg)
+
+	raw, err := json.Marshal(om)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatalf("json.Unmarshal wire form: %v", err)
+	}
+	if _, present := wire["content"]; !present {
+		t.Fatalf("wire JSON %s: \"content\" key missing — Ollama's OpenAI-compat endpoint rejects this as \"invalid message content type: <nil>\"", raw)
 	}
 }
