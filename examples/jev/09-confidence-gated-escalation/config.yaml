@@ -1,0 +1,140 @@
+# 09 — Confidence-Gated Escalation (Jev)
+#
+# Examples 01-08 treat a Jev verdict as either advisory (the agent is told
+# to act on it) or mechanically gated (03, 08 — a pipeline step passes or
+# fails outright). None of them use Jev's own CONFIDENCE as a routing
+# signal, and none use rakitsu's `user_input` tool — an agent pausing to
+# ask a real person mid-run, a capability the codebase already has.
+#
+# This example combines both: a `choice` question's confidence decides
+# whether the agent acts automatically or escalates to a human, with the
+# bar scaled to the action's stakes (docs.typesafe.ai/patterns/
+# confidence-routing.md) — low-stakes commands need less certainty than
+# high-stakes ones, and anything genuinely uncertain escalates regardless
+# of category.
+#
+# See config-no-jev.yaml for the same agent judging its own confidence
+# instead of calling Jev, and README.md for why "without Jev" doesn't mean
+# "without user_input" here — see the honest with-vs-without discussion.
+#
+# IMPORTANT — this example needs a live terminal, unlike 01-08:
+# `user_input` only registers in interactive chat mode (see
+# cmd/rakitsu/runtime.go), so this can't run as a plain one-shot
+# `rakitsu run <config> "<query>"` the way every other jev example does.
+#
+# Usage (interactive):
+#   export TYPESAFE_API_KEY=...
+#   rakitsu run examples/jev/09-confidence-gated-escalation/config.yaml -i
+#   > Delete all files matching *.log in the current directory
+#
+# Runs keyless against local Ollama by default (https://ollama.com):
+#   ollama pull llama3.1:8b
+# Prefer a cloud model? Uncomment a provider under settings.providers below.
+
+name: Confidence-Gated Escalation
+version: "1.0"
+description: Jev's own confidence decides whether a shell agent acts automatically or asks a human first.
+interactive: true
+
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://localhost:11434/v1
+    # openai:
+    #   type: openai
+    #   api_key: ${OPENAI_API_KEY}
+    # anthropic:
+    #   type: anthropic
+    #   api_key: ${ANTHROPIC_API_KEY}
+  defaults:
+    model: llama3.1:8b
+    temperature: 0.3
+    max_tokens: 4096
+  execution:
+    max_iterations: 8
+    timeout_seconds: 300
+  allowed_commands:
+    - sh  # required by run_command's sh -c wrapper
+    - find
+    - grep
+    - cat
+    - ls
+    - rm
+    - mkdir
+    - touch
+
+tools:
+  - name: run_command
+    type: cli
+    description: Execute a shell command
+    command: "sh -c '{{command}}'"
+    parameters:
+      command: { type: string, description: "Shell command to run", required: true }
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 15
+
+  - name: jev
+    type: jev
+    description: Ask TypeSafe AI's Jev model a typed question about a proposed command's risk category.
+
+skills:
+  # Shared Jev usage rules — see examples/jev/01-command-safety-gate's
+  # config.yaml comment for why, and examples/jev/_shared/jev-usage-skill.md
+  # for the content.
+  - name: jev-usage
+    description: General rules for calling the jev tool correctly.
+    tools: [jev]
+    prompt_template: file:../_shared/jev-usage-skill.md
+
+agents:
+  - name: SafeShell
+    role: worker
+    system_prompt: |
+      You are a shell assistant with a confidence-gated escalation policy.
+      Before calling run_command with any command, you MUST first call jev
+      with:
+        state: the exact command you're about to run, plus what the user asked for
+        questions:
+          category: { type: choice, instructions:
+            "Classify this command's stakes if it were run as-is.",
+            criteria: { read: "reads without modifying anything",
+                        write: "creates or modifies data, reversibly",
+                        destroy: "deletes or irreversibly modifies data" } }
+
+      jev's answer includes both "value" (the category) and "confidence"
+      (0.0-1.0, how concentrated its probability distribution was — NOT a
+      judgment of how safe the command is, just how sure Jev is about the
+      category). Apply this policy using confidence and category together:
+
+        - the jev call itself failed or errored (no category/confidence
+          was returned at all): treat this as maximum uncertainty, not as
+          permission to guess or to proceed. Call user_input, say the jev
+          call failed, and ask what to do. Never claim a category or
+          confidence you don't actually have.
+        - confidence < 0.6: genuinely uncertain what this even is. Call
+          user_input and ask a person what to do, regardless of category.
+          Do NOT guess or re-ask jev.
+        - category "read" AND confidence >= 0.6: low stakes, clear signal.
+          Run it directly. No need to ask.
+        - category "write" AND confidence >= 0.75: run it directly.
+          Below 0.75, call user_input and explain the uncertainty before
+          proceeding.
+        - category "destroy": always call user_input for explicit
+          confirmation before running it, no matter how high confidence
+          is. High confidence that something is destructive is a reason
+          for caution, not a reason to skip asking.
+
+      When you call user_input, state jev's actual category and confidence
+      in your question so the person has real information to decide with —
+      don't just ask "should I run this?" with no context.
+    tools:
+      - run_command
+      - jev
+    skills:
+      - jev-usage
+    settings:
+      max_iterations: 8

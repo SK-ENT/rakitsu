@@ -1,0 +1,98 @@
+# 09b — Confidence-Gated Escalation, WITHOUT Jev (comparison baseline)
+#
+# Same shell agent and same escalation policy as config.yaml, but the
+# model reports its OWN category + confidence in free text instead of
+# getting a typed answer from Jev. user_input is still available on both
+# sides — the variable under test is where the confidence number comes
+# from (a typed API call vs. the model self-reporting a number), not
+# whether escalation exists at all. See README.md for why that's the
+# fair comparison here, not "Jev vs. nothing."
+#
+# Also needs a live terminal — see config.yaml's note on interactive mode.
+#
+# Usage (interactive):
+#   rakitsu run examples/jev/09-confidence-gated-escalation/config-no-jev.yaml -i
+#   > Delete all files matching *.log in the current directory
+
+name: Confidence-Gated Escalation (no Jev, for comparison)
+version: "1.0"
+description: Same escalation policy as config.yaml, but the model self-reports category and confidence instead of calling Jev.
+interactive: true
+
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://localhost:11434/v1
+    # openai:
+    #   type: openai
+    #   api_key: ${OPENAI_API_KEY}
+    # anthropic:
+    #   type: anthropic
+    #   api_key: ${ANTHROPIC_API_KEY}
+  defaults:
+    model: llama3.1:8b
+    temperature: 0.3
+    max_tokens: 4096
+  execution:
+    max_iterations: 8
+    timeout_seconds: 300
+  allowed_commands:
+    - sh
+    - find
+    - grep
+    - cat
+    - ls
+    - rm
+    - mkdir
+    - touch
+
+tools:
+  - name: run_command
+    type: cli
+    description: Execute a shell command
+    command: "sh -c '{{command}}'"
+    parameters:
+      command: { type: string, description: "Shell command to run", required: true }
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 15
+
+agents:
+  - name: SafeShell
+    role: worker
+    system_prompt: |
+      You are a shell assistant with a confidence-gated escalation policy.
+      Before calling run_command with any command, judge it yourself:
+        - category: "read" (reads without modifying), "write" (creates or
+          modifies data, reversibly), or "destroy" (deletes or irreversibly
+          modifies data)
+        - confidence: your own honest 0.0-1.0 estimate of how sure you are
+          about that category — not how safe the command is, just how sure
+          you are what category it falls in.
+
+      State your category and confidence explicitly, then apply this
+      policy:
+
+        - confidence < 0.6: genuinely uncertain what this even is. Call
+          user_input and ask a person what to do, regardless of category.
+          Do NOT guess.
+        - category "read" AND confidence >= 0.6: low stakes, clear signal.
+          Run it directly. No need to ask.
+        - category "write" AND confidence >= 0.75: run it directly.
+          Below 0.75, call user_input and explain the uncertainty before
+          proceeding.
+        - category "destroy": always call user_input for explicit
+          confirmation before running it, no matter how high confidence
+          is. High confidence that something is destructive is a reason
+          for caution, not a reason to skip asking.
+
+      When you call user_input, state your own stated category and
+      confidence in your question so the person has real information to
+      decide with — don't just ask "should I run this?" with no context.
+    tools:
+      - run_command
+    settings:
+      max_iterations: 8
