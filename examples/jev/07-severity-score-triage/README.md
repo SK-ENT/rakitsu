@@ -90,7 +90,7 @@ rakitsu run examples/jev/07-severity-score-triage/config.yaml \
   example originally assumed `score` always returns 0.0–1.0 and applied
   its action-band thresholds directly to the raw value. It doesn't —
   `score`'s range is `0` to `len(criteria) - 1`. Confirmed via live
-  testing (`scripts/jev-reliability-check.py`, 5+ repeated calls per
+  testing (a repeated-call check, 5+ calls per
   case): a cosmetic finding scored ~0.04 raw, a genuinely moderate finding
   scored ~0.98 raw, and a critical finding scored ~1.99 raw — all against
   this same 3-level `criteria` list. Un-normalized, the moderate case
@@ -117,8 +117,7 @@ keys, real GitHub Actions), 2026-09-21:
    *Correction: this run's report originally recorded
    "Score: 1.0," which is not consistent with `score`'s actual 0–2 raw
    range for this 3-level criteria list. Direct, repeated re-testing of
-   an equivalent critical-severity finding (8 repeated live calls,
-   `scripts/jev-reliability-check.py`) found a raw score of 1.98–1.99
+   an equivalent critical-severity finding (8 repeated live calls) found a raw score of 1.98–1.99
    (normalized ≈ 0.99), not 1.0 — the original number was likely
    misreported by the calling model rather than a genuine API response.
    The BLOCK verdict itself was still correct; only the specific number
@@ -132,7 +131,7 @@ fix attempt asked the agent to normalize the raw score (`raw / 2`) before
 comparing to 0.0–1.0 thresholds. Live run against the moderate-VPN-only
 finding above, local `llama3.1:8b`: the agent reported "Normalized
 severity: 0.98" and `BLOCK` — 0.98 matches the *raw* score independently
-measured for this exact finding via `jev-reliability-check.py`
+measured for this exact finding with repeated live calls
 (0.97–0.98), meaning the model most likely never actually divided,
 just relabeled the raw number. The second fix (pre-scaled thresholds,
 no division asked of the model) is the one shipped in `config.yaml`.
