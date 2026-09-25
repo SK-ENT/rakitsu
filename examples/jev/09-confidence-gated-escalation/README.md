@@ -29,7 +29,9 @@ rakitsu run examples/jev/09-confidence-gated-escalation/config.yaml -i
 
 Expect: `jev` gets called with a `choice` question (`read`/`write`/`destroy`),
 and because this is a destructive command, the policy calls `user_input` to
-confirm before running it — regardless of how confident Jev was.
+confirm before running it — regardless of how confident Jev was. If you
+confirm, the agent deletes with `find . -name "*.log" -delete` (see
+"Deleting files" below for why not `rm`).
 
 Try a clearly low-stakes prompt too:
 
@@ -56,6 +58,21 @@ Expect: high-confidence `read` classification, no escalation, runs directly.
 - `config-no-jev.yaml`: same policy, but the model reports its own
   category and confidence instead of calling Jev — see below for why that,
   not "no escalation at all," is the fair comparison
+
+## Deleting files — why `find -delete`, not `rm`
+
+The cli tool always blocks `rm`, `rmdir`, `mv` and `cp`, and putting one in
+`allowed_commands` does not change that. It also rejects them inside an
+`sh -c` payload, including behind `find -exec rm`. So both configs leave
+`rm` out, and the system prompt tells the agent to delete with
+`find <dir> -name "<pattern>" -delete`.
+
+The blocklist does not stop `find -delete`. It is a guard against obvious
+mistakes, not a security boundary (see the comments on `lintShellPayload`
+in `internal/tools/cli/tool.go` and `docs/SECURITY.md`). **In this
+example, the human confirmation step is what guards deletion.** Run it
+in a scratch directory, not one you care about. For real containment, use
+`sandbox: { type: docker }` on the tool.
 
 ## With vs without Jev — what's actually being compared
 

@@ -44,7 +44,9 @@ settings:
     - grep
     - cat
     - ls
-    - rm
+    # No rm here: the cli tool always blocks rm, rmdir, mv and cp, whatever
+    # this list says. The agent deletes with `find ... -delete` instead —
+    # see "Deleting files" in README.md.
     - mkdir
     - touch
 
@@ -88,6 +90,11 @@ agents:
           confirmation before running it, no matter how high confidence
           is. High confidence that something is destructive is a reason
           for caution, not a reason to skip asking.
+
+      To delete files after a person confirms, use
+      `find <dir> -name "<pattern>" -delete` (double quotes around the
+      pattern). run_command always rejects rm, rmdir, mv and cp, even
+      after confirmation, so don't try them.
 
       When you call user_input, state your own stated category and
       confidence in your question so the person has real information to
