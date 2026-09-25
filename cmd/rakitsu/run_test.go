@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/tools"
 )
 
 func withInteractiveFlag(t *testing.T, v bool) {
@@ -103,12 +105,12 @@ func TestEnsureDefaultConfig_IncludesReadOnlyFsTools(t *testing.T) {
 		t.Fatalf("got %d agents, want 1", len(cfg.Agents))
 	}
 	agent := cfg.Agents[0]
-	// no fixed step cap in the default chat, so a run with no
+	// No fixed step cap in the default chat, so a run with no
 	// --timeout can take as many steps as the task needs.
 	if agent.Settings != nil && agent.Settings.MaxIterations != 0 {
 		t.Errorf("got max_iterations %d, want unset", agent.Settings.MaxIterations)
 	}
-	// vision left unset = auto — images reach a vision model, and a
+	// Vision left unset = auto — images reach a vision model, and a
 	// text-only model (the llama3.1 default) falls back to a note.
 	if agent.Vision != nil {
 		t.Errorf("vision = %v, want unset (auto)", *agent.Vision)
@@ -136,4 +138,45 @@ func appendToFile(path, content string) error {
 	defer f.Close()
 	_, err = f.WriteString(content)
 	return err
+}
+
+// TestRegisterToolDefs_RegistersEachSupportedType is a regression test for
+// a bug where runAgent's single-agent/no-orchestrator path used
+// to skip ToolsInline registration entirely (a duplicated, independently
+// hand-rolled switch elsewhere had the real logic, but this path never
+// called it). registerToolDefs is now the one shared implementation all
+// four call sites use — this test exercises it directly against the
+// non-network tool types (cli, fs, jev) so it runs fast and offline; the
+// mcp_server/a2a cases are covered by their own package-level tests and by
+// the live CI verification already run for examples/jev/06-fact-checked-review.
+func TestRegisterToolDefs_RegistersEachSupportedType(t *testing.T) {
+	defs := []config.ToolDefinition{
+		{Name: "run-command", Type: "cli", Command: "echo hi"},
+		{Name: "read-file", Type: "fs", Operation: "read"},
+		{Name: "jev", Type: "jev"},
+	}
+
+	registry := tools.NewToolRegistry()
+	registerToolDefs(context.Background(), registry, nil, defs)
+
+	for _, name := range []string{"run-command", "read-file", "jev"} {
+		if registry.GetTool(name) == nil {
+			t.Errorf("expected tool %q to be registered, got nil", name)
+		}
+	}
+	if got, want := len(registry.GetAllTools()), 3; got != want {
+		t.Errorf("got %d registered tools, want %d", got, want)
+	}
+}
+
+// TestRegisterToolDefs_EmptyDefsRegistersNothing guards the other
+// direction: an agent with no tools_inline (or an unset ToolsInline field)
+// must not panic or register anything, which matters since every call
+// site now shares this one function.
+func TestRegisterToolDefs_EmptyDefsRegistersNothing(t *testing.T) {
+	registry := tools.NewToolRegistry()
+	registerToolDefs(context.Background(), registry, nil, nil)
+	if got := len(registry.GetAllTools()); got != 0 {
+		t.Errorf("got %d registered tools, want 0", got)
+	}
 }

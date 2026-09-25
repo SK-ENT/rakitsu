@@ -15,11 +15,6 @@ import (
 	"github.com/SK-ENT/rakitsu/internal/memory"
 	"github.com/SK-ENT/rakitsu/internal/telemetry"
 	"github.com/SK-ENT/rakitsu/internal/tools"
-	a2atool "github.com/SK-ENT/rakitsu/internal/tools/a2a"
-	clitool "github.com/SK-ENT/rakitsu/internal/tools/cli"
-	fstool "github.com/SK-ENT/rakitsu/internal/tools/fs"
-	jevtool "github.com/SK-ENT/rakitsu/internal/tools/jev"
-	mcptool "github.com/SK-ENT/rakitsu/internal/tools/mcp"
 	memtool "github.com/SK-ENT/rakitsu/internal/tools/memory"
 	"github.com/SK-ENT/rakitsu/internal/tools/sessionmsg"
 	"github.com/SK-ENT/rakitsu/internal/tools/spawn"
@@ -306,35 +301,10 @@ func (b *runtimeBuilder) buildAgentToolRegistryDepth(def *config.AgentDefinition
 		}
 	}
 
-	// Inline tools
-	for i := range def.ToolsInline {
-		inline := &def.ToolsInline[i]
-		switch inline.Type {
-		case "cli":
-			reg.RegisterTool(clitool.NewTool(inline, b.cfg.Settings.AllowedCommands))
-		case "fs":
-			reg.RegisterTool(fstool.NewTool(inline))
-		case "jev":
-			reg.RegisterTool(jevtool.NewTool(inline))
-		case "mcp_server":
-			mcpTools, closer, err := mcptool.NewMCPServer(b.ctx, inline)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "warn: MCP server %q init failed: %v\n", inline.Name, err)
-				continue
-			}
-			for _, t := range mcpTools {
-				reg.RegisterTool(t)
-			}
-			reg.AddCloser(closer)
-		case "a2a":
-			t, err := a2atool.NewA2ATool(inline)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "warn: A2A tool %q init failed: %v\n", inline.Name, err)
-				continue
-			}
-			reg.RegisterTool(t)
-		}
-	}
+	// Inline tools — shared implementation in run.go's registerToolDefs,
+	// see its comment for why this is one function, not another hand-rolled
+	// copy.
+	registerToolDefs(b.ctx, reg, b.cfg.Settings.AllowedCommands, def.ToolsInline)
 
 	// user_input tool — only in chat mode, and never for spawned children
 	// (a subagent prompting the human would collide with the parent's turn).
