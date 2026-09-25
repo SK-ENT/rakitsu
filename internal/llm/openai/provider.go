@@ -380,6 +380,18 @@ func (p *Provider) convertMessage(msg llm.Message) openai.ChatCompletionMessage 
 		om.Role = openai.ChatMessageRoleTool
 		om.Content = msg.AsText()
 		om.ToolCallID = msg.ToolCallID
+		// Same gap as the assistant-turn fix below, one branch too early to reach
+		// it — a tool call with a legitimately empty result (e.g. a shell
+		// command producing 0 bytes of stdout) leaves om.Content == "" here,
+		// which go-openai's `json:"content,omitempty"` then drops from the
+		// outgoing JSON entirely. Ollama's OpenAI-compat endpoint 400s with
+		// "invalid message content type: <nil>" on the missing key, same as
+		// the assistant-turn case below already covers. Same fix: a single
+		// space survives omitempty, keeps the key on the wire, and is inert
+		// across OpenAI/Anthropic-via-proxy/Ollama.
+		if om.Content == "" {
+			om.Content = " "
+		}
 		return om
 	}
 
@@ -405,6 +417,17 @@ func (p *Provider) convertMessage(msg llm.Message) openai.ChatCompletionMessage 
 	// MultiContent are set, so leaving MultiContent nil here is required.
 	if !msg.HasNonTextContent() {
 		om.Content = msg.AsText()
+		// go-openai tags Content `json:"content,omitempty"`, so a
+		// tool-call-only turn (Content == "") drops the "content" key from
+		// the outgoing JSON entirely. Real OpenAI tolerates the missing
+		// field, but Ollama's OpenAI-compat endpoint 400s with "invalid
+		// message content type: <nil>" when it's absent. A single space
+		// survives omitempty, keeps the key on the wire, and is otherwise
+		// inert — OpenAI, Anthropic-via-proxy, and Ollama all treat it as
+		// empty text alongside real tool calls.
+		if om.Content == "" && len(om.ToolCalls) > 0 {
+			om.Content = " "
+		}
 		return om
 	}
 

@@ -17,9 +17,9 @@ from the state it's given). It does NOT catch a finding whose cited code
 is real but whose factual claim about that code is wrong — that requires
 knowledge outside the diff (e.g. language/toolchain semantics), which
 Jev has no way to check from state alone. A prior version of this script
-asked the broader "is this claim true" question and, in a live test
-(issue #634), missed exactly that kind of false positive — the `unix`
-build-tag claim on #625/#93, which cited real code but drew a wrong
+asked the broader "is this claim true" question and, in a live test,
+missed exactly that kind of false positive — a `unix` build-tag claim
+in a real review, which cited real code but drew a wrong
 conclusion from it. Don't widen this back to a truth-check without first
 finding a way to give Jev the actual missing fact (e.g. reference docs)
 as part of its state, not just a broader-sounding question.
@@ -45,7 +45,7 @@ API_KEY_ENV = "TYPESAFE_API_KEY"
 
 # Below this, Jev thinks the finding is probably citing code that isn't
 # actually in the diff. Starting point, not a calibrated cutoff — see
-# issue #634's test-case step before trusting this in prod CI unsupervised.
+# the live test-case check before trusting this in prod CI unsupervised.
 CONFIDENCE_THRESHOLD = 0.35
 
 REQUEST_TIMEOUT_SECONDS = 15

@@ -24,6 +24,8 @@ To use a different provider (Anthropic, Ollama, LiteLLM), see `providers/` for r
 
 To run rakitsu as an agent inside an editor (Zed or another ACP client) instead of via `rakitsu run`, see `acp/`.
 
+Other example categories: `eval/` (evaluation harness configs), `jev/` (TypeSafe Jev verification patterns) — see each directory's own README(s).
+
 ## Examples
 
 | # | Name | Strategy | Description |
@@ -101,11 +103,15 @@ examples/
     openai.yaml
     anthropic.yaml
     gemini.yaml
+    codex.yaml
     ollama.yaml
     litellm.yaml
+    nvidia.yaml
     multi-provider.yaml
   acp/                          # rakitsu as an editor agent (ACP protocol)
     dev-agent.yaml
+  eval/                         # Evaluation harness configs
+  jev/                          # TypeSafe Jev verification patterns
 ```
 
 ## Strategy Guide

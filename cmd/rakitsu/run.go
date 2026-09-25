@@ -983,6 +983,13 @@ func runAgent(cmd *cobra.Command, args []string) (runErr error) {
 		return fmt.Errorf("cannot create LLM provider for agent %q: %w\n  hint: check your API key and provider settings in the config", agentDef.Name, err)
 	}
 
+	// Inline tools (tools_inline:) — unlike the orchestrator branch of
+	// executeConfig and runtime.go's buildAgentToolRegistryDepth, this
+	// single-agent/no-orchestrator path previously never registered these
+	// at all, so an mcp_server (or cli/fs/jev/a2a) tools_inline entry
+	// silently vanished: no tools, no error.
+	registerToolDefs(ctx, toolRegistry, cfg.Settings.AllowedCommands, agentDef.ToolsInline)
+
 	memStore := openMemoryStore(cfg)
 	registerMemoryTools(toolRegistry, cfg, memStore, "", agentDef.Name, eventBus)
 	rateLimiters := buildRateLimiters(cfg)
@@ -1507,36 +1514,7 @@ func executeConfig(ctx context.Context, cfg *config.Config, eventBus *telemetry.
 					agentToolRegistry.RegisterTool(tool)
 				}
 			}
-			for _, inlineTool := range agentDef.ToolsInline {
-				switch inlineTool.Type {
-				case "cli":
-					t := clitool.NewTool(&inlineTool, cfg.Settings.AllowedCommands)
-					agentToolRegistry.RegisterTool(t)
-				case "fs":
-					t := fstool.NewTool(&inlineTool)
-					agentToolRegistry.RegisterTool(t)
-				case "jev":
-					t := jevtool.NewTool(&inlineTool)
-					agentToolRegistry.RegisterTool(t)
-				case "mcp_server":
-					mcpTools, closer, err := mcptool.NewMCPServer(ctx, &inlineTool)
-					if err != nil {
-						fmt.Fprintf(os.Stderr, "warn: MCP server %q init failed: %v\n", inlineTool.Name, err)
-						continue
-					}
-					for _, t := range mcpTools {
-						agentToolRegistry.RegisterTool(t)
-					}
-					agentToolRegistry.AddCloser(closer)
-				case "a2a":
-					t, err := a2atool.NewA2ATool(&inlineTool)
-					if err != nil {
-						fmt.Fprintf(os.Stderr, "warn: A2A tool %q init failed: %v\n", inlineTool.Name, err)
-						continue
-					}
-					agentToolRegistry.RegisterTool(t)
-				}
-			}
+			registerToolDefs(ctx, agentToolRegistry, cfg.Settings.AllowedCommands, agentDef.ToolsInline)
 			registerMemoryTools(agentToolRegistry, cfg, memStore, "", agentDef.Name, eventBus)
 			if spawnRT != nil {
 				spawnRT.registerSpawnTool(agentToolRegistry, agentDef.Name, 0)
@@ -1706,25 +1684,30 @@ func executeConfig(ctx context.Context, cfg *config.Config, eventBus *telemetry.
 }
 
 // createToolRegistry creates and populates a tool registry from configuration
-func createToolRegistry(ctx context.Context, cfg *config.Config) *tools.ToolRegistry {
-	registry := tools.NewToolRegistry()
-
-	// Register tools from configuration
-	for _, toolDef := range cfg.Tools {
-		switch toolDef.Type {
+// registerToolDefs builds and registers tools from a list of tool
+// definitions (either cfg.Tools or an agent's tools_inline) into the given
+// registry. Shared by every tool-registration call site in this package so
+// a new tool type only needs handling once, and so a code path can't
+// silently skip a whole type the way an earlier bug did: runAgent's
+// single-agent/no-orchestrator path never looped over ToolsInline at all,
+// independently of this switch existing correctly (and identically) in
+// three other hand-rolled copies elsewhere. One shared implementation
+// means a missing call site is now the only way to reintroduce that bug,
+// not a missing case in some copy of the switch.
+func registerToolDefs(ctx context.Context, registry *tools.ToolRegistry, allowedCommands []string, defs []config.ToolDefinition) {
+	for i := range defs {
+		def := &defs[i]
+		switch def.Type {
 		case "cli":
-			tool := clitool.NewTool(&toolDef, cfg.Settings.AllowedCommands)
-			registry.RegisterTool(tool)
+			registry.RegisterTool(clitool.NewTool(def, allowedCommands))
 		case "fs":
-			tool := fstool.NewTool(&toolDef)
-			registry.RegisterTool(tool)
+			registry.RegisterTool(fstool.NewTool(def))
 		case "jev":
-			tool := jevtool.NewTool(&toolDef)
-			registry.RegisterTool(tool)
+			registry.RegisterTool(jevtool.NewTool(def))
 		case "mcp_server":
-			mcpTools, closer, err := mcptool.NewMCPServer(ctx, &toolDef)
+			mcpTools, closer, err := mcptool.NewMCPServer(ctx, def)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "warn: MCP server %q init failed: %v\n", toolDef.Name, err)
+				fmt.Fprintf(os.Stderr, "warn: MCP server %q init failed: %v\n", def.Name, err)
 				continue
 			}
 			for _, t := range mcpTools {
@@ -1732,15 +1715,19 @@ func createToolRegistry(ctx context.Context, cfg *config.Config) *tools.ToolRegi
 			}
 			registry.AddCloser(closer)
 		case "a2a":
-			t, err := a2atool.NewA2ATool(&toolDef)
+			t, err := a2atool.NewA2ATool(def)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "warn: A2A tool %q init failed: %v\n", toolDef.Name, err)
+				fmt.Fprintf(os.Stderr, "warn: A2A tool %q init failed: %v\n", def.Name, err)
 				continue
 			}
 			registry.RegisterTool(t)
 		}
 	}
+}
 
+func createToolRegistry(ctx context.Context, cfg *config.Config) *tools.ToolRegistry {
+	registry := tools.NewToolRegistry()
+	registerToolDefs(ctx, registry, cfg.Settings.AllowedCommands, cfg.Tools)
 	return registry
 }
 
