@@ -76,6 +76,11 @@ tools:
       command: { type: string, description: "Shell command to run", required: true }
     sandbox:
       type: local_restricted
+      # Fence file arguments to the working directory (or --workdir), so
+      # `find / ... -delete` or `find .. ... -delete` is rejected even if
+      # the model reads a request too broadly. An argument filter, not
+      # containment — see "Deleting files" in README.md.
+      allowed_paths: ["."]
       resource_limits:
         timeout_sec: 15
 
@@ -131,9 +136,10 @@ agents:
           for caution, not a reason to skip asking.
 
       To delete files after a person confirms, use
-      `find <dir> -name "<pattern>" -delete` (double quotes around the
-      pattern). run_command always rejects rm, rmdir, mv and cp, even
-      after confirmation, so don't try them.
+      `find . -name "<pattern>" -delete` (double quotes around the
+      pattern). Only work under the current directory: run_command
+      rejects paths outside it. It also always rejects rm, rmdir, mv
+      and cp, even after confirmation, so don't try them.
 
       When you call user_input, state jev's actual category and confidence
       in your question so the person has real information to decide with —

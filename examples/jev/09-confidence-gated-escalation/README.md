@@ -31,7 +31,7 @@ Expect: `jev` gets called with a `choice` question (`read`/`write`/`destroy`),
 and because this is a destructive command, the policy calls `user_input` to
 confirm before running it — regardless of how confident Jev was. If you
 confirm, the agent deletes with `find . -name "*.log" -delete` (see
-"Deleting files" below for why not `rm`).
+"Deleting files" below for why not `rm`, and what limits it).
 
 Try a clearly low-stakes prompt too:
 
@@ -65,13 +65,20 @@ The cli tool always blocks `rm`, `rmdir`, `mv` and `cp`, and putting one in
 `allowed_commands` does not change that. It also rejects them inside an
 `sh -c` payload, including behind `find -exec rm`. So both configs leave
 `rm` out, and the system prompt tells the agent to delete with
-`find <dir> -name "<pattern>" -delete`.
+`find . -name "<pattern>" -delete`.
 
-The blocklist does not stop `find -delete`. It is a guard against obvious
-mistakes, not a security boundary (see the comments on `lintShellPayload`
-in `internal/tools/cli/tool.go` and `docs/SECURITY.md`). **In this
-example, the human confirmation step is what guards deletion.** Run it
-in a scratch directory, not one you care about. For real containment, use
+The blocklist does not stop `find -delete`, so both configs also set
+`allowed_paths: ["."]` on the tool's sandbox. The cli tool then rejects any
+file argument outside the working directory (or `--workdir`), so
+`find / ...` and `find .. ...` fail before they run.
+
+Neither guard is a security boundary. The path fence only sees paths
+written out as arguments. A shell payload can still build a path from a
+variable or command substitution (see the comments on `checkArgPaths`
+and `lintShellPayload` in `internal/tools/cli/tool.go`, and
+`docs/SECURITY.md`). The human confirmation step is also only an
+instruction in the prompt, not a runtime gate. Run this example in a
+scratch directory, not one you care about. For real containment, use
 `sandbox: { type: docker }` on the tool.
 
 ## With vs without Jev — what's actually being compared
