@@ -29,8 +29,8 @@ type MCPTool struct {
 	name   string // "{serverName}_{mcpToolName}" sanitized
 }
 
-func (t *MCPTool) GetName() string                            { return t.name }
-func (t *MCPTool) GetDescription() string                     { return t.def.Description }
+func (t *MCPTool) GetName() string                             { return t.name }
+func (t *MCPTool) GetDescription() string                      { return t.def.Description }
 func (t *MCPTool) GetParametersSchema() map[string]interface{} { return t.def.InputSchema }
 
 func (t *MCPTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
@@ -100,13 +100,13 @@ func buildClient(def *config.ToolDefinition) (MCPClient, error) {
 		for k, v := range def.Env {
 			env[k] = v
 		}
-		return NewStdioClient(def.Command, def.Args, env, def.Timeout)
+		return NewStdioClient(def.Command, def.Args, env, def.Timeout, def.MaxResponseBytes)
 
 	case "http":
 		if def.URL == "" {
 			return nil, fmt.Errorf("http transport requires url")
 		}
-		return NewHTTPClient(def.URL, def.Timeout)
+		return NewHTTPClient(def.URL, def.Timeout, def.MaxResponseBytes)
 
 	default:
 		return nil, fmt.Errorf("unknown transport %q (want stdio or http)", def.Transport)

@@ -399,6 +399,7 @@ tools:
     url: "http://localhost:9200/mcp"     # http transport
     transport: "http"                    # "stdio" or "http"
     # args: ["--flag"]                   # stdio transport: subprocess args
+    # max_response_bytes: 8388608        # optional; default 1 MiB (1048576)
 
   - name: "researcher"
     type: "a2a"
@@ -433,6 +434,7 @@ tools:
 | `args` | []string | Subprocess args (for `mcp_server` type, stdio transport) |
 | `url` | string | Server URL (for `mcp_server` type, http transport; also used by `a2a` type) |
 | `transport` | string | `stdio` or `http` (for `mcp_server` type) |
+| `max_response_bytes` | int | Largest single MCP response accepted (for `mcp_server` type, both transports). Default 1 MiB. A larger response fails only that call, with an error naming this field; the server keeps running. Raise it for servers that return big screenshots (1 MiB of base64 is about 750 KB of image). It is also a memory bound, so keep it as low as the server needs |
 | `agent` | string | Remote agent name to delegate to (for `a2a` type) |
 | `allowed_exit_codes` | []int | Acceptable exit codes |
 | `sandbox` | SandboxConfig | Security sandbox configuration |

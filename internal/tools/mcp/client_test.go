@@ -50,6 +50,17 @@ func runMockStdioServer() {
 			fmt.Fprintln(os.Stdout, strings.Repeat("x", 2<<20))
 			continue
 		}
+		if req.Method == "big_id_first" || req.Method == "big_id_last" {
+			// A valid ~2 MiB response. Python's SDK writes "id" before
+			// "result"; the TypeScript SDK writes it after.
+			text := fmt.Sprintf(`{"content":[{"type":"text","text":%q}]}`, strings.Repeat("y", 2<<20))
+			if req.Method == "big_id_first" {
+				fmt.Fprintf(os.Stdout, "{\"jsonrpc\":\"2.0\",\"id\":%d,\"result\":%s}\n", *req.ID, text)
+			} else {
+				fmt.Fprintf(os.Stdout, "{\"result\":%s,\"jsonrpc\":\"2.0\",\"id\":%d}\n", text, *req.ID)
+			}
+			continue
+		}
 
 		var result interface{}
 		switch req.Method {
@@ -190,7 +201,7 @@ func TestHTTPClient_MockServer(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client, err := NewHTTPClient(srv.URL, 10)
+	client, err := NewHTTPClient(srv.URL, 10, 0)
 	if err != nil {
 		t.Fatalf("NewHTTPClient: %v", err)
 	}
@@ -224,7 +235,7 @@ func TestHTTPClient_MockServer(t *testing.T) {
 // stdio transport path: process spawn, pipe framing, line scanning, and
 // teardown — the path TestRPCParsing_* above deliberately doesn't cover.
 func TestStdioClient_MockEcho(t *testing.T) {
-	client, err := NewStdioClient(os.Args[0], nil, map[string]string{helperProcessEnvVar: "1"}, 5)
+	client, err := NewStdioClient(os.Args[0], nil, map[string]string{helperProcessEnvVar: "1"}, 5, 0)
 	if err != nil {
 		t.Fatalf("NewStdioClient: %v", err)
 	}
@@ -272,7 +283,7 @@ func TestHTTPClient_SendsAcceptBothJSONAndEventStream(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client, err := NewHTTPClient(srv.URL, 10)
+	client, err := NewHTTPClient(srv.URL, 10, 0)
 	if err != nil {
 		t.Fatalf("NewHTTPClient: %v", err)
 	}
@@ -289,7 +300,7 @@ func TestHTTPClient_SendsAcceptBothJSONAndEventStream(t *testing.T) {
 func TestHTTPClient_SSEFramedResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req rpcRequest
-		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+		json.NewDecoder(r.Body).Decode(&req)    //nolint:errcheck
 		payload, _ := json.Marshal(rpcResponse{ //nolint:errcheck
 			JSONRPC: "2.0", ID: req.ID,
 			Result: json.RawMessage(`{"protocolVersion":"2024-11-05"}`),
@@ -299,7 +310,7 @@ func TestHTTPClient_SSEFramedResponse(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client, err := NewHTTPClient(srv.URL, 10)
+	client, err := NewHTTPClient(srv.URL, 10, 0)
 	if err != nil {
 		t.Fatalf("NewHTTPClient: %v", err)
 	}
@@ -319,7 +330,7 @@ func TestHTTPClient_SSEFramedResponse_LargeLine(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req rpcRequest
-		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+		json.NewDecoder(r.Body).Decode(&req)    //nolint:errcheck
 		payload, _ := json.Marshal(rpcResponse{ //nolint:errcheck
 			JSONRPC: "2.0", ID: req.ID,
 			Result: json.RawMessage(fmt.Sprintf(`{"protocolVersion":"2024-11-05","padding":%q}`, padding)),
@@ -329,7 +340,7 @@ func TestHTTPClient_SSEFramedResponse_LargeLine(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client, err := NewHTTPClient(srv.URL, 10)
+	client, err := NewHTTPClient(srv.URL, 10, 0)
 	if err != nil {
 		t.Fatalf("NewHTTPClient: %v", err)
 	}
@@ -356,7 +367,7 @@ func TestHTTPClient_ConcurrentSessionID(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client, err := NewHTTPClient(srv.URL, 10)
+	client, err := NewHTTPClient(srv.URL, 10, 0)
 	if err != nil {
 		t.Fatalf("NewHTTPClient: %v", err)
 	}

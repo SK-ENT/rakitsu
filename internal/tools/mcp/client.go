@@ -12,11 +12,14 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -71,6 +74,22 @@ func (e *rpcError) Error() string {
 	return fmt.Sprintf("MCP error %d: %s", e.Code, e.Message)
 }
 
+// DefaultMaxResponseBytes caps one MCP response (a stdio line or an HTTP
+// body) when the tool config sets no max_response_bytes. It is a hard
+// memory bound, and it also bounds every image a tool result carries.
+const DefaultMaxResponseBytes = 1 << 20
+
+func maxOrDefault(n int) int {
+	if n <= 0 {
+		return DefaultMaxResponseBytes
+	}
+	return n
+}
+
+func oversizedMessage(limit int) string {
+	return fmt.Sprintf("MCP response over %d bytes; raise max_response_bytes on this mcp_server tool to allow it", limit)
+}
+
 // ─── StdioClient ─────────────────────────────────────────────────────────────
 
 // StdioClient connects to an MCP server that communicates over stdin/stdout
@@ -90,12 +109,14 @@ type StdioClient struct {
 	// concurrent caller's own context deadline unresponsive.
 	writeSem chan struct{}
 
-	done chan struct{}
+	maxResponseBytes int
+	done             chan struct{}
 }
 
 // NewStdioClient spawns the MCP server subprocess and returns a client ready
-// for Initialize to be called.
-func NewStdioClient(command string, args []string, env map[string]string, timeoutSec int) (*StdioClient, error) {
+// for Initialize to be called. maxResponseBytes <= 0 means
+// DefaultMaxResponseBytes.
+func NewStdioClient(command string, args []string, env map[string]string, timeoutSec, maxResponseBytes int) (*StdioClient, error) {
 	if timeoutSec <= 0 {
 		timeoutSec = 30
 	}
@@ -129,6 +150,8 @@ func NewStdioClient(command string, args []string, env map[string]string, timeou
 		pending:  make(map[int]chan rpcResponse),
 		writeSem: make(chan struct{}, 1),
 		done:     make(chan struct{}),
+
+		maxResponseBytes: maxOrDefault(maxResponseBytes),
 	}
 
 	go c.readLoop(stdout)
@@ -136,9 +159,10 @@ func NewStdioClient(command string, args []string, env map[string]string, timeou
 }
 
 // readLoop reads newline-delimited JSON from stdout and dispatches responses
-// to their waiting channels. On any exit — clean EOF, a scan error such as
-// a too-long line, or the subprocess dying — it kills the subprocess so a
-// broken transport doesn't leak an unmanaged, still-running process.
+// to their waiting channels. A line over maxResponseBytes is skipped and
+// answered with an error for its call; the loop keeps running. On
+// exit — EOF, a read error, or the subprocess dying — it kills the
+// subprocess so a broken transport doesn't leak an unmanaged process.
 func (c *StdioClient) readLoop(r io.Reader) {
 	defer close(c.done)
 	defer func() {
@@ -146,29 +170,119 @@ func (c *StdioClient) readLoop(r io.Reader) {
 			_ = c.cmd.Process.Kill()
 		}
 	}()
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 1<<20), 1<<20) // 1 MB max line
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
+	br := bufio.NewReaderSize(r, 64*1024)
+	for {
+		line, over, err := readBoundedLine(br, c.maxResponseBytes)
+		if over != nil {
+			c.failOversized(over)
+		} else if len(line) > 0 {
+			c.dispatch(line)
 		}
-		var resp rpcResponse
-		if err := json.Unmarshal(line, &resp); err != nil {
-			continue
+		if err != nil {
+			return
 		}
-		if resp.ID == nil {
-			continue // notification — ignore
-		}
+	}
+}
+
+func (c *StdioClient) dispatch(line []byte) {
+	var resp rpcResponse
+	if err := json.Unmarshal(line, &resp); err != nil {
+		return
+	}
+	if resp.ID == nil {
+		return // notification — ignore
+	}
+	c.deliver(*resp.ID, resp)
+}
+
+func (c *StdioClient) deliver(id int, resp rpcResponse) {
+	c.mu.Lock()
+	ch, ok := c.pending[id]
+	if ok {
+		delete(c.pending, id)
+	}
+	c.mu.Unlock()
+	if ok {
+		ch <- resp
+	}
+}
+
+// failOversized answers the call an oversized line belonged to. The ID is
+// read from the line's start or end (SDKs put "id" before or after
+// "result"); if neither has it and only one call is waiting, that call is
+// the one. Otherwise nobody is answered and the callers time out — the
+// server stays up either way.
+func (c *StdioClient) failOversized(o *oversizedLine) {
+	id, ok := o.id()
+	if !ok {
 		c.mu.Lock()
-		ch, ok := c.pending[*resp.ID]
-		if ok {
-			delete(c.pending, *resp.ID)
+		if len(c.pending) == 1 {
+			for pid := range c.pending {
+				id, ok = pid, true
+			}
 		}
 		c.mu.Unlock()
-		if ok {
-			ch <- resp
+	}
+	if !ok {
+		return
+	}
+	idCopy := id
+	c.deliver(id, rpcResponse{JSONRPC: "2.0", ID: &idCopy,
+		Error: &rpcError{Code: -32000, Message: oversizedMessage(c.maxResponseBytes)}})
+}
+
+// oversizedLine keeps the two ends of a skipped line, enough to find its ID.
+type oversizedLine struct {
+	head, tail []byte
+}
+
+const oversizedKeep = 256
+
+var (
+	idHeadRe = regexp.MustCompile(`^\s*\{\s*(?:"jsonrpc"\s*:\s*"2\.0"\s*,\s*)?"id"\s*:\s*(-?\d+)`)
+	idTailRe = regexp.MustCompile(`"id"\s*:\s*(-?\d+)\s*\}\s*$`)
+)
+
+func (o *oversizedLine) id() (int, bool) {
+	for _, m := range [][][]byte{idHeadRe.FindSubmatch(o.head), idTailRe.FindSubmatch(o.tail)} {
+		if m != nil {
+			if n, err := strconv.Atoi(string(m[1])); err == nil {
+				return n, true
+			}
 		}
+	}
+	return 0, false
+}
+
+// readBoundedLine reads one '\n'-terminated line. Up to limit bytes it returns
+// the line; past limit it drains the rest of the line without buffering it and
+// returns only its two ends. err is the reader's error (io.EOF at the end).
+func readBoundedLine(br *bufio.Reader, limit int) ([]byte, *oversizedLine, error) {
+	var line []byte
+	var over *oversizedLine
+	for {
+		frag, err := br.ReadSlice('\n')
+		if over == nil && len(line)+len(bytes.TrimSuffix(frag, []byte("\n"))) > limit {
+			over = &oversizedLine{head: append([]byte(nil), line[:min(len(line), oversizedKeep)]...)}
+			if len(over.head) < oversizedKeep {
+				over.head = append(over.head, frag[:min(len(frag), oversizedKeep-len(over.head))]...)
+			}
+			over.tail = line[max(0, len(line)-oversizedKeep):]
+			line = nil
+		}
+		if over != nil {
+			over.tail = append(over.tail, frag...)
+			over.tail = append([]byte(nil), over.tail[max(0, len(over.tail)-oversizedKeep):]...)
+		} else {
+			line = append(line, frag...)
+		}
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		if over != nil {
+			return nil, over, err
+		}
+		return bytes.TrimRight(line, "\r\n"), nil, err
 	}
 }
 
@@ -304,22 +418,25 @@ func (c *StdioClient) Close() error {
 // goroutines — so sessionID needs its own lock, unlike the rest of this
 // client's fields, which are set once at construction and never mutated.
 type HTTPClient struct {
-	url    string
-	http   *http.Client
-	nextID atomic.Int64
+	url              string
+	http             *http.Client
+	maxResponseBytes int
+	nextID           atomic.Int64
 
 	mu        sync.Mutex
 	sessionID string // Mcp-Session-Id, set after initialize
 }
 
 // NewHTTPClient returns a client that will POST JSON-RPC to the given URL.
-func NewHTTPClient(url string, timeoutSec int) (*HTTPClient, error) {
+// maxResponseBytes <= 0 means DefaultMaxResponseBytes.
+func NewHTTPClient(url string, timeoutSec, maxResponseBytes int) (*HTTPClient, error) {
 	if timeoutSec <= 0 {
 		timeoutSec = 30
 	}
 	return &HTTPClient{
-		url:  url,
-		http: &http.Client{Timeout: time.Duration(timeoutSec) * time.Second},
+		url:              url,
+		http:             &http.Client{Timeout: time.Duration(timeoutSec) * time.Second},
+		maxResponseBytes: maxOrDefault(maxResponseBytes),
 	}, nil
 }
 
@@ -372,7 +489,7 @@ func (c *HTTPClient) send(ctx context.Context, method string, params interface{}
 		c.mu.Unlock()
 	}
 
-	respBody, err := decodeMCPBody(httpResp)
+	respBody, err := decodeMCPBody(httpResp, c.maxResponseBytes)
 	if err != nil {
 		return rpcResponse{}, fmt.Errorf("mcp http decode: %w", err)
 	}
@@ -386,21 +503,32 @@ func (c *HTTPClient) send(ctx context.Context, method string, params interface{}
 // decodeMCPBody reads an MCP HTTP response body, transparently unwrapping
 // an SSE-framed ("text/event-stream") response down to the JSON payload of
 // its first "data:" event. A plain "application/json" response is returned
-// as-is.
-func decodeMCPBody(httpResp *http.Response) ([]byte, error) {
-	limited := io.LimitReader(httpResp.Body, 1<<20)
+// as-is. A body (or SSE "data:" line) over limit bytes is an error that names
+// max_response_bytes, not a silently cut body that fails to parse.
+func decodeMCPBody(httpResp *http.Response, limit int) ([]byte, error) {
 	if !strings.HasPrefix(httpResp.Header.Get("Content-Type"), "text/event-stream") {
-		return io.ReadAll(limited)
+		b, err := io.ReadAll(io.LimitReader(httpResp.Body, int64(limit)+1))
+		if err == nil && len(b) > limit {
+			return nil, errors.New(oversizedMessage(limit))
+		}
+		return b, err
 	}
-	scanner := bufio.NewScanner(limited)
-	scanner.Buffer(make([]byte, 4096), 1<<20) // allow a "data:" line up to the same 1 MiB response cap
+	lr := &io.LimitedReader{R: httpResp.Body, N: int64(limit) + 1}
+	scanner := bufio.NewScanner(lr)
+	scanner.Buffer(make([]byte, 4096), limit+len("data: ")) // one "data:" line up to the response cap
 	for scanner.Scan() {
 		line := scanner.Text()
 		if data, ok := strings.CutPrefix(line, "data:"); ok {
+			if lr.N == 0 { // the cap was hit, so this line may be cut short
+				return nil, errors.New(oversizedMessage(limit))
+			}
 			return []byte(strings.TrimSpace(data)), nil
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		if errors.Is(err, bufio.ErrTooLong) {
+			return nil, errors.New(oversizedMessage(limit))
+		}
 		return nil, err
 	}
 	return nil, fmt.Errorf("no data event in SSE response")
@@ -506,8 +634,9 @@ func parseToolCallResult(raw json.RawMessage) (string, error) {
 // newlines) and its image content: "image" items and "resource" items whose
 // mimeType is an image. An image type no provider accepts becomes an
 // "[image omitted: ...]" note in the text. Size needs no check here: both
-// transports cap a whole response at 1 MiB before it is parsed (readLoop,
-// decodeMCPBody), which bounds every image and their total.
+// transports cap a whole response at max_response_bytes (default 1 MiB)
+// before it is parsed (readLoop, decodeMCPBody), which bounds every image
+// and their total.
 func parseToolCallContent(raw json.RawMessage) (string, []llm.ContentBlock, error) {
 	type resource struct {
 		MIMEType string `json:"mimeType"`
