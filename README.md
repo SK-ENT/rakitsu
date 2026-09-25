@@ -63,6 +63,29 @@ before writing a config.
 > killed, `sudo spctl --add $(command -v rakitsu)` or System Settings →
 > Privacy & Security → **Open Anyway**.
 
+### Other ways to install
+
+Same pre-release (alpha) builds as `install.sh`.
+
+```bash
+# Homebrew (macOS / Linux) — the formula lives in this repo
+brew tap sk-ent/rakitsu https://github.com/SK-ENT/rakitsu
+brew install sk-ent/rakitsu/rakitsu
+
+# Docker (linux/amd64, linux/arm64) — tags: exact version, or the moving `alpha`
+docker run --rm ghcr.io/sk-ent/rakitsu:alpha version
+docker run --rm -it -e OPENAI_API_KEY -v "$PWD:/workspace" \
+  ghcr.io/sk-ent/rakitsu:alpha run config.yaml "your query"
+```
+
+To use the web UI from Docker, `serve` must bind `0.0.0.0` inside the
+container, which it only allows with an API token set. Publish the port on
+localhost only:
+`docker run --rm -e RAKITSU_API_TOKEN=<token> -p 127.0.0.1:9100:9100 ghcr.io/sk-ent/rakitsu:alpha serve --host 0.0.0.0`.
+Inside the container, a cli tool's `sandbox: docker` needs the host Docker
+socket mounted, which gives the container root on your machine. The default
+`local_restricted` sandbox works without it.
+
 ## See it run
 
 Recorded against a local model with the [Code Reviewer config](#example-config) below. Nothing staged.
