@@ -310,6 +310,9 @@ type ToolDefinition struct {
 	Args      []string `mapstructure:"args,omitempty" yaml:"args,omitempty"`
 	URL       string   `mapstructure:"url,omitempty"  yaml:"url,omitempty"`
 	Transport string   `mapstructure:"transport,omitempty" yaml:"transport,omitempty"` // "stdio" or "http"
+	// MaxResponseBytes caps one MCP response (default 1 MiB). A larger
+	// response fails only that call; raise it for screenshot-heavy servers.
+	MaxResponseBytes int `mapstructure:"max_response_bytes,omitempty" yaml:"max_response_bytes,omitempty"`
 	// A2A fields (type: a2a)
 	AgentName string `mapstructure:"agent,omitempty" yaml:"agent,omitempty"` // remote agent name to delegate to
 	// APIKey authenticates against a peer's /a2a endpoint (RAKITSU_API_TOKEN
