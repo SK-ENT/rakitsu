@@ -30,22 +30,23 @@ so no row becomes harder to actually locate, just less prominent by default.
 
 | Version | First published (UTC) | Converts to Apache 2.0 (UTC) |
 |---|---|---|
+| [v0.3.0-alpha.13](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.13) | 2026-09-26T01:14:56Z | 2030-09-26T01:14:56Z |
 | [v0.3.0-alpha.12](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.12) | 2026-09-24T14:48:29Z | 2030-09-24T14:48:29Z |
 | [v0.3.0-alpha.11](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.11) | 2026-09-23T08:09:04Z | 2030-09-23T08:09:04Z |
 | [v0.3.0-alpha.10](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.10) | 2026-09-23T04:16:21Z | 2030-09-23T04:16:21Z |
 | [v0.3.0-alpha.9](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.9) | 2026-09-23T00:19:52Z | 2030-09-23T00:19:52Z |
-| [v0.3.0-alpha.8](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.8) | 2026-09-21T22:38:04Z | 2030-09-21T22:38:04Z |
-| [v0.3.0-alpha.7](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.7) | 2026-09-21T05:51:57Z | 2030-09-21T05:51:57Z |
-| [v0.3.0-alpha.6](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.6) | 2026-09-19T22:17:15Z | 2030-09-19T22:17:15Z |
-| [v0.3.0-alpha.5](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.5) | 2026-09-13T12:36:43Z | 2030-09-13T12:36:43Z |
-| [v0.3.0-alpha.4](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.4) | 2026-09-13T03:29:03Z | 2030-09-13T03:29:03Z |
-| [v0.3.0-alpha.3](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.3) | 2026-09-12T11:44:27Z | 2030-09-12T11:44:27Z |
 
 <details>
 <summary>Older releases</summary>
 
 | Version | First published (UTC) | Converts to Apache 2.0 (UTC) |
 |---|---|---|
+| [v0.3.0-alpha.8](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.8) | 2026-09-21T22:38:04Z | 2030-09-21T22:38:04Z |
+| [v0.3.0-alpha.7](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.7) | 2026-09-21T05:51:57Z | 2030-09-21T05:51:57Z |
+| [v0.3.0-alpha.6](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.6) | 2026-09-19T22:17:15Z | 2030-09-19T22:17:15Z |
+| [v0.3.0-alpha.5](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.5) | 2026-09-13T12:36:43Z | 2030-09-13T12:36:43Z |
+| [v0.3.0-alpha.4](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.4) | 2026-09-13T03:29:03Z | 2030-09-13T03:29:03Z |
+| [v0.3.0-alpha.3](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.3) | 2026-09-12T11:44:27Z | 2030-09-12T11:44:27Z |
 | [v0.3.0-alpha.2](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.2) | 2026-09-12T08:02:34Z | 2030-09-12T08:02:34Z |
 | [v0.3.0-alpha.1](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.1) | 2026-09-11T14:32:37Z | 2030-09-11T14:32:37Z |
 | [v0.2.0-alpha.5](https://github.com/SK-ENT/rakitsu/releases/tag/v0.2.0-alpha.5) | 2026-09-08T01:26:19Z | 2030-09-08T01:26:19Z |
