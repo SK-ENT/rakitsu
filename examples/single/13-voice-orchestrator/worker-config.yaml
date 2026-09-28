@@ -1,0 +1,234 @@
+# 13 — Voice Orchestrator Worker
+#
+# The rakitsu-side half of the voice orchestrator (see this example's
+# README for the full architecture). This is a minimal single-agent
+# config, same shape as examples/single/02-single-agent, hosted by
+# `rakitsu serve` and dispatched to by bridge/voice_bridge.py via the
+# existing A2A API (/a2a) — NOT a new rakitsu concept,
+# just an otherwise ordinary agent dispatched to via A2A.
+#
+# Usage (load secrets inline with the README's secret() helper rather than
+# typing them into an export line):
+#   RAKITSU_API_TOKEN=$(secret RAKITSU_API_TOKEN) \
+#   OPENAI_API_KEY=$(secret OPENAI_API_KEY) \
+#   rakitsu serve --config-dir examples/single/13-voice-orchestrator
+#
+# RAKITSU_API_TOKEN is the server control-plane token the bridge's /a2a auth
+# requires; it also enables settings.session_msg (unused here).
+# OPENAI_API_KEY is this agent's own provider key.
+
+name: Voice Orchestrator Worker
+version: "1.0"
+description: Single agent dispatched to by an external realtime voice bridge for background task execution.
+
+settings:
+  default_provider: openai
+  providers:
+    openai:
+      type: openai
+      api_key: ${OPENAI_API_KEY}
+  defaults:
+    model: gpt-4o-mini
+    temperature: 0.3
+    max_tokens: 2048
+  execution:
+    max_iterations: 8
+    timeout_seconds: 120
+  # The bridge now dispatches via A2A (/a2a), gated by RAKITSU_API_TOKEN
+  # in internal/server/auth.go's AuthMiddleware/requiresAuth. This legacy
+  # session_msg setting is no longer required by the bridge's dispatch path.
+  session_msg:
+    enabled: true
+  allowed_commands:
+    - git
+    - go
+    - ls
+    - cat
+
+# Read + write + direct git/go/ls/cat tools (no shell), so the worker can do real
+# development work (read code, edit files, run git/go), not just answer
+# questions. All of it is scoped to allowed_paths: ["."] — fs has no
+# default denylist, this is the only guard — which resolves against
+# whatever `workdir` the dispatching caller passes to POST
+# /api/chat/start (see bridge/voice_bridge.py's RAKITSU_WORKER_WORKDIR).
+# Point that at a real project directory deliberately; a voice command is
+# a much less careful trigger than a typed one, so scope it narrowly
+# rather than to something broad like $HOME.
+tools:
+  - name: list_dir
+    type: fs
+    operation: list
+    allowed_paths: ["."]
+    description: List files in a directory.
+    parameters:
+      path: { type: string, description: "Directory path, relative to the working directory (use \".\" for the top level)", required: true }
+
+  - name: read_file
+    type: fs
+    operation: read
+    allowed_paths: ["."]
+    description: Read a file's contents.
+    parameters:
+      path: { type: string, description: "File path, relative to the working directory", required: true }
+
+  - name: write_file
+    type: fs
+    operation: write
+    allowed_paths: ["."]
+    description: Write (create or overwrite) a file.
+    parameters:
+      path: { type: string, description: "File path, relative to the working directory", required: true }
+      content: { type: string, description: "Full file content to write", required: true }
+
+  - name: git_status
+    type: cli
+    description: Show working tree status.
+    command: "git status"
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 60
+
+
+  - name: git_log
+    type: cli
+    description: Show the latest 20 commits in one-line format.
+    command: "git log --oneline -20"
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 60
+
+
+  - name: git_diff
+    type: cli
+    description: Show unstaged changes.
+    command: "git diff"
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 60
+
+
+  - name: git_diff_last_commit
+    type: cli
+    description: Show changes relative to the parent of HEAD.
+    command: "git diff HEAD~1"
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 60
+
+
+  - name: git_show_head
+    type: cli
+    description: Show the HEAD commit.
+    command: "git show HEAD"
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 60
+
+
+  - name: git_branch
+    type: cli
+    description: List local and remote-tracking branches.
+    command: "git branch -a"
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 60
+
+  - name: go_build
+    type: cli
+    description: Build all Go packages.
+    command: "go build ./..."
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 60
+
+
+  - name: go_test
+    type: cli
+    description: Run tests for all Go packages.
+    command: "go test ./..."
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 60
+
+
+  - name: go_vet
+    type: cli
+    description: Vet all Go packages.
+    command: "go vet ./..."
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 60
+
+  - name: run_ls
+    type: cli
+    description: List a directory (ls). Only ls is invoked — no shell.
+    command: "ls {{args}}"
+    parameters:
+      args: { type: string, description: "Arguments to pass to ls, e.g. \"-la\" or a relative path. Pass an empty string for a plain listing.", required: true, argv_split: true }
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 60
+
+  - name: run_cat
+    type: cli
+    description: Print a file's contents (cat). Only cat is invoked — no shell.
+    command: "cat {{args}}"
+    parameters:
+      args: { type: string, description: "File path(s) to cat, relative to the sandbox directory.", required: true, argv_split: true }
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 60
+
+agents:
+  - name: VoiceWorker
+    role: worker
+    system_prompt: |
+      You are dispatched by a live voice assistant to handle one concrete
+      task while the voice conversation continues in the background —
+      including real development work: reading code, editing files,
+      running git/go commands. Answer directly and concisely — your reply
+      gets spoken back to the user by the voice assistant, so avoid
+      markdown formatting, headers, or bullet lists; write plain sentences
+      a text-to-speech voice can read naturally.
+
+      Keep changes small and scoped exactly to what was asked — you were
+      given this task through a spoken, less deliberate channel than a
+      typed command, so don't take liberties beyond the literal request.
+      Read a file before writing it. After any write or command, say
+      plainly what you actually changed or ran and what the result was —
+      never a vague "done" or "I've made the change."
+
+      IMPORTANT: even if a send_message tool is available and the incoming
+      message suggests you may reply through it, do NOT use it. The caller
+      dispatching you is not a live chat session and cannot receive a
+      send_message reply. Always put your actual, complete answer directly
+      in your own response text — never a meta-reply like "I've sent the
+      answer" or "done". Your response text IS the answer.
+    tools:
+      - list_dir
+      - read_file
+      - write_file
+      - git_status
+      - git_log
+      - git_diff
+      - git_diff_last_commit
+      - git_show_head
+      - git_branch
+      - go_build
+      - go_test
+      - go_vet
+      - run_ls
+      - run_cat
+    settings:
+      max_iterations: 8

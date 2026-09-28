@@ -50,14 +50,29 @@ A three-step pipeline:
 
 ## Run
 
+Load `TYPESAFE_API_KEY` from a local secrets file instead of typing it into
+an `export` line — that leaves the real value sitting in shell history.
+Define this `secret()` helper once per terminal, then load the key inline,
+scoped to just the command that needs it:
+
 ```bash
-export TYPESAFE_API_KEY=...
-# Safe change — gate passes, both steps run, ends with "Merged."
+SECRETS_FILE="/path/to/your/secrets.env"
+secret() { awk -F= -v k="$1" '$1==k{sub(/^[^=]*=/,""); print; exit}' "$SECRETS_FILE"; }
+```
+
+A safe change should pass the gate, run both steps, and end with "Merged.":
+
+```bash
+TYPESAFE_API_KEY=$(secret TYPESAFE_API_KEY) \
 rakitsu run examples/jev/08-enforced-pipeline-gate/config.yaml \
   "Change: renamed a private helper function for clarity, no behavior change." \
   --trace
+```
 
-# Unsafe change — gate fails, pipeline aborts before "merge" runs
+An unsafe change should fail the gate, aborting the pipeline before "merge" runs:
+
+```bash
+TYPESAFE_API_KEY=$(secret TYPESAFE_API_KEY) \
 rakitsu run examples/jev/08-enforced-pipeline-gate/config.yaml \
   "Change: the /admin/reset-password endpoint does not verify the \
    caller's session before issuing a new password, so any authenticated \

@@ -4,17 +4,18 @@ Four standalone configs demonstrating advanced orchestration strategies.
 
 ## Run
 
+Each command below runs one strategy: Hierarchical (supervisor assigns
+reviewers dynamically), Plan and Execute (plan first, then execute steps),
+Pipeline Loop (iterative refinement until quality passes), and Pipeline DAG
+(parallel execution with dependency ordering).
+
 ```bash
-# Hierarchical — supervisor assigns reviewers dynamically
 rakitsu run examples/single/06-advanced-strategies/hierarchical.yaml "Review the authentication module"
 
-# Plan and Execute — plan first, then execute steps
 rakitsu run examples/single/06-advanced-strategies/plan-and-execute.yaml "Migrate users table to add email verification"
 
-# Pipeline Loop — iterative refinement until quality passes
 rakitsu run examples/single/06-advanced-strategies/pipeline-loop.yaml "Write a sorting algorithm"
 
-# Pipeline DAG — parallel with dependency ordering
 rakitsu run examples/single/06-advanced-strategies/pipeline-dag.yaml "Generate a REST API from this schema"
 ```
 

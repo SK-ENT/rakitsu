@@ -27,8 +27,18 @@ Jev actually returned, no division required.
 
 ## Run
 
+Load `TYPESAFE_API_KEY` from a local secrets file instead of typing it into
+an `export` line — that leaves the real value sitting in shell history.
+Define this `secret()` helper once per terminal, then load the key inline,
+scoped to just the command that needs it:
+
 ```bash
-export TYPESAFE_API_KEY=...
+SECRETS_FILE="/path/to/your/secrets.env"
+secret() { awk -F= -v k="$1" '$1==k{sub(/^[^=]*=/,""); print; exit}' "$SECRETS_FILE"; }
+```
+
+```bash
+TYPESAFE_API_KEY=$(secret TYPESAFE_API_KEY) \
 rakitsu run examples/jev/07-severity-score-triage/config.yaml \
   "Finding: the /admin/reset-password endpoint does not verify the \
    caller's session before issuing a new password, so any authenticated \

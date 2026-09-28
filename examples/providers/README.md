@@ -17,10 +17,10 @@ One file per provider showing the correct configuration format. Copy into your p
 
 ## Usage
 
-```bash
-# These are reference configs, not runnable on their own.
-# Copy the provider block into any example:
+These are reference configs, not runnable on their own — copy the provider
+block into any example, then run it there, e.g.:
 
+```bash
 rakitsu run examples/single/01-chat/config.yaml "Hello"
 ```
 

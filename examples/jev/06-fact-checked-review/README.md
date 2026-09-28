@@ -36,9 +36,13 @@ You need Node.js/npx (for the Playwright MCP server) and a Chromium-based
 browser. If you already have Google Chrome installed, `mcp/browser-server.sh`
 finds and reuses it automatically — no extra download. If not, either:
 
+The first command below installs the `@playwright/mcp` package on its first
+run. Only run the second (`playwright install chromium`) if no local
+Chrome/Chromium is found.
+
 ```sh
-npx -y @playwright/mcp@latest --help   # first run installs the package
-npx playwright install chromium        # only needed if no local Chrome/Chromium found
+npx -y @playwright/mcp@latest --help
+npx playwright install chromium
 ```
 
 Read `mcp/browser-server.sh`'s header comments before running this anywhere
@@ -48,9 +52,19 @@ of a real JS-executing browser versus a plain fetch.
 
 ## Run
 
+Load both secrets from a local secrets file instead of typing them into
+`export` lines — that leaves the real values sitting in shell history.
+Define this `secret()` helper once per terminal, then load each key inline,
+scoped to just the command that needs it:
+
 ```sh
-export TYPESAFE_API_KEY=...
-export OPENAI_API_KEY=...
+SECRETS_FILE="/path/to/your/secrets.env"
+secret() { awk -F= -v k="$1" '$1==k{sub(/^[^=]*=/,""); print; exit}' "$SECRETS_FILE"; }
+```
+
+```sh
+TYPESAFE_API_KEY=$(secret TYPESAFE_API_KEY) \
+OPENAI_API_KEY=$(secret OPENAI_API_KEY) \
 rakitsu run examples/jev/06-fact-checked-review/config.yaml \
   "Code review finding on internal/store/filelock_unix.go:1: The \`unix\`
    build constraint is not a standard Go-supplied build tag, so this file
