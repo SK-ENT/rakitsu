@@ -197,13 +197,31 @@ type srvAgentSkill struct {
 const maxStoredA2ATasks = 500
 
 type a2aTaskStore struct {
-	mu    sync.Mutex
-	tasks map[string]*srvA2ATask
-	order []string
+	mu      sync.Mutex
+	tasks   map[string]*srvA2ATask
+	order   []string
+	cancels map[string]context.CancelFunc // running task id -> stops its background run
 }
 
 func newA2ATaskStore() *a2aTaskStore {
-	return &a2aTaskStore{tasks: make(map[string]*srvA2ATask)}
+	return &a2aTaskStore{tasks: make(map[string]*srvA2ATask), cancels: make(map[string]context.CancelFunc)}
+}
+
+// setCancel records the cancel func for a task's background run, so a later
+// CancelTask can actually stop it (not just flip the stored state).
+func (s *a2aTaskStore) setCancel(id string, cancel context.CancelFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cancels[id] = cancel
+}
+
+// clearCancel drops a task's cancel func once its run has finished on its
+// own — nothing left to cancel, and leaving it would leak the map entry for
+// the task's full time in the store.
+func (s *a2aTaskStore) clearCancel(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.cancels, id)
 }
 
 // cloneTask deep-copies t via a marshal/unmarshal round trip. A shallow
@@ -241,6 +259,7 @@ func (s *a2aTaskStore) put(t *srvA2ATask) {
 			oldest := s.order[0]
 			s.order = s.order[1:]
 			delete(s.tasks, oldest)
+			delete(s.cancels, oldest) // its own run, if still going, is orphaned but keeps running to completion — just no longer cancelable/observable
 		}
 	}
 	s.tasks[cp.ID] = cp
@@ -259,11 +278,35 @@ func (s *a2aTaskStore) get(id string) (*srvA2ATask, bool) {
 	return cloneTask(t), true
 }
 
+// finishIfNotCanceled atomically checks and finalizes a non-terminal task
+// under one lock acquisition. A get-then-put pair could overwrite a concurrent
+// cancellation with completed/failed status. Missing or already-terminal tasks
+// are left untouched; returned tasks are copies, never the internal pointer.
+func (s *a2aTaskStore) finishIfNotCanceled(id string, status srvA2AStatus, artifacts []srvA2AArtifact) (task *srvA2ATask, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, found := s.tasks[id]
+	if !found {
+		return nil, false
+	}
+	if isTerminalTaskState(t.Status.State) {
+		return cloneTask(t), false
+	}
+	finished := *t
+	finished.Status = status
+	finished.Artifacts = artifacts
+	s.tasks[id] = cloneTask(&finished)
+	return cloneTask(s.tasks[id]), true
+}
+
 // cancelIfPossible atomically checks and, if the task isn't already
 // terminal, cancels it — under one lock acquisition, unlike a get-then-put
 // pair, which would let a concurrent cancel race the mutation. alreadyTerminal
 // distinguishes "found but not cancelable" from "not found" so the caller
-// can return the right JSON-RPC error.
+// can return the right JSON-RPC error. Also invokes the task's own
+// background run's cancel func (if still recorded), so this actually stops
+// the in-flight run — not just a stored-state flip that leaves the run
+// going.
 func (s *a2aTaskStore) cancelIfPossible(id string) (task *srvA2ATask, found bool, alreadyTerminal bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -273,6 +316,10 @@ func (s *a2aTaskStore) cancelIfPossible(id string) (task *srvA2ATask, found bool
 	}
 	if isTerminalTaskState(t.Status.State) {
 		return cloneTask(t), true, true
+	}
+	if cancel, ok := s.cancels[id]; ok {
+		cancel()
+		delete(s.cancels, id)
 	}
 	t.Status = srvA2AStatus{State: taskStateCanceled, Timestamp: time.Now().UTC().Format(time.RFC3339)}
 	return cloneTask(t), true, false
@@ -405,32 +452,49 @@ func handleA2ASendMessage(
 	}
 
 	query := params.Message.Parts[0].Text
-	result, execErr := run(ctx, subCfg, query)
-
 	taskID := uuid.New().String()
 	contextID := uuid.New().String()
-	now := time.Now().UTC().Format(time.RFC3339)
 
 	task := &srvA2ATask{
 		ID:        taskID,
 		ContextID: contextID,
 		History:   []srvA2AMessage{params.Message},
+		Status:    srvA2AStatus{State: taskStateWorking, Timestamp: time.Now().UTC().Format(time.RFC3339)},
 	}
-	if execErr != nil {
-		task.Status = srvA2AStatus{
-			State:     taskStateFailed,
-			Timestamp: now,
-			Message: &srvA2AMessage{
-				MessageID: uuid.New().String(), ContextID: contextID, TaskID: taskID,
-				Role: roleAgent, Parts: []srvA2APart{{Text: execErr.Error()}},
-			},
-		}
-	} else {
-		task.Status = srvA2AStatus{State: taskStateCompleted, Timestamp: now}
-		task.Artifacts = []srvA2AArtifact{{ArtifactID: uuid.New().String(), Parts: []srvA2APart{{Text: result}}}}
-	}
-
 	store.put(task)
+
+	// A detached context, not ctx (== r.Context()): SendMessage now returns
+	// as soon as the task is stored, well before run finishes, and Go
+	// cancels a request's context the moment its handler returns. Using ctx
+	// here would cancel the agent run the instant this response is written.
+	// This context is cancelable on its own terms, via CancelTask below.
+	runCtx, cancel := context.WithCancel(context.Background())
+	store.setCancel(taskID, cancel)
+
+	go func() {
+		defer cancel() // releases resources tied to runCtx even on normal completion
+		result, execErr := run(runCtx, subCfg, query)
+		store.clearCancel(taskID)
+
+		var status srvA2AStatus
+		var artifacts []srvA2AArtifact
+		now := time.Now().UTC().Format(time.RFC3339)
+		if execErr != nil {
+			status = srvA2AStatus{
+				State:     taskStateFailed,
+				Timestamp: now,
+				Message: &srvA2AMessage{
+					MessageID: uuid.New().String(), ContextID: contextID, TaskID: taskID,
+					Role: roleAgent, Parts: []srvA2APart{{Text: execErr.Error()}},
+				},
+			}
+		} else {
+			status = srvA2AStatus{State: taskStateCompleted, Timestamp: now}
+			artifacts = []srvA2AArtifact{{ArtifactID: uuid.New().String(), Parts: []srvA2APart{{Text: result}}}}
+		}
+		store.finishIfNotCanceled(taskID, status, artifacts)
+	}()
+
 	writeResult(req.ID, srvSendMessageResult{Task: task})
 }
 

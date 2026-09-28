@@ -9,7 +9,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/SK-ENT/rakitsu/internal/config"
 )
@@ -73,6 +75,32 @@ func postA2A(t *testing.T, handler http.HandlerFunc, method string, id string, p
 	return out
 }
 
+// pollUntilTerminal polls GetTask against the same handler/store until the
+// task reaches a terminal state, mirroring the backoff loop the real A2A
+// client (internal/tools/a2a/tool.go's awaitTerminal) already does against a
+// SendMessage that now returns before the agent finishes.
+func pollUntilTerminal(t *testing.T, handler http.HandlerFunc, taskID string) srvA2ATask {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		resp := postA2A(t, handler, "GetTask", "poll", srvGetTaskParams{ID: taskID})
+		if resp.Error != nil {
+			t.Fatalf("GetTask error: %+v", resp.Error)
+		}
+		var task srvA2ATask
+		if err := json.Unmarshal(resp.Result, &task); err != nil {
+			t.Fatalf("unmarshal task: %v", err)
+		}
+		if isTerminalTaskState(task.Status.State) {
+			return task
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("task %s did not reach a terminal state in time (last state %q)", taskID, task.Status.State)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // ─── SendMessage ──────────────────────────────────────────────────────────────
 
 func TestA2AHandler_SendMessage_HappyPath(t *testing.T) {
@@ -92,14 +120,21 @@ func TestA2AHandler_SendMessage_HappyPath(t *testing.T) {
 	if result.Task == nil {
 		t.Fatal("expected a task in the result")
 	}
-	if result.Task.Status.State != taskStateCompleted {
-		t.Errorf("state = %q, want %q", result.Task.Status.State, taskStateCompleted)
-	}
-	if len(result.Task.Artifacts) != 1 || result.Task.Artifacts[0].Parts[0].Text != "42" {
-		t.Errorf("artifacts = %+v, want a single artifact with text \"42\"", result.Task.Artifacts)
+	// SendMessage returns as soon as the task is recorded, not once the
+	// agent finishes — it must not already be terminal here.
+	if result.Task.Status.State != taskStateWorking {
+		t.Errorf("state = %q, want %q immediately after SendMessage", result.Task.Status.State, taskStateWorking)
 	}
 	if result.Task.ID == "" || result.Task.ContextID == "" {
 		t.Error("expected non-empty task id and context id")
+	}
+
+	final := pollUntilTerminal(t, handler, result.Task.ID)
+	if final.Status.State != taskStateCompleted {
+		t.Errorf("state = %q, want %q", final.Status.State, taskStateCompleted)
+	}
+	if len(final.Artifacts) != 1 || final.Artifacts[0].Parts[0].Text != "42" {
+		t.Errorf("artifacts = %+v, want a single artifact with text \"42\"", final.Artifacts)
 	}
 }
 
@@ -117,11 +152,13 @@ func TestA2AHandler_SendMessage_AgentFailed(t *testing.T) {
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
 	}
-	if result.Task.Status.State != taskStateFailed {
-		t.Errorf("state = %q, want %q", result.Task.Status.State, taskStateFailed)
+
+	final := pollUntilTerminal(t, handler, result.Task.ID)
+	if final.Status.State != taskStateFailed {
+		t.Errorf("state = %q, want %q", final.Status.State, taskStateFailed)
 	}
-	if result.Task.Status.Message == nil || !strings.Contains(result.Task.Status.Message.Parts[0].Text, "boom") {
-		t.Errorf("status.message = %+v, want it to mention the error", result.Task.Status.Message)
+	if final.Status.Message == nil || !strings.Contains(final.Status.Message.Parts[0].Text, "boom") {
+		t.Errorf("status.message = %+v, want it to mention the error", final.Status.Message)
 	}
 }
 
@@ -222,16 +259,9 @@ func TestA2AHandler_GetTask_Found(t *testing.T) {
 		t.Fatalf("unmarshal SendMessage result: %v", err)
 	}
 
-	getResp := postA2A(t, handler, "GetTask", "2", srvGetTaskParams{ID: sendResult.Task.ID})
-	if getResp.Error != nil {
-		t.Fatalf("unexpected error: %+v", getResp.Error)
-	}
-	var task srvA2ATask
-	if err := json.Unmarshal(getResp.Result, &task); err != nil {
-		t.Fatalf("unmarshal GetTask result: %v", err)
-	}
-	if task.ID != sendResult.Task.ID || task.Status.State != taskStateCompleted {
-		t.Errorf("task = %+v, want id %q completed", task, sendResult.Task.ID)
+	final := pollUntilTerminal(t, handler, sendResult.Task.ID)
+	if final.ID != sendResult.Task.ID || final.Status.State != taskStateCompleted {
+		t.Errorf("task = %+v, want id %q completed", final, sendResult.Task.ID)
 	}
 }
 
@@ -263,11 +293,79 @@ func TestA2AHandler_CancelTask_TerminalRejected(t *testing.T) {
 		t.Fatalf("unmarshal SendMessage result: %v", err)
 	}
 
-	// rakitsu's handler is synchronous, so the task is already COMPLETED —
-	// canceling it must be rejected as not-cancelable, not silently accepted.
+	// Wait for the (fast, non-blocking) stub run to actually finish and
+	// reach a terminal state before trying to cancel it.
+	pollUntilTerminal(t, handler, sendResult.Task.ID)
+
 	cancelResp := postA2A(t, handler, "CancelTask", "2", srvCancelTaskParams{ID: sendResult.Task.ID})
 	if cancelResp.Error == nil || cancelResp.Error.Code != -32002 {
 		t.Fatalf("error = %+v, want code -32002 (TaskNotCancelableError)", cancelResp.Error)
+	}
+}
+
+// TestA2AHandler_CancelTask_CancelsRunningTask covers the actual point of
+// async SendMessage: a task still in TASK_STATE_WORKING can be canceled —
+// and canceling it must genuinely stop the in-flight run (observe ctx.Done()),
+// not just flip the stored state while the run keeps going underneath.
+func TestA2AHandler_CancelTask_CancelsRunningTask(t *testing.T) {
+	started := make(chan struct{})
+	var sawCancel int32
+	run := func(ctx context.Context, cfg *config.Config, query string) (string, error) {
+		close(started)
+		<-ctx.Done()
+		atomic.StoreInt32(&sawCancel, 1)
+		return "", ctx.Err()
+	}
+	handler := a2aHandlerFunc(testConfig(), run)
+
+	sendResp := postA2A(t, handler, "SendMessage", "1", srvSendMessageParams{
+		Tenant:  "Researcher",
+		Message: srvA2AMessage{MessageID: "m1", Role: roleUser, Parts: []srvA2APart{{Text: "hi"}}},
+	})
+	var sendResult srvSendMessageResult
+	if err := json.Unmarshal(sendResp.Result, &sendResult); err != nil {
+		t.Fatalf("unmarshal SendMessage result: %v", err)
+	}
+	if sendResult.Task.Status.State != taskStateWorking {
+		t.Fatalf("state = %q, want %q immediately after SendMessage", sendResult.Task.Status.State, taskStateWorking)
+	}
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("run was never invoked")
+	}
+
+	cancelResp := postA2A(t, handler, "CancelTask", "2", srvCancelTaskParams{ID: sendResult.Task.ID})
+	if cancelResp.Error != nil {
+		t.Fatalf("unexpected cancel error: %+v", cancelResp.Error)
+	}
+	var canceled srvA2ATask
+	if err := json.Unmarshal(cancelResp.Result, &canceled); err != nil {
+		t.Fatalf("unmarshal cancel result: %v", err)
+	}
+	if canceled.Status.State != taskStateCanceled {
+		t.Errorf("state = %q, want %q", canceled.Status.State, taskStateCanceled)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for atomic.LoadInt32(&sawCancel) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("run's context was never actually canceled")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// The goroutine's own completion path (ctx.Err() returned as execErr)
+	// must not overwrite the canceled state back to failed once it runs.
+	time.Sleep(20 * time.Millisecond)
+	getResp := postA2A(t, handler, "GetTask", "3", srvGetTaskParams{ID: sendResult.Task.ID})
+	var final srvA2ATask
+	if err := json.Unmarshal(getResp.Result, &final); err != nil {
+		t.Fatalf("unmarshal final task: %v", err)
+	}
+	if final.Status.State != taskStateCanceled {
+		t.Errorf("final state = %q, want %q (must not be overwritten after cancellation)", final.Status.State, taskStateCanceled)
 	}
 }
 
@@ -509,8 +607,9 @@ func TestA2ATaskStore_Get_ReturnsIndependentCopy(t *testing.T) {
 // once, under -race. It's the direct regression test for the task-store race
 // found in review (get-then-put outside a single lock let a concurrent
 // CancelTask race a mutation) — cancelIfPossible's single-lock design and
-// get/put's copy-on-access should make this race-free even though
-// SendMessage's own execution is still synchronous per request.
+// get/put's copy-on-access should make this race-free. Now that SendMessage
+// itself runs its agent call in a background goroutine, this also exercises
+// genuinely concurrent writers racing each task's completion/cancellation.
 func TestA2AHandler_ConcurrentTraffic(t *testing.T) {
 	handler := a2aHandlerFunc(testConfig(), stubRun("ok", "", nil))
 	srv := httptest.NewServer(handler)
@@ -596,5 +695,30 @@ func TestAgentCardHandler_MethodNotAllowed(t *testing.T) {
 
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusMethodNotAllowed)
+	}
+}
+
+// Completion may have computed its result before CancelTask wins the store
+// lock. Exercise that ordering deterministically, without timing dependencies.
+func TestA2ATaskStore_FinishAfterCancel(t *testing.T) {
+	for _, state := range []string{taskStateCompleted, taskStateFailed} {
+		t.Run(state, func(t *testing.T) {
+			store := newA2ATaskStore()
+			store.put(&srvA2ATask{ID: "task", Status: srvA2AStatus{State: taskStateWorking}})
+			status := srvA2AStatus{State: state}
+			artifacts := []srvA2AArtifact{{ArtifactID: "result", Parts: []srvA2APart{{Text: "done"}}}}
+			canceled, found, terminal := store.cancelIfPossible("task")
+			if !found || terminal {
+				t.Fatal("expected cancellation to succeed")
+			}
+			finished, ok := store.finishIfNotCanceled("task", status, artifacts)
+			if ok || finished.Status != canceled.Status || len(finished.Artifacts) != 0 {
+				t.Fatalf("completion overwrote cancellation: %+v, ok=%v", finished, ok)
+			}
+			stored, _ := store.get("task")
+			if stored.Status != canceled.Status || len(stored.Artifacts) != 0 {
+				t.Fatalf("stored cancellation changed: %+v", stored)
+			}
+		})
 	}
 }
