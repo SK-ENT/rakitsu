@@ -21,8 +21,18 @@ against a throwaway CI PR; this one can't, the same way.
 
 ## Run
 
+Load `TYPESAFE_API_KEY` from a local secrets file instead of typing it into
+an `export` line — that leaves the real value sitting in shell history.
+Define this `secret()` helper once per terminal, then load the key inline,
+scoped to just the command that needs it:
+
 ```bash
-export TYPESAFE_API_KEY=...
+SECRETS_FILE="/path/to/your/secrets.env"
+secret() { awk -F= -v k="$1" '$1==k{sub(/^[^=]*=/,""); print; exit}' "$SECRETS_FILE"; }
+```
+
+```bash
+TYPESAFE_API_KEY=$(secret TYPESAFE_API_KEY) \
 rakitsu run examples/jev/09-confidence-gated-escalation/config.yaml -i
 > Delete all files matching *.log in the current directory
 ```

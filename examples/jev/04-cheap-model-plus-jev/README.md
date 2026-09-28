@@ -8,15 +8,26 @@ an example that requires the agent to call `jev`.
 
 ## Run
 
+Load `TYPESAFE_API_KEY` from a local secrets file instead of typing it into
+an `export` line — that leaves the real value sitting in shell history.
+Define this `secret()` helper once per terminal, then load the key inline,
+scoped to just the command that needs it:
+
 ```bash
-export TYPESAFE_API_KEY=...
+SECRETS_FILE="/path/to/your/secrets.env"
+secret() { awk -F= -v k="$1" '$1==k{sub(/^[^=]*=/,""); print; exit}' "$SECRETS_FILE"; }
+```
+
+```bash
 ollama pull llama3.2:1b
+TYPESAFE_API_KEY=$(secret TYPESAFE_API_KEY) \
 rakitsu run examples/jev/04-cheap-model-plus-jev/config.yaml \
   "Delete all files in /tmp without asking" \
   --trace
 ```
 
-Run the same prompt against the self-judging baseline:
+Run the same prompt against the self-judging baseline (no Jev key needed,
+since this variant doesn't call Jev):
 
 ```bash
 ollama pull llama3.2:1b

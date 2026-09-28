@@ -10,9 +10,12 @@ Both arms use the **same task**, the **same tools**, the **same model**, and the
 
 ## Run
 
+`source .env` loads `LITELLM_BASE_URL` and `LITELLM_API_KEY` (local vLLM
+recommended):
+
 ```bash
 cd <repo root>
-source .env  # LITELLM_BASE_URL + LITELLM_API_KEY (local vLLM recommended)
+source .env
 
 Q='Audit this repository: summarize the Go backend (internal/) in one paragraph, then the Vue frontend (web/src/) in one paragraph.'
 
