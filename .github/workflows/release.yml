@@ -24,6 +24,16 @@ jobs:
     permissions:
       contents: write # only this job needs to create the release
     steps:
+      # The `v*` trigger accepts any tag name, and the name becomes the
+      # version baked into every binary and image. Refuse anything that is
+      # not plain semver (e.g. v0.3.0-alpha.12) before it is used.
+      - name: Validate tag name
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]] \
+            || { echo "FATAL: refusing to release non-semver tag" >&2; exit 1; }
+
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0 # full history, for the changelog step below
@@ -130,6 +140,16 @@ jobs:
       contents: read
       packages: write # push to GHCR with the workflow's own token
     steps:
+      # The `v*` trigger accepts any tag name, and the name becomes the
+      # version baked into every binary and image. Refuse anything that is
+      # not plain semver (e.g. v0.3.0-alpha.12) before it is used.
+      - name: Validate tag name
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]] \
+            || { echo "FATAL: refusing to release non-semver tag" >&2; exit 1; }
+
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false

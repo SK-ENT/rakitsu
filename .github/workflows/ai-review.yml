@@ -90,16 +90,20 @@ jobs:
           # sees instead of validating after an unsafe substitution
           # already happened.
           PR_NUMBER_INPUT: ${{ inputs.pr_number }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
         run: |
-          case "${{ github.event_name }}" in
-            pull_request) NUM="${{ github.event.pull_request.number }}" ;;
-            issue_comment) NUM="${{ github.event.issue.number }}" ;;
+          case "$EVENT_NAME" in
+            pull_request) NUM="$EVENT_PR_NUMBER" ;;
+            issue_comment) NUM="$EVENT_ISSUE_NUMBER" ;;
             workflow_dispatch) NUM="$PR_NUMBER_INPUT" ;;
           esac
           case "$NUM" in
             ''|*[!0-9]*) echo "FATAL: bad PR number: $NUM" >&2; exit 1 ;;
           esac
-          gh pr view "$NUM" --repo "${{ github.repository }}" \
+          gh pr view "$NUM" --repo "$REPO" \
             --json number,state,headRefOid,baseRefOid > pr.json
           if [ "$(jq -r .state < pr.json)" != "OPEN" ]; then
             echo "PR #$NUM is not open — nothing to review, skipping." >&2
@@ -142,11 +146,13 @@ jobs:
       # script source.
       - name: Fetch PR head for diffing (never executed)
         if: steps.resolve.outputs.skip != 'true'
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.number }}
         run: |
           AUTH=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
           echo "::add-mask::$AUTH"
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $AUTH" \
-            fetch --no-tags origin "pull/${{ steps.resolve.outputs.number }}/head"
+            fetch --no-tags origin "pull/${PR_NUMBER}/head"
 
       # Runs after checkout+fetch (not before) so it can check whether the
       # pre-push commit is actually reachable: a force-push/rebase/amend on
@@ -156,37 +162,52 @@ jobs:
       - name: Determine diff mode
         id: mode
         if: steps.resolve.outputs.skip != 'true'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_AFTER: ${{ github.event.after }}
+          RESOLVED_BASE: ${{ steps.resolve.outputs.base_sha }}
+          RESOLVED_HEAD: ${{ steps.resolve.outputs.head_sha }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.action }}" = "synchronize" ] \
-             && git cat-file -e "${{ github.event.before }}^{commit}" 2>/dev/null; then
+          # Every SHA below must be exactly 40 hex chars before it is echoed
+          # into GITHUB_OUTPUT or handed to a later script.
+          is_sha() { [[ "$1" =~ ^[0-9a-f]{40}$ ]]; }
+          is_sha "$RESOLVED_BASE" && is_sha "$RESOLVED_HEAD" \
+            || { echo "FATAL: resolved PR SHAs are not 40-hex" >&2; exit 1; }
+          if [ "$EVENT_NAME" = "pull_request" ] && [ "$EVENT_ACTION" = "synchronize" ] \
+             && is_sha "$EVENT_BEFORE" && is_sha "$EVENT_AFTER" \
+             && git cat-file -e "${EVENT_BEFORE}^{commit}" 2>/dev/null; then
             echo "mode=incremental" >> "$GITHUB_OUTPUT"
-            echo "base=${{ github.event.before }}" >> "$GITHUB_OUTPUT"
-            echo "head=${{ github.event.after }}" >> "$GITHUB_OUTPUT"
+            echo "base=$EVENT_BEFORE" >> "$GITHUB_OUTPUT"
+            echo "head=$EVENT_AFTER" >> "$GITHUB_OUTPUT"
           else
             echo "mode=full" >> "$GITHUB_OUTPUT"
-            echo "base=${{ steps.resolve.outputs.base_sha }}" >> "$GITHUB_OUTPUT"
-            echo "head=${{ steps.resolve.outputs.head_sha }}" >> "$GITHUB_OUTPUT"
+            echo "base=$RESOLVED_BASE" >> "$GITHUB_OUTPUT"
+            echo "head=$RESOLVED_HEAD" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Install latest rakitsu release
         if: steps.resolve.outputs.skip != 'true'
+        env:
+          REPO: ${{ github.repository }}
         run: |
-          TAG=$(gh release list --repo "${{ github.repository }}" --limit 1 --json tagName -q '.[0].tagName')
+          TAG=$(gh release list --repo "$REPO" --limit 1 --json tagName -q '.[0].tagName')
           if [ -z "$TAG" ]; then
-            echo "FATAL: no release found on ${{ github.repository }} (rebuild in progress? nothing tagged yet?) — nothing to install." >&2
+            echo "FATAL: no release found on $REPO (rebuild in progress? nothing tagged yet?) — nothing to install." >&2
             exit 1
           fi
           # Download by release id, not `gh release download <tag>`: GitHub's
           # by-tag endpoint can return the release with an empty asset list
           # (seen on v0.3.0-alpha.11) while the assets endpoint lists them all.
-          REL_ID=$(gh api "repos/${{ github.repository }}/releases/tags/$TAG" -q .id)
+          REL_ID=$(gh api "repos/$REPO/releases/tags/$TAG" -q .id)
           for f in rakitsu-linux-amd64 checksums.txt; do
-            AID=$(gh api "repos/${{ github.repository }}/releases/$REL_ID/assets?per_page=100" -q ".[] | select(.name == \"$f\") | .id")
+            AID=$(gh api "repos/$REPO/releases/$REL_ID/assets?per_page=100" -q ".[] | select(.name == \"$f\") | .id")
             if [ -z "$AID" ]; then
               echo "FATAL: $f not found in release $TAG" >&2
               exit 1
             fi
-            gh api -H 'Accept: application/octet-stream' "repos/${{ github.repository }}/releases/assets/$AID" > "$f"
+            gh api -H 'Accept: application/octet-stream' "repos/$REPO/releases/assets/$AID" > "$f"
           done
           grep linux-amd64 checksums.txt | shasum -a 256 -c -
           sudo install -m 755 rakitsu-linux-amd64 /usr/local/bin/rakitsu
@@ -199,18 +220,26 @@ jobs:
           # — fails open if this secret isn't set, so it's safe to leave
           # unconfigured; findings just won't get verified.
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+          DIFF_MODE: ${{ steps.mode.outputs.mode }}
+          DIFF_BASE: ${{ steps.mode.outputs.base }}
+          DIFF_HEAD: ${{ steps.mode.outputs.head }}
+          PR_BASE_SHA: ${{ steps.resolve.outputs.base_sha }}
         run: |
           scripts/ci-review.sh \
-            "${{ steps.mode.outputs.mode }}" \
-            "${{ steps.mode.outputs.base }}" \
-            "${{ steps.mode.outputs.head }}" \
+            "$DIFF_MODE" \
+            "$DIFF_BASE" \
+            "$DIFF_HEAD" \
             review-result.json \
-            "${{ steps.resolve.outputs.base_sha }}"
+            "$PR_BASE_SHA"
 
       - name: Post review
         if: steps.resolve.outputs.skip != 'true'
+        env:
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.resolve.outputs.number }}
+          PR_HEAD_SHA: ${{ steps.resolve.outputs.head_sha }}
         run: |
           python3 scripts/post-review.py review-result.json \
-            "${{ github.repository }}" \
-            "${{ steps.resolve.outputs.number }}" \
-            "${{ steps.resolve.outputs.head_sha }}"
+            "$REPO" \
+            "$PR_NUMBER" \
+            "$PR_HEAD_SHA"
