@@ -23,7 +23,6 @@ for (const v of files) {
   let d; try { d = JSON.parse(fs.readFileSync(path.join(dataDir, v + '.json'), 'utf8')); ok(true); } catch (e) { ok(false, v + ' parses: ' + e); continue; }
   ok(d.tag === v, v + ' tag field matches file name');
   ok(d.commit === null ? d.commit_note === 'tag not present in local clone' : /^[0-9a-f]{40}$/.test(d.commit), v + ' commit is a 40-hex hash or null with commit_note');
-  if (!d.docsGenerated) continue;
   docVersions.push(v);
   ok(Array.isArray(d.features) && d.features.length > 0, v + ' has features');
   for (const ft of d.features) {
@@ -40,7 +39,19 @@ for (const v of files) {
     });
   }
 }
-ok(docVersions.length >= 1, 'at least one doc-generated version');
+ok(docVersions.length >= 1, 'at least one doc version');
+{ // covers: each covered tag maps to the nearest earlier listed doc version
+  const key = t => { const m = /^v(\d+)\.(\d+)\.(\d+)(?:-alpha\.(\d+))?$/.exec(t); return m ? [+m[1], +m[2], +m[3], m[4] ? 0 : 1, +(m[4] || 0)] : null; };
+  const cmp = (a, b) => { for (let i = 0; i < 5; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; };
+  for (const v of vj.versions) ok(!!key(v), v + ' has a supported tag format');
+  const sorted = [...vj.versions].sort((a, b) => cmp(key(b), key(a)));
+  ok(JSON.stringify(sorted) === JSON.stringify(vj.versions), 'versions are newest first');
+  for (const [t, d] of Object.entries(vj.covers || {})) {
+    ok(!!key(t) && vj.versions.includes(d) && !vj.versions.includes(t), t + ' covers a listed doc version');
+    const earlier = vj.versions.filter(x => cmp(key(x), key(t)) < 0).sort((a, b) => cmp(key(b), key(a)));
+    ok(earlier[0] === d, t + ' covers the nearest earlier doc version', [d, earlier[0]]);
+  }
+}
 
 // ---- 2. forbidden strings
 const walk = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => e.isDirectory() ? (e.name === 'shots' || e.name === 'node_modules' ? [] : walk(path.join(d, e.name))) : [path.join(d, e.name)]);
@@ -76,7 +87,7 @@ try {
     }));
     const tag = `${v}/${lang}/${view}`;
     ok(errs.length === 0, tag + ' no page errors ' + errs.join('|'));
-    ok(r.ids.length > 200, tag + ' link index size ' + r.ids.length);
+    ok(r.ids.length > 150, tag + ' link index size ' + r.ids.length);
     const ids = r.ids.map(h => h.replace(/^#(en|ja)\./, ''));
     ok(r.ids.every(h => h.startsWith('#' + lang + '.')), tag + ' links use the active language prefix');
     ok(new Set(ids).size === ids.length, tag + ' linkable ids unique (dups: ' + ids.filter((x, i) => ids.indexOf(x) !== i).slice(0, 5) + ')');
@@ -84,7 +95,7 @@ try {
     ok(ids.every(i => GRAMMAR.test(i)), tag + ' ids match grammar ' + ids.filter(i => !GRAMMAR.test(i)).slice(0, 5));
     ok(new Set(r.domIds).size === r.domIds.length, tag + ' DOM ids unique (dups: ' + r.domIds.filter((x, i) => r.domIds.indexOf(x) !== i).slice(0, 5) + ')');
     // widget-step ids (react-*, wake-tick-*, ...) are virtual: they point at a widget, not at their own element, so no DOM-existence check.
-    if (lang === 'en' && view === 'detail') fs.writeFileSync(path.join(here, 'link-ids.txt'), ids.join('\n') + '\n');
+    if (lang === 'en' && view === 'detail' && v === vj.default) fs.writeFileSync(path.join(here, 'link-ids.txt'), ids.join('\n') + '\n');
     await ctx.close();
   }
   // ids identical across language and view
@@ -96,9 +107,9 @@ try {
   const c = await browser.newContext(); const p = await c.newPage(); await p.goto(base); await p.waitForFunction(() => window.__rkLoaded === true);
   const cases = [
     ['#en.agent-loop', { lang: 'en', raw: 'agent-loop', id: 'agent-loop' }],
-    ['#ja.wake', { lang: 'ja', raw: 'wake', id: 'wake' }],
-    ['#wake', { lang: null, raw: 'wake', id: 'wake' }],
-    ['wake', { lang: null, raw: 'wake', id: 'wake' }],
+    ['#ja.memory', { lang: 'ja', raw: 'memory', id: 'memory' }],
+    ['#memory', { lang: null, raw: 'memory', id: 'memory' }],
+    ['memory', { lang: null, raw: 'memory', id: 'memory' }],
     ['#react', { lang: null, raw: 'react', id: 'agent-loop' }],       // alias
     ['#en.f-react', { lang: 'en', raw: 'f-react', id: 'agent-loop' }], // old id alias
     ['#fr.wake', { lang: null, raw: 'fr.wake', id: null }],            // unsupported language
@@ -115,7 +126,7 @@ try {
     const got = await p.evaluate(t => window.RakitsuLinks.parseToken(t), tok);
     ok(JSON.stringify(got) === JSON.stringify(want), `parseToken(${JSON.stringify(tok)}) = ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
   }
-  ok(await p.evaluate(() => window.RakitsuLinks.mkLink('ja', 'wake')) === '#ja.wake', 'mkLink');
+  ok(await p.evaluate(() => window.RakitsuLinks.mkLink('ja', 'memory')) === '#ja.memory', 'mkLink');
   await c.close();
 } finally { await browser.close(); srv.close(); }
 { // no Google Fonts references anywhere in site/

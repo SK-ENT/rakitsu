@@ -3,7 +3,8 @@
 # Usage: scripts/build-pages.sh [--verify-tags <git-remote-or-url>] [outdir]
 #   outdir defaults to /tmp/rk-pages-out and must be outside the git repo.
 #   --verify-tags (optional, uses the network): fail if any data file's "commit"
-#   differs from the peeled commit of that tag on the given (public) remote.
+#   differs from the peeled commit of that tag on the given (public) remote, and
+#   if any covered tag (see "covers" in site/data/versions.json) is not a public tag.
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 verify=""; out_arg=""
@@ -20,23 +21,43 @@ case "$out/" in "$top"/*|"$here"/*) echo "refusing to write inside the git repo:
 [ "$out" != "/" ] || { echo "bad outdir" >&2; exit 1; }
 site="$here/site"
 python3 - "$site" <<'PY'
-import json,os,sys
-s=sys.argv[1]; v=json.load(open(s+"/data/versions.json"))
-if v["default"] not in v["versions"]: sys.exit("default tag %s is not in versions" % v["default"])
+import json,os,re,sys
+s=sys.argv[1]; v=json.load(open(s+"/data/versions.json")); cov=v.get("covers",{})
+def key(t):
+    m=re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)(?:-alpha\.(\d+))?",t)
+    if not m: sys.exit("unsupported tag format "+t)
+    a=m.groups(); return (int(a[0]),int(a[1]),int(a[2]),0 if a[3] else 1,int(a[3] or 0))
+for t in list(v["versions"])+list(cov):
+    if "/" in t or t.startswith("."): sys.exit("bad tag "+t)
+    key(t)
+if v["default"] not in v["versions"]: sys.exit("default tag %s is not a doc version" % v["default"])
 for t in v["versions"]:
     if not os.path.isfile("%s/data/%s.json"%(s,t)): sys.exit("missing data file for "+t)
-    if "/" in t or t.startswith("."): sys.exit("bad tag "+t)
+have=sorted(f[:-5] for f in os.listdir(s+"/data") if f.endswith(".json") and f!="versions.json")
+if have!=sorted(v["versions"]): sys.exit("data files %s do not match versions %s"%(have,sorted(v["versions"])))
+for t,d in cov.items():
+    if t in v["versions"]: sys.exit("%s is both a doc version and covered"%t)
+    if d not in v["versions"]: sys.exit("covers %s -> %s: not a listed doc version"%(t,d))
+    earlier=[x for x in v["versions"] if key(x)<key(t)]
+    if not earlier or max(earlier,key=key)!=d: sys.exit("covers %s -> %s: not the nearest earlier doc version (%s)"%(t,d,max(earlier,key=key) if earlier else "none"))
 PY
 if [ -n "$verify" ]; then
   bad=0
-  for f in "$site"/data/v[0-9]*.json; do
-    t="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["tag"])' "$f")"
-    have="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["commit"])' "$f")"
-    want="$(git -C "$top" ls-remote --tags "$verify" "refs/tags/$t^{}" | awk '{print $1}')"
-    [ -n "$want" ] || want="$(git -C "$top" ls-remote --tags "$verify" "refs/tags/$t" | awk '{print $1}')"
+  peeled() { # $1 tag -> peeled commit (or the tag object for lightweight tags)
+    w="$(git -C "$top" ls-remote --tags "$verify" "refs/tags/$1^{}" | awk '{print $1}')"
+    [ -n "$w" ] || w="$(git -C "$top" ls-remote --tags "$verify" "refs/tags/$1" | awk '{print $1}')"
+    printf '%s' "$w"
+  }
+  for t in $(python3 -c 'import json,sys;print("\n".join(json.load(open(sys.argv[1]))["versions"]))' "$site/data/versions.json"); do
+    have="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["commit"])' "$site/data/$t.json")"
+    want="$(peeled "$t")"
     if [ -z "$want" ]; then echo "verify-tags: tag $t not found on $verify" >&2; bad=1
     elif [ "$have" != "$want" ]; then echo "verify-tags: $t commit is $have but $verify tag is $want" >&2; bad=1
     else echo "verify-tags: $t ok"; fi
+  done
+  for t in $(python3 -c 'import json,sys;print("\n".join(json.load(open(sys.argv[1])).get("covers",{})))' "$site/data/versions.json"); do
+    if [ -z "$(peeled "$t")" ]; then echo "verify-tags: covered tag $t not found on $verify" >&2; bad=1
+    else echo "verify-tags: covered tag $t ok"; fi
   done
   [ "$bad" = 0 ] || exit 1
 fi
@@ -49,7 +70,8 @@ cp -R "$site/assets/brand" "$out/assets/brand"
 cp "$site"/data/*.json "$out/data/"
 touch "$out/.nojekyll"
 default="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["default"])' "$site/data/versions.json")"
-tags="$(python3 -c 'import json,sys;print("\n".join(json.load(open(sys.argv[1]))["versions"]))' "$site/data/versions.json")"
+tags="$(python3 -c 'import json,sys;v=json.load(open(sys.argv[1]));print("\n".join(list(v["versions"])+list(v.get("covers",{}))))' "$site/data/versions.json")"
+first="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["versions"][-1])' "$site/data/versions.json")"
 redirect() { # $1 prefix to default dir
 cat <<EOF
 <!doctype html>
@@ -68,12 +90,16 @@ cat <<EOF
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Page not found - Rakitsu Spec Reference</title>
 <style>body{font:16px/1.6 system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem}</style></head>
 <body><h1>Page not found</h1>
-<p>This page does not exist. Try the <a id="lt" href="latest/">latest version</a> or pick a release:</p><ul id="tl">
+<p>This page does not exist. Try the <a id="lt" href="latest/">latest version</a> or pick a release:</p>
+<div id="notag" hidden><p><strong>No docs for this release. Docs start at $first.</strong></p>
+<p lang="ja"><strong>このリリースのドキュメントはありません。ドキュメントは $first から始まります。</strong></p></div><ul id="tl">
 EOF
 for t in $tags; do echo "<li><a href=\"$t/\">$t</a></li>"; done
 cat <<EOF
 </ul>
 <script>
+/* A path that looks like a release tag (v<number>...) gets the "no docs for this release" message. */
+if(/(^|\/)v\d/.test(location.pathname))document.getElementById("notag").hidden=false;
 /* On github.io project pages the first path segment is the repo; make links absolute to it so they work at any depth. */
 if(/\.github\.io$/.test(location.hostname)){var b="/"+location.pathname.split("/")[1]+"/";
 Array.prototype.forEach.call(document.querySelectorAll("a"),function(a){a.setAttribute("href",b+a.getAttribute("href"));});}

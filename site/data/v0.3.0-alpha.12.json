@@ -20,8 +20,8 @@
     "ja": "CLI コマンド"
    },
    "simple": {
-    "en": "One binary with run, serve, doctor, healthcheck, acp, export, scaffold, quickstart and sessions.",
-    "ja": "1 つのバイナリで run、serve、doctor、healthcheck、acp、export、scaffold、quickstart、sessions を提供します。"
+    "en": "One binary with run, serve, doctor, acp, export, scaffold, quickstart and sessions.",
+    "ja": "1 つのバイナリに run、serve、doctor、acp、export、scaffold、quickstart、sessions があります。"
    },
    "detail": [
     {
@@ -50,13 +50,6 @@
        {
         "en": "Diagnose config and provider reachability, using the same load path as run.",
         "ja": "run と同じ読み込み経路で、設定とプロバイダへの到達性を診断します。"
-       }
-      ],
-      [
-       "rakitsu healthcheck",
-       {
-        "en": "Probe a running serve at /healthz. Exit 0 if all monitors are healthy, otherwise 1.",
-        "ja": "稼働中の serve の /healthz を確認します。全モニターが正常なら終了コード 0、それ以外は 1 です。"
        }
       ],
       [
@@ -193,6 +186,27 @@
        }
       ],
       [
+       "--max-cost USD",
+       {
+        "en": "Abort the run if total cost goes over this USD amount. Overrides the config value.",
+        "ja": "合計コストがこの USD の金額を超えたら実行を中止します。設定ファイルの値より優先されます。"
+       }
+      ],
+      [
+       "--max-tokens N",
+       {
+        "en": "Override max output tokens for all agents and orchestrators (0 keeps the config value). Raise it for reasoning models, whose hidden reasoning tokens share the same budget.",
+        "ja": "すべてのエージェントとオーケストレーターの最大出力トークン数を上書きします (0 なら設定の値のまま)。推論モデルでは、見えない推論トークンも同じ予算を使うため、大きくしてください。"
+       }
+      ],
+      [
+       "--attach FILE",
+       {
+        "en": "Attach a local image file to the query. Repeatable. The resolved agent needs vision: true.",
+        "ja": "クエリにローカルの画像ファイルを添付します。複数回指定できます。使うエージェントに vision: true が必要です。"
+       }
+      ],
+      [
        "-v, --verbose",
        {
         "en": "Verbose output (root persistent flag).",
@@ -244,9 +258,72 @@
      ]
     },
     {
+     "t": "h",
+     "en": "Other command flags",
+     "ja": "その他のコマンドのフラグ"
+    },
+    {
+     "t": "kv",
+     "head": [
+      "Flag",
+      "Description"
+     ],
+     "rows": [
+      [
+       "doctor --json",
+       {
+        "en": "Print findings as JSON instead of text.",
+        "ja": "結果をテキストではなく JSON で出力します。"
+       }
+      ],
+      [
+       "export --output DIR",
+       {
+        "en": "Output directory. Default ./<format>-export/.",
+        "ja": "出力先ディレクトリ。既定は ./<format>-export/ です。"
+       }
+      ],
+      [
+       "export --with-blueprint",
+       {
+        "en": "Also write blueprint.yaml (for NVIDIA catalog contributions).",
+        "ja": "blueprint.yaml も書き出します (NVIDIA カタログへの投稿用)。"
+       }
+      ],
+      [
+       "sessions --limit N",
+       {
+        "en": "Maximum number of sessions to list. Default 20.",
+        "ja": "一覧に出すセッションの最大数。既定は 20。"
+       }
+      ],
+      [
+       "sessions --resumable",
+       {
+        "en": "Show only sessions that have a resumable checkpoint.",
+        "ja": "再開できるチェックポイントがあるセッションだけを表示します。"
+       }
+      ],
+      [
+       "sessions live",
+       {
+        "en": "List live chat sessions registered with the hub. A session must set settings.session_msg.enabled to accept messages.",
+        "ja": "ハブに登録されたライブのチャットセッションを一覧します。メッセージを受けるには settings.session_msg.enabled が必要です。"
+       }
+      ],
+      [
+       "sessions send <session-id> <text>",
+       {
+        "en": "Send a fire-and-forget message into a live session. Success means the message was queued, not that the agent replied.",
+        "ja": "ライブのセッションにメッセージを送ります。送りっぱなしで、成功はキューに入ったことを示し、エージェントの返答は待ちません。"
+       }
+      ]
+     ]
+    },
+    {
      "t": "p",
-     "en": "healthcheck takes --url (default http://localhost:9100/healthz) and --timeout (default 5s). The ui command is a deprecated alias for serve. The license command exists in pro builds only.",
-     "ja": "healthcheck は --url (既定 http://localhost:9100/healthz) と --timeout (既定 5s) を取ります。ui コマンドは serve の非推奨エイリアスです。license コマンドは pro ビルドのみにあります。"
+     "en": "The ui command is a deprecated alias for serve.",
+     "ja": "ui コマンドは serve の非推奨エイリアスです。"
     }
    ]
   },
@@ -299,8 +376,8 @@
       [
        "settings",
        {
-        "en": "Global settings: providers, defaults, execution, retry, memory, spawn, wake, and more.",
-        "ja": "グローバル設定。プロバイダ、既定値、実行、リトライ、memory、spawn、wake など。"
+        "en": "Global settings: providers, defaults, execution, retry, memory, spawn, and more.",
+        "ja": "グローバル設定。プロバイダ、既定値、実行、リトライ、memory、spawn など。"
        }
       ],
       [
@@ -318,10 +395,10 @@
        }
       ],
       [
-       "workflows / monitors / healthz",
+       "workflows",
        {
-        "en": "Pre-configured workflows, autostarted monitors, health endpoint tuning.",
-        "ja": "事前定義ワークフロー、自動起動モニター、ヘルスエンドポイントの調整。"
+        "en": "Pre-configured workflows.",
+        "ja": "あらかじめ設定したワークフロー。"
        }
       ]
      ]
@@ -392,8 +469,8 @@
       [
        "timeout_seconds",
        {
-        "en": "Per-child timeout.",
-        "ja": "子エージェントごとのタイムアウト。"
+        "en": "Per-child timeout. Default 300 seconds.",
+        "ja": "子ごとのタイムアウト。既定は 300 秒。"
        }
       ]
      ]
@@ -426,8 +503,8 @@
       [
        "type",
        {
-        "en": "openai, anthropic, gemini, codex, ollama.",
-        "ja": "openai、anthropic、gemini、codex、ollama。"
+        "en": "openai, anthropic, gemini, codex, ollama, litellm.",
+        "ja": "openai、anthropic、gemini、codex、ollama、litellm。"
        }
       ],
       [
@@ -485,13 +562,6 @@
         "en": "none, minimal, low, medium, high. Sent on every OpenAI request; GPT-5.6 models require it with tools.",
         "ja": "none、minimal、low、medium、high。OpenAI へのすべてのリクエストで送信します。GPT-5.6 系はツール使用時に必須です。"
        }
-      ],
-      [
-       "client_version",
-       {
-        "en": "Codex only. Dotted numeric, default 1.0.0.",
-        "ja": "Codex のみ。ドット区切りの数値。既定 1.0.0。"
-       }
       ]
      ]
     },
@@ -537,8 +607,8 @@
       [
        "mcp_server",
        {
-        "en": "Tools from an MCP server. transport: stdio or http. max_response_bytes default 1 MiB.",
-        "ja": "MCP サーバーのツール。transport は stdio または http。max_response_bytes の既定は 1 MiB。"
+        "en": "Tools from an MCP server. transport: stdio or http. A single response is capped at about 1 MiB; the limit is not configurable.",
+        "ja": "MCP サーバーのツール。transport は stdio または http。1 回の応答は約 1 MiB が上限で、変更はできません。"
        }
       ],
       [
@@ -905,386 +975,6 @@
    ]
   },
   {
-   "id": "wake",
-   "name": {
-    "en": "Wake timer",
-    "ja": "ウェイクタイマー"
-   },
-   "simple": {
-    "en": "A server clock runs cheap checks on a schedule and wakes the agent only when something changes. Experimental.",
-    "ja": "サーバー側のタイマーが軽量なチェックを定期実行し、変化があったときだけエージェントを起こします。実験的機能です。"
-   },
-   "detail": [
-    {
-     "t": "p",
-     "en": "Lives in a long-running rakitsu serve chat session. Checks use zero model calls. A normal agent turn starts in the same session only when a check reports a change or alarm. The rolling summary, per-session JSONL and resume_id survive restarts.",
-     "ja": "長時間稼働する rakitsu serve のチャットセッション内で動作します。チェックはモデル呼び出しを使いません。チェックが変化またはアラームを報告したときだけ、同じセッションで通常のエージェントターンが始まります。ローリング要約、セッションごとの JSONL、resume_id は再起動後も保持されます。"
-    },
-    {
-     "t": "h",
-     "en": "Tiers",
-     "ja": "階層"
-    },
-    {
-     "t": "ul",
-     "items": [
-      {
-       "en": "L0, free tick: runs checks, outcome quiet, changed, alarm or unknown.",
-       "ja": "L0 (無料ティック): チェックを実行し、結果は quiet、changed、alarm、unknown。"
-      },
-      {
-       "en": "L1, optional judge: config-only in v1; no judge call is made.",
-       "ja": "L1 (任意の judge): v1 では設定のみで、judge の呼び出しは行われません。"
-      },
-      {
-       "en": "L2, agent turn: a full ReAct loop in the same session, with a [TIMER-SOURCED TURN] message.",
-       "ja": "L2 (エージェントターン): [TIMER-SOURCED TURN] メッセージとともに、同じセッションで完全な ReAct ループを実行します。"
-      }
-     ]
-    },
-    {
-     "t": "kv",
-     "head": [
-      "Key (settings.wake)",
-      "Default",
-      "Description"
-     ],
-     "rows": [
-      [
-       "enabled",
-       "false",
-       {
-        "en": "Opt-in. Refused with cli, fs, mcp_server or a2a tools, or if any agent lacks a system_prompt.",
-        "ja": "オプトイン。cli、fs、mcp_server、a2a ツールがある場合、またはシステムプロンプトのないエージェントがある場合は拒否されます。"
-       }
-      ],
-      [
-       "interval_seconds",
-       "60",
-       {
-        "en": "Base tick interval.",
-        "ja": "基本のティック間隔。"
-       }
-      ],
-      [
-       "backoff_factor",
-       "1.5",
-       {
-        "en": "Multiplier after each quiet tick.",
-        "ja": "静かなティックのたびに掛ける倍率。"
-       }
-      ],
-      [
-       "min_interval_seconds",
-       "30",
-       {
-        "en": "Floor, must be at least 10.",
-        "ja": "下限。10 以上が必要。"
-       }
-      ],
-      [
-       "max_interval_seconds",
-       "600",
-       {
-        "en": "Cap after backoff.",
-        "ja": "バックオフ後の上限。"
-       }
-      ],
-      [
-       "jitter_percent",
-       "10",
-       {
-        "en": "Random variance per tick, 0 to 50.",
-        "ja": "ティックごとのランダムなばらつき。0 から 50。"
-       }
-      ],
-      [
-       "max_turns_per_hour",
-       "6",
-       {
-        "en": "Hard cap on L2 turns; excess is suppressed as hourly_cap.",
-        "ja": "L2 ターンの厳格な上限。超過分は hourly_cap として抑止されます。"
-       }
-      ],
-      [
-       "turn_timeout_seconds",
-       "180",
-       {
-        "en": "Timeout for an L2 turn.",
-        "ja": "L2 ターンのタイムアウト。"
-       }
-      ],
-      [
-       "kill_switch_file",
-       "~/.rakitsu/wake/STOP",
-       {
-        "en": "If present, the loop stops.",
-        "ja": "存在するとループが停止します。"
-       }
-      ],
-      [
-       "heartbeat_stale_seconds",
-       "180",
-       {
-        "en": "Supervisor contract: older heartbeat means stale.",
-        "ja": "監視側との取り決め。これより古いハートビートは stale とみなします。"
-       }
-      ],
-      [
-       "allow.paths / allow.url_hosts",
-       "[]",
-       {
-        "en": "Confinement for checks. Paths stay inside the workdir; hosts are validated at load.",
-        "ja": "チェックの閉じ込め設定。パスは作業ディレクトリ内、ホストは読み込み時に検証されます。"
-       }
-      ],
-      [
-       "secret_env",
-       "[]",
-       {
-        "en": "Env var names only; resolved at session start. A missing name fails Start.",
-        "ja": "環境変数名のみ。セッション開始時に解決され、存在しない名前があると Start が失敗します。"
-       }
-      ]
-     ]
-    },
-    {
-     "t": "h",
-     "en": "Check types",
-     "ja": "チェックの種類"
-    },
-    {
-     "t": "kv",
-     "head": [
-      "Type",
-      "Description"
-     ],
-     "rows": [
-      [
-       "file_mtime",
-       {
-        "en": "Alarm if the file was not modified within max_age_seconds.",
-        "ja": "max_age_seconds 以内に更新されていなければアラーム。"
-       }
-      ],
-      [
-       "file_contains",
-       {
-        "en": "Alarm when the file contains the given text.",
-        "ja": "ファイルに指定の文字列が含まれていればアラーム。"
-       }
-      ],
-      [
-       "http_status",
-       {
-        "en": "GET a url and compare with expect.",
-        "ja": "url に GET し、expect と比較します。"
-       }
-      ],
-      [
-       "http_json",
-       {
-        "en": "GET, read a number at a dotted field, apply alarm_if (for example below).",
-        "ja": "GET して、ドット区切りの field にある数値を読み、alarm_if (例: below) を適用します。"
-       }
-      ]
-     ]
-    },
-    {
-     "t": "p",
-     "en": "Limits: file checks are read-only, 64 KiB max. HTTP checks are GET-only, 64 KiB max response, validated hosts only. Consecutive alarms without a state change are suppressed (single_flight). rakitsu acp cannot run wake timers; use serve.",
-     "ja": "制限: ファイルチェックは読み取り専用で最大 64 KiB。HTTP チェックは GET のみ、レスポンス最大 64 KiB、検証済みホストのみ。状態が変わらない連続アラームは抑止されます (single_flight)。rakitsu acp ではウェイクタイマーは使えません。serve を使ってください。"
-    },
-    {
-     "t": "h",
-     "en": "start_task",
-     "ja": "start_task"
-    },
-    {
-     "t": "p",
-     "en": "With settings.wake.allow.configs, a woken session gets start_task and get_task_status to launch independent task runs from an allowlist. The prompt is a fixed task text plus declared params (enum, path, bounded int). Caps: max_tasks_per_hour 10, max_concurrent_tasks 3, task_timeout_seconds 300, cancel_on_stop true. Full results go to a 0600 log; the session sees a status and at most 300 characters.",
-     "ja": "settings.wake.allow.configs を設定すると、起こされたセッションは start_task と get_task_status を使い、許可リストにある独立したタスクを起動できます。プロンプトは固定のタスク文と、宣言済みのパラメータ (enum、path、上限付き int) だけで構成されます。上限: max_tasks_per_hour 10、max_concurrent_tasks 3、task_timeout_seconds 300、cancel_on_stop true。完全な結果は権限 0600 のログに書かれ、セッションには状態と最大 300 文字だけが見えます。"
-    },
-    {
-     "t": "h",
-     "en": "Control and events",
-     "ja": "制御とイベント"
-    },
-    {
-     "t": "ul",
-     "items": [
-      {
-       "en": "GET /api/chat/{id}/wake/status; POST .../wake/stop, .../wake/resume. Resume returns 409 while the kill-switch file exists. Stop is idempotent and keeps the session open.",
-       "ja": "GET /api/chat/{id}/wake/status、POST .../wake/stop、.../wake/resume。キルスイッチファイルが残っている間、resume は 409 を返します。stop は冪等で、セッションは開いたままです。"
-      },
-      {
-       "en": "Events: WAKE_TICK, WAKE_ESCALATE, WAKE_TASK_START, WAKE_TASK_END. Quiet ticks emit nothing.",
-       "ja": "イベント: WAKE_TICK、WAKE_ESCALATE、WAKE_TASK_START、WAKE_TASK_END。静かなティックは何も出力しません。"
-      },
-      {
-       "en": "Files under ~/.rakitsu/wake/: audit.jsonl, state.json, heartbeat per session, plus the STOP file.",
-       "ja": "~/.rakitsu/wake/ 配下のファイル: セッションごとの audit.jsonl、state.json、heartbeat と、STOP ファイル。"
-      }
-     ]
-    }
-   ]
-  },
-  {
-   "id": "monitors",
-   "name": {
-    "en": "Monitors, healthz and alerts",
-    "ja": "モニター、healthz、アラート"
-   },
-   "simple": {
-    "en": "serve can autostart wake sessions from a monitors block, report health at /healthz, and send alerts. Experimental.",
-    "ja": "serve は monitors ブロックからウェイクセッションを自動起動し、/healthz で状態を返し、アラートを送れます。実験的機能です。"
-   },
-   "detail": [
-    {
-     "t": "p",
-     "en": "rakitsu serve --config monitor.yaml starts every entry in monitors: as a session named monitor-<id>. The id is stable, so a restart resumes the same session. A supervisor such as Docker, systemd or launchd only needs to restart one process.",
-     "ja": "rakitsu serve --config monitor.yaml は monitors: の各項目を monitor-<id> という名前のセッションとして起動します。id は固定なので、再起動すると同じセッションが再開されます。Docker、systemd、launchd などの監視役は、1 つのプロセスを再起動するだけで済みます。"
-    },
-    {
-     "t": "code",
-     "text": "monitors:\n  - id: btc-price\n    config: ./monitors/btc-price.yaml   # must set settings.wake.enabled: true\n    workdir: ./monitors/btc-price\n    env_refs: [OPENAI_API_KEY, ALERT_WEBHOOK_URL]\nhealthz:\n  monitors_start_grace_seconds: 120\n  healthz_fail_on_stopped: true\n  healthz_allow_remote: false"
-    },
-    {
-     "t": "kv",
-     "head": [
-      "Key",
-      "Default",
-      "Description"
-     ],
-     "rows": [
-      [
-       "monitors[].id / config / workdir",
-       "",
-       {
-        "en": "Session id suffix, monitor config path, working directory.",
-        "ja": "セッション id の接尾辞、モニター設定のパス、作業ディレクトリ。"
-       }
-      ],
-      [
-       "monitors[].env_refs",
-       "",
-       {
-        "en": "Env var names only. Values never go in YAML.",
-        "ja": "環境変数名のみ。値は YAML に書きません。"
-       }
-      ],
-      [
-       "healthz.monitors_start_grace_seconds",
-       "120",
-       {
-        "en": "Grace period while monitors start.",
-        "ja": "モニター起動中の猶予時間。"
-       }
-      ],
-      [
-       "healthz.healthz_fail_on_stopped",
-       "true",
-       {
-        "en": "Report stopped monitors as unhealthy.",
-        "ja": "停止中のモニターを異常として報告します。"
-       }
-      ],
-      [
-       "healthz.healthz_allow_remote",
-       "false",
-       {
-        "en": "Default allows loopback callers only.",
-        "ja": "既定ではループバックからの呼び出しのみ許可します。"
-       }
-      ]
-     ]
-    },
-    {
-     "t": "h",
-     "en": "Health",
-     "ja": "ヘルス"
-    },
-    {
-     "t": "p",
-     "en": "GET /healthz returns 200 when every monitor is ok, otherwise 503. States: ok, stale, stopped, failed, starting. Docker uses rakitsu healthcheck. systemd uses WatchdogSec with sd_notify (NOTIFY_SOCKET).",
-     "ja": "GET /healthz は全モニターが ok なら 200、それ以外は 503 を返します。状態は ok、stale、stopped、failed、starting。Docker では rakitsu healthcheck を使い、systemd では sd_notify (NOTIFY_SOCKET) を用いた WatchdogSec を使います。"
-    },
-    {
-     "t": "h",
-     "en": "Alerts (settings.wake.alerts)",
-     "ja": "アラート (settings.wake.alerts)"
-    },
-    {
-     "t": "p",
-     "en": "The agent calls the send_alert tool, which only queues a message. The server delivers it to allow-listed hosts, with redaction and a rate cap.",
-     "ja": "エージェントは send_alert ツールを呼びますが、これはメッセージをキューに入れるだけです。サーバーが、マスキングとレート制限を適用したうえで、許可リストにあるホストへ配信します。"
-    },
-    {
-     "t": "kv",
-     "head": [
-      "Key",
-      "Default",
-      "Description"
-     ],
-     "rows": [
-      [
-       "rate_per_hour",
-       "20",
-       {
-        "en": "Per sink.",
-        "ja": "シンクごと。"
-       }
-      ],
-      [
-       "retry.max_attempts / backoff_seconds",
-       "3 / 5",
-       {
-        "en": "Maximum 5 and 60.",
-        "ja": "上限はそれぞれ 5 と 60。"
-       }
-      ],
-      [
-       "sinks[].type",
-       "",
-       {
-        "en": "webhook or ntfy.",
-        "ja": "webhook または ntfy。"
-       }
-      ],
-      [
-       "sinks[].url_env",
-       "",
-       {
-        "en": "Name of the env var holding the URL.",
-        "ja": "URL を保持する環境変数の名前。"
-       }
-      ],
-      [
-       "sinks[].allow_hosts",
-       "",
-       {
-        "en": "Host allow-list.",
-        "ja": "ホストの許可リスト。"
-       }
-      ],
-      [
-       "sinks[].min_severity",
-       "warn",
-       {
-        "en": "info, warn or critical.",
-        "ja": "info、warn、critical。"
-       }
-      ]
-     ]
-    },
-    {
-     "t": "p",
-     "en": "Status: timer logic is tested with a fake clock. A live multi-day run is in progress and not yet proven.",
-     "ja": "状況: タイマーのロジックは偽の時計でテスト済みです。数日間の実運用での検証は進行中で、まだ実証されていません。"
-    }
-   ]
-  },
-  {
    "id": "hub",
    "name": {
     "en": "Hub, web UI and debugger",
@@ -1368,13 +1058,6 @@
        {
         "en": "A2A v1.0.1 endpoint plus agent-card discovery, for delegating to a named agent in another rakitsu process.",
         "ja": "A2A v1.0.1 エンドポイントとエージェントカードによる検出。別の rakitsu プロセスの名前付きエージェントへ委譲できます。"
-       }
-      ],
-      [
-       "/healthz",
-       {
-        "en": "Monitor health, see Monitors.",
-        "ja": "モニターの状態。「モニター」を参照。"
        }
       ]
      ]
