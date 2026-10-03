@@ -12,6 +12,11 @@ Links: every section, row and diagram item has a stable id. A deep link is `#<la
 
 Rule: ids are never renamed. Add new ids; if one must go, keep it working as an alias (see ALIAS in app.js).
 
-Add a release tag: create `data/<tag>.json` (fields `tag`, `commit` from `git rev-parse <tag>^{commit}`, `docsGenerated`, `meta`, `features`; copy a placeholder file as a start), then add the tag to `versions` in `data/versions.json`.
+Add a release tag: create `data/<tag>.json` (fields `tag`, `commit` (see below), `docsGenerated`, `meta`, `features`; copy a placeholder file as a start), then add the tag to `versions` in `data/versions.json`.
+
+Fill `commit` from the PUBLIC repo with `git ls-remote --tags <public-remote> 'refs/tags/<tag>^{}'` (the peeled commit).
+Never take it from a local `git rev-parse` in a checkout that also has the internal remote: tag names can be shared and point at different commits.
+
+Optional check: `scripts/build-pages.sh --verify-tags <git-remote-or-url> [outdir]` runs `git ls-remote --tags` against that remote and fails if any data file's `commit` differs from the peeled tag commit. Without the flag the build uses no network.
 
 Tests (start the server first, or run `tests/run-all.sh`, which starts and stops it): `node site/tests/validate.mjs` (data, ids, parser), `node site/tests/functional.mjs` (Play/Step, captions), `node site/tests/ui.mjs` (links, hash, screenshots).
