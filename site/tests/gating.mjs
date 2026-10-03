@@ -48,9 +48,9 @@ withFixture = true;
   for (const id of GATED) ok(s.ids.includes(id), WITH + ' fixture indexes ' + id);
   ok(s.dom.includes('wake'), WITH + ' fixture has wake section'); ok(s.text.includes('wake timer'), WITH + ' fixture teaches wake', s.text.length);
   ok(s.note === null && p.__errs.length === 0, WITH + ' no gate note, no errors'); }
-{ // dead link on a real tag, fixture available: offer targets the fixture tag and works
+{ // dead link on a real tag, fixture listed first: the offer prefers the default release (it has wake), not the fixture
   const p = await open(WITHOUT[0], 'en', '#en.wake');
-  ok(await p.evaluate(f => { const a = document.querySelector('#gatenote a'); return !!a && a.textContent.includes(f); }, FIX), 'offer names a tag that has wake');
+  ok(await p.evaluate(f => { const a = document.querySelector('#gatenote a'); return !!a && a.textContent.includes(f); }, vj.default), 'offer names the default tag, which has wake');
   await p.locator('#gatenote a').click(); await p.waitForTimeout(500); const s = await snap(p);
   ok(s.dom.includes('wake') && s.note === null && p.__errs.length === 0, 'offer link switches to a tag that has wake', p.__errs); }
 withFixture = false;
