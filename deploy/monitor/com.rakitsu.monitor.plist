@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.rakitsu.monitor</string>
+  <!-- launchd has no env file: the wrapper reads ~/.rakitsu/monitor.env and execs rakitsu. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/rakitsu-monitor-wrapper.sh</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+  <key>StandardOutPath</key>
+  <string>/usr/local/var/log/rakitsu-monitor.log</string>
+  <key>StandardErrorPath</key>
+  <string>/usr/local/var/log/rakitsu-monitor.err.log</string>
+</dict>
+</plist>

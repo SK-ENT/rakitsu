@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import type { AgentEvent, AgentEndPayload, StructuredThought, ToolCallStartPayload, ToolCallEndPayload, ReflectionEndPayload, GroundCheckEndPayload, PipelineStartPayload, PipelineStepStartPayload, PipelineStepEndPayload, AgentHandoffPayload, AgentMessagePayload, RetryAttemptPayload, ContextCompressedPayload, RetrievalInjectedPayload, SalvagedOutputPayload, WorkerRedelegationBlockedPayload, RollbackPayload } from '../../types';
+import type { AgentEvent, AgentEndPayload, StructuredThought, ToolCallStartPayload, ToolCallEndPayload, ReflectionEndPayload, GroundCheckEndPayload, PipelineStartPayload, PipelineStepStartPayload, PipelineStepEndPayload, AgentHandoffPayload, AgentMessagePayload, RetryAttemptPayload, ContextCompressedPayload, RetrievalInjectedPayload, SalvagedOutputPayload, WorkerRedelegationBlockedPayload, RollbackPayload, WakeTickPayload, WakeEscalatePayload } from '../../types';
 
 const props = defineProps<{
   event: AgentEvent;
@@ -46,6 +46,10 @@ const eventIcon = computed(() => {
     case 'MEMORY_RECALL': return '🔎';
     case 'SESSION_MSG_SENT': return '↪';
     case 'SESSION_MSG_RECEIVED': return '↩';
+    case 'WAKE_TICK': return '⏱';
+    case 'WAKE_ESCALATE': return '⏰';
+    case 'WAKE_TASK_START': return '▶';
+    case 'WAKE_TASK_END': return '■';
     default: return '📌';
   }
 });
@@ -178,6 +182,20 @@ const redelegationBlockedData = computed((): WorkerRedelegationBlockedPayload | 
 const rollbackData = computed((): RollbackPayload | null => {
   if (props.event.event_type === 'ROLLBACK') {
     return props.event.payload as unknown as RollbackPayload;
+  }
+  return null;
+});
+
+const wakeTickData = computed((): WakeTickPayload | null => {
+  if (props.event.event_type === 'WAKE_TICK') {
+    return props.event.payload as unknown as WakeTickPayload;
+  }
+  return null;
+});
+
+const wakeEscalateData = computed((): WakeEscalatePayload | null => {
+  if (props.event.event_type === 'WAKE_ESCALATE') {
+    return props.event.payload as unknown as WakeEscalatePayload;
   }
   return null;
 });
@@ -462,6 +480,54 @@ function toggleExpand() {
         </div>
       </div>
 
+      <!-- Wake Tick Display -->
+      <div v-else-if="wakeTickData" class="wake-tick-content">
+        <div class="wake-tick-header">
+          <span class="wake-tick-badge">Tick #{{ wakeTickData.tick }}</span>
+          <span class="wake-outcome-badge" :class="wakeTickData.outcome">{{ wakeTickData.outcome }}</span>
+          <span class="wake-summary-badge">summary {{ wakeTickData.summary_chars }}/{{ wakeTickData.summary_cap }}</span>
+        </div>
+        <div v-if="wakeTickData.interval_seconds" class="wake-tick-interval">
+          <label>Interval:</label>
+          <span>{{ wakeTickData.interval_seconds }}s</span>
+        </div>
+        <div v-if="wakeTickData.results && wakeTickData.results.length > 0" class="wake-results">
+          <label>Results:</label>
+          <ul>
+            <li v-for="(result, idx) in wakeTickData.results" :key="idx" class="wake-result-item">
+              <span class="result-name">{{ result.name }}</span>
+              <span class="result-status" :class="result.status">{{ result.status }}</span>
+              <span v-if="result.detail" class="result-detail">{{ result.detail }}</span>
+              <span v-if="result.label" class="result-label">{{ result.label }}</span>
+            </li>
+          </ul>
+        </div>
+        <div v-if="wakeTickData.note" class="wake-note">
+          <label>Note:</label>
+          <p>{{ wakeTickData.note }}</p>
+        </div>
+        <div v-if="wakeTickData.result" class="wake-result-status">
+          <label>Result:</label>
+          <span :class="wakeTickData.result">{{ wakeTickData.result }}</span>
+        </div>
+      </div>
+
+      <!-- Wake Escalate Display -->
+      <div v-else-if="wakeEscalateData" class="wake-escalate-content">
+        <div class="wake-escalate-header">
+          <span class="wake-escalate-badge">Wake turn</span>
+          <span class="escalate-level-badge">{{ wakeEscalateData.level }}</span>
+          <span :class="wakeEscalateData.result ? 'wake-result-' + wakeEscalateData.result : ''">
+            {{ wakeEscalateData.result ?? (wakeEscalateData.suppressed ? 'suppressed: ' + wakeEscalateData.suppressed : wakeEscalateData.deferred ? 'deferred' : 'queued') }}
+          </span>
+          <span class="wake-summary-badge">summary {{ wakeEscalateData.summary_chars }}/{{ wakeEscalateData.summary_cap }}</span>
+        </div>
+        <div class="wake-escalate-reason">
+          <label>Reason:</label>
+          <p>{{ wakeEscalateData.reason }}</p>
+        </div>
+      </div>
+
       <!-- Default Payload Display -->
       <div v-else class="payload-content">
         <pre>{{ formattedPayload }}</pre>
@@ -498,6 +564,10 @@ function toggleExpand() {
 .event-MEMORY_RECALL { border-left-color: #a78bfa; }
 .event-SESSION_MSG_SENT { border-left-color: #38bdf8; }
 .event-SESSION_MSG_RECEIVED { border-left-color: #38bdf8; }
+.event-WAKE_TICK { border-left-color: #a78bfa; }
+.event-WAKE_ESCALATE { border-left-color: #f59e0b; }
+.event-WAKE_TASK_START { border-left-color: #34d399; }
+.event-WAKE_TASK_END { border-left-color: #10b981; }
 .event-THOUGHT_START { border-left-color: #ff9800; }
 .event-THOUGHT_END { border-left-color: #ff5722; }
 .event-TOOL_CALL_START { border-left-color: #00bcd4; }
@@ -1109,5 +1179,171 @@ pre {
   font-size: 10px;
   color: var(--text-secondary, #666);
   font-style: italic;
+}
+
+.wake-tick-content,
+.wake-escalate-content {
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+.wake-tick-header,
+.wake-escalate-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.wake-tick-badge,
+.wake-escalate-badge,
+.wake-outcome-badge,
+.escalate-level-badge,
+.wake-summary-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.wake-tick-badge {
+  background: #a78bfa;
+  color: white;
+}
+
+.wake-escalate-badge {
+  background: #f59e0b;
+  color: white;
+}
+
+.wake-outcome-badge {
+  background: #e0e7ff;
+  color: #4f46e5;
+}
+
+.wake-outcome-badge.alarm {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.wake-outcome-badge.changed {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.escalate-level-badge {
+  background: #f59e0b;
+  color: white;
+}
+
+.wake-summary-badge {
+  background: #f3e8ff;
+  color: #7e22ce;
+}
+
+.wake-tick-interval,
+.wake-escalate-reason {
+  margin: 6px 0;
+}
+
+.wake-tick-interval label,
+.wake-escalate-reason label {
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.wake-results {
+  margin: 8px 0;
+}
+
+.wake-results label {
+  font-weight: 600;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.wake-result-item {
+  list-style: none;
+  padding: 4px 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.result-name {
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+}
+
+.result-status {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+  font-size: 10px;
+  background: #e0e7ff;
+  color: #4f46e5;
+}
+
+.result-status.alarm {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.result-status.ok {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.result-status.unknown {
+  background: #f3e8ff;
+  color: #7e22ce;
+}
+
+.result-detail,
+.result-label {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.wake-note {
+  margin: 6px 0;
+}
+
+.wake-note label {
+  font-weight: 600;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.wake-note p {
+  margin: 0;
+  font-size: 10px;
+}
+
+.wake-result-status {
+  margin: 6px 0;
+}
+
+.wake-result-status label {
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.wake-result-timeout {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.wake-result-done {
+  color: #16a34a;
+  font-weight: 600;
+}
+
+.wake-result-error {
+  color: #dc2626;
+  font-weight: 600;
 }
 </style>

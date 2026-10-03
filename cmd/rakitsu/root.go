@@ -49,6 +49,7 @@ Quick start:
   rakitsu quickstart                        Interactive wizard — no YAML needed
   rakitsu serve                             Start the web UI + monitoring hub
   rakitsu doctor agent.yaml                 Check config + provider health
+  rakitsu healthcheck                       Probe a running serve's /healthz (exit 0 = healthy)
 
   Progressive sample configs (single-file and modular) live under
   examples/ in the repo — see examples/README.md.

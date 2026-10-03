@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/SK-ENT/rakitsu/internal/config"
 	"github.com/SK-ENT/rakitsu/internal/debug"
 	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	"github.com/google/uuid"
 )
 
 // RunFunc is the signature of executeConfig from cmd/rakitsu/run.go.
@@ -27,6 +27,7 @@ type RunFunc func(
 	debugCtrl *debug.DebugController,
 	query string,
 	registrar func([]debug.Attachable),
+	conv *ConvTurn,
 ) (string, error)
 
 // ─── JSON-RPC types ───────────────────────────────────────────────────────────
@@ -76,6 +77,13 @@ const protocolVersion = 1
 // than a per-request client override — but a configured value still wins,
 // see promptTimeout below.
 const defaultPromptTimeout = 300 * time.Second
+
+// maxLineSize is the maximum size of a single JSON-RPC line (request or
+// notification). A client sending a line larger than this is DoS or malicious;
+// the server rejects it with a -32600 (invalid request) error and continues.
+// This prevents unbounded memory consumption from clients sending huge lines
+// without newlines (bufio.Reader.ReadString has no built-in limit).
+const maxLineSize = 16 << 20 // 16 MiB
 
 // promptTimeout resolves the duration that bounds one session/prompt turn.
 // Precedence: an explicit override (the process's --timeout flag, see
@@ -149,6 +157,16 @@ func (s *Server) SetTimeoutOverride(seconds int) {
 	s.timeoutOverride = &seconds
 }
 
+// SetSessionRetention bounds how many sessions the server remembers and how
+// long an unused one lingers (see sessionMap). A value <= 0 disables that
+// bound; in-flight sessions are never evicted.
+func (s *Server) SetSessionRetention(maxSessions int, idleTTL time.Duration) {
+	s.sessions.mu.Lock()
+	s.sessions.maxSessions = maxSessions
+	s.sessions.idleTTL = idleTTL
+	s.sessions.mu.Unlock()
+}
+
 // NewServerWithIO creates an ACP server with injected I/O (for testing).
 func NewServerWithIO(cfg *config.Config, runFunc RunFunc, in io.Reader, out io.Writer) *Server {
 	return &Server{
@@ -157,6 +175,61 @@ func NewServerWithIO(cfg *config.Config, runFunc RunFunc, in io.Reader, out io.W
 		in:       in,
 		out:      out,
 		sessions: newSessionMap(),
+	}
+}
+
+// boundedLineReader reads newline-delimited lines from r, enforcing a maximum
+// line size to prevent DoS from clients sending huge lines without newlines.
+// It maintains state across calls and returns lines and errors the way
+// bufio.Reader.ReadString does, except it rejects lines over maxLineSize with
+// io.ErrUnexpectedEOF (distinguishable from EOF, so callers can report it).
+type boundedLineReader struct {
+	r       *bufio.Reader
+	maxSize int
+}
+
+func newBoundedLineReader(r io.Reader, maxSize int) *boundedLineReader {
+	return &boundedLineReader{
+		r:       bufio.NewReader(r),
+		maxSize: maxSize,
+	}
+}
+
+// readLine returns the next newline-delimited line (including the '\n'),
+// or io.ErrUnexpectedEOF if the line exceeds maxSize before a newline is found.
+func (br *boundedLineReader) readLine() (string, error) {
+	var line strings.Builder
+	for {
+		if line.Len() > br.maxSize {
+			// Line has exceeded the limit; reject it.
+			// Read and discard until we find the newline to clean up the stream.
+			for {
+				b, err := br.r.ReadByte()
+				if err != nil {
+					if err == io.EOF {
+						// Oversized line ended at EOF with no newline: still
+						// report it as too long, not as a clean end of input.
+						return "", io.ErrUnexpectedEOF
+					}
+					return "", err
+				}
+				if b == '\n' {
+					return "", io.ErrUnexpectedEOF // Signal line-too-long
+				}
+			}
+		}
+		b, err := br.r.ReadByte()
+		if err != nil {
+			if line.Len() > 0 {
+				// Return accumulated line with the error.
+				return line.String(), err
+			}
+			return "", err
+		}
+		line.WriteByte(b)
+		if b == '\n' {
+			return line.String(), nil
+		}
 	}
 }
 
@@ -179,16 +252,13 @@ func (s *Server) Run(ctx context.Context, in io.Reader, out io.Writer) error {
 	// instead of blocking forever on a synchronous read when in stays open.
 	readDone := make(chan error, 1)
 	go func() {
-		// bufio.Reader.ReadString has no fixed per-line size ceiling, unlike
-		// the bufio.Scanner + fixed buffer this replaces: a single line over
-		// that buffer's size (plausible for session/prompt's prompt field,
-		// which could carry a pasted diff) made Scan() return false
-		// permanently with bufio.ErrTooLong — Scanner cannot recover after
-		// that, so the loop exited and Run returned silently, dropping every
-		// subsequent request for the life of the process.
-		reader := bufio.NewReader(s.in)
+		// boundedLineReader enforces maxLineSize to prevent DoS from clients
+		// sending huge lines without newlines. Unlike bufio.Scanner (which dies
+		// permanently on oversized lines), the bounded reader rejects the line
+		// with ErrUnexpectedEOF and continues accepting new requests.
+		reader := newBoundedLineReader(s.in, maxLineSize)
 		for {
-			line, err := reader.ReadString('\n')
+			line, err := reader.readLine()
 			trimmed := bytesTrimNewline(line)
 			if len(trimmed) > 0 {
 				var req acpRequest
@@ -222,6 +292,10 @@ func (s *Server) Run(ctx context.Context, in io.Reader, out io.Writer) error {
 			if err != nil {
 				if err == io.EOF {
 					readDone <- nil
+				} else if err == io.ErrUnexpectedEOF {
+					// Line exceeded maxLineSize — reject with -32600 and continue.
+					s.writeError(json.RawMessage("null"), -32600, "request line exceeds maximum size")
+					continue
 				} else {
 					readDone <- err
 				}
@@ -399,11 +473,15 @@ func (s *Server) handlePrompt(ctx context.Context, req acpRequest) {
 		return
 	}
 
-	sess, ok := s.sessions.get(params.SessionID)
-	if !ok {
+	sess, release := s.sessions.acquire(params.SessionID)
+	if sess == nil {
 		s.writeError(req.ID, -32001, "session not found: "+params.SessionID)
 		return
 	}
+	// Pinned until this call returns: startTurn only marks the session busy
+	// later, and eviction must not take it in between (or during the
+	// post-turn summary fold).
+	defer release()
 
 	textParts := make([]string, 0, len(params.Prompt))
 	for _, block := range params.Prompt {
@@ -415,7 +493,14 @@ func (s *Server) handlePrompt(ctx context.Context, req acpRequest) {
 		textParts = append(textParts, block.Text)
 	}
 	query := strings.Join(textParts, "\n\n")
-	composedQuery := sess.composeQuery(query)
+	conv := s.convFor(sess)
+	var convTurn *ConvTurn
+	composedQuery := query
+	if conv != nil {
+		convTurn = &ConvTurn{History: conv.compose()}
+	} else {
+		composedQuery = sess.composeQuery(query)
+	}
 
 	var runCtx context.Context
 	var cancel context.CancelFunc
@@ -484,12 +569,12 @@ func (s *Server) handlePrompt(ctx context.Context, req acpRequest) {
 			cleanupEvents()
 			cancel()
 			sess.endTurn()
-			sess.recordTurn(query, fmt.Sprintf("[error: agent panic: %v]", p))
+			s.recordTurn(sess, conv, query, fmt.Sprintf("[error: agent panic: %v]", p))
 			s.writeError(req.ID, -32000, fmt.Sprintf("agent panic: %v", p))
 		}
 	}()
 
-	result, runErr := s.runFunc(runCtx, s.cfg, eventBus, nil, composedQuery, nil)
+	result, runErr := s.runFunc(runCtx, s.cfg, eventBus, nil, composedQuery, nil, convTurn)
 
 	cleanupEvents()
 	cancel()
@@ -500,12 +585,12 @@ func (s *Server) handlePrompt(ctx context.Context, req acpRequest) {
 	case runErr != nil && wasCancelled:
 		// Cancellation isn't a failure — real ACP has no generic "error"
 		// StopReason, only this one for the cancel case.
-		sess.recordTurn(query, "[cancelled]")
+		s.recordTurn(sess, conv, query, "[cancelled]")
 		s.writeResponse(req.ID, promptResult{StopReason: "cancelled"})
 	case runErr != nil:
 		// No StopReason value fits a generic failure — signal it as a
 		// request error instead, same as the panic-recovery path above.
-		sess.recordTurn(query, fmt.Sprintf("[error: %v]", runErr))
+		s.recordTurn(sess, conv, query, fmt.Sprintf("[error: %v]", runErr))
 		s.writeError(req.ID, -32000, runErr.Error())
 	default:
 		// v1 has no ACP field for the final answer text separate from the
@@ -530,9 +615,10 @@ func (s *Server) handlePrompt(ctx context.Context, req acpRequest) {
 				},
 			})
 		}
-		sess.recordTurn(query, result)
+		s.recordTurn(sess, conv, query, result)
 		s.writeResponse(req.ID, promptResult{StopReason: "end_turn"})
 	}
+	s.foldConversation(ctx, conv, convTurn)
 }
 
 // ─── session/cancel ───────────────────────────────────────────────────────────

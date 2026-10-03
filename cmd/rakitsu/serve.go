@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -56,6 +57,8 @@ Hub API endpoints:
   GET  /api/hub/commands     CLI polls for debug commands
   POST /api/hub/debug        UI sends debug commands to CLI
   GET  /events               SSE stream
+  GET  /healthz              Monitor health: 200 if all monitors ok, else 503
+  GET  /api/chat/{id}/wake/status   Wake session status (POST wake/stop, wake/resume)
 
 Examples:
   rakitsu serve                          # Start on default port (9100)
@@ -73,6 +76,7 @@ func init() {
 	serveCmd.Flags().StringVar(&serveHost, "host", "localhost", "Host to bind to (non-loopback requires RAKITSU_API_TOKEN — see docs/SECURITY.md)")
 	serveCmd.Flags().IntVar(&mcpPort, "mcp-port", 0, "Start MCP HTTP server on this port (requires --config)")
 	serveCmd.Flags().StringVar(&mcpConfig, "config", "", "YAML config for MCP server and A2A endpoint")
+	serveCmd.Flags().StringVar(&sessionsDirFlag, "sessions-dir", "", sessionsDirFlagHelp)
 	serveCmd.Flags().StringVar(&serveConfigDir, "config-dir", "", "Extra directory to scan for agent configs in the UI")
 }
 
@@ -85,6 +89,21 @@ func startServe() {
 	}
 
 	addr := fmt.Sprintf("%s:%d", serveHost, servePort)
+
+	// Load the serve config early: it may carry the monitors block.
+	var serveCfg *config.Config
+	if mcpConfig != "" {
+		var dropped string
+		var err error
+		serveCfg, dropped, err = server.LoadServeConfig(mcpConfig)
+		if err != nil {
+			log.Fatalf("rakitsu serve: cannot load config %q: %v", mcpConfig, err)
+		}
+		if dropped != "" {
+			log.Printf("rakitsu serve: monitors block rejected, starting with no monitors: %s", dropped)
+		}
+	}
+	var monitorMgr *server.MonitorManager
 
 	eventBus := telemetry.NewEventBus(1024)
 	sseServer := server.NewSSEServer(eventBus, serveHost, servePort)
@@ -99,7 +118,7 @@ func startServe() {
 
 	// Session store — history browsing and run recording
 	var sessionStore *store.SessionStore
-	if ss, err := store.NewSessionStore(); err != nil {
+	if ss, err := openSessionStore(serveCfg); err != nil {
 		log.Printf("Warning: session history unavailable: %v (sessions won't be saved)", err)
 	} else {
 		sessionStore = ss
@@ -144,6 +163,20 @@ func startServe() {
 			return createLLMProvider(ctx, cfg, providerName, model, mc)
 		})
 		sseServer.SetChatManager(chatMgr)
+		if serveCfg != nil && len(serveCfg.Monitors) > 0 {
+			monitorMgr = server.NewMonitorManager(chatMgr, configStore, serveCfg.Monitors)
+			sseServer.SetMonitorLister(monitorMgr)
+		}
+		if serveCfg != nil {
+			sseServer.SetHealthzConfig(serveCfg.Healthz)
+		}
+		// Stop monitors before stopping chat sessions so wake loops have time to
+		// gracefully shut down and flush state before cleanup.
+		if monitorMgr != nil {
+			defer func() {
+				monitorMgr.Stop(context.Background())
+			}()
+		}
 		defer chatMgr.StopAll()
 	}
 
@@ -151,11 +184,6 @@ func startServe() {
 
 	// MCP + A2A (optional, requires --config)
 	if mcpConfig != "" {
-		serveCfg, err := config.Load(mcpConfig)
-		if err != nil {
-			log.Fatalf("rakitsu serve: cannot load config %q: %v", mcpConfig, err)
-		}
-
 		if mcpPort > 0 {
 			mcpCtx := context.Background()
 			registry := createToolRegistry(mcpCtx, serveCfg)
@@ -183,12 +211,31 @@ func startServe() {
 		log.Printf("A2A agent card at http://%s/.well-known/agent-card.json", addr)
 	}
 
-	srv := &http.Server{
-		Addr:         addr,
-		Handler:      server.GuardMiddleware(serveHost, server.CorsMiddleware(server.AuthMiddleware(mux))),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 0,
-		IdleTimeout:  60 * time.Second,
+	srv := newServeHTTPServer(addr, server.GuardMiddleware(serveHost, server.CorsMiddleware(server.AuthMiddleware(mux))))
+
+	if monitorMgr != nil {
+		// Start monitors only after the listener is up, in the background.
+		monitorCtx, monitorCancel := context.WithCancel(context.Background())
+		defer monitorCancel()
+		go func() {
+			if err := waitListening(addr, 10*time.Second); err != nil {
+				log.Printf("monitors: server not listening, starting anyway: %v", err)
+			}
+			monitorMgr.Autostart(monitorCtx)
+		}()
+	}
+
+	// Start systemd watchdog notifications if NOTIFY_SOCKET is set.
+	// Readiness is announced and watchdog heartbeats are sent at half the
+	// configured watchdog timeout interval (if any).
+	if _, ok := os.LookupEnv("NOTIFY_SOCKET"); ok {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go server.RunSDNotify(ctx, func() bool {
+			// Healthy when the server is still running.
+			// A more sophisticated health check could query monitorMgr here.
+			return srv.Handler != nil
+		})
 	}
 
 	go func() {
@@ -211,4 +258,32 @@ func startServe() {
 		log.Printf("Shutdown error: %v", err)
 	}
 	log.Println("Hub stopped")
+}
+
+// waitListening polls until addr accepts TCP connections or the timeout passes.
+func waitListening(addr string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		c, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
+		if err == nil {
+			c.Close()
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// newServeHTTPServer builds the main hub http.Server. ReadTimeout bounds
+// slow-body clients; WriteTimeout stays 0 because SSE streams are long-lived.
+func newServeHTTPServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{
+		Addr:         addr,
+		Handler:      h,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 0,
+		IdleTimeout:  60 * time.Second,
+	}
 }

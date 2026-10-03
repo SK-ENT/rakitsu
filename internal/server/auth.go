@@ -94,7 +94,7 @@ func TokenConfigured() bool {
 func requiresAuth(r *http.Request) bool {
 	p := r.URL.Path
 	switch p {
-	case "/health", "/api/status":
+	case "/health", "/healthz", "/api/status":
 		// Liveness and version/boot-id only; nothing user- or run-specific.
 		return false
 	case "/.well-known/agent-card.json":

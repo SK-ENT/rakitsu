@@ -488,7 +488,7 @@ func TestBuildCommand_ArgvSplit_RejectedOnShellWrapperPayloadSlot(t *testing.T) 
 	// 2. Setting argv_split: true on that parameter must be rejected, not
 	// silently mis-split: sh -c would otherwise receive only the value's
 	// first word as its script, turning every later word into a $0/$1/...
-	// positional parameter, while the B20 blocklist lint (which only
+	// positional parameter, while the shell-wrapper blocklist lint (which only
 	// inspects cmd[2]) would validate just that truncated first word.
 	def := &config.ToolDefinition{
 		Name:    "sh-tool",
@@ -590,7 +590,7 @@ func TestBuildCommand_ArgvSplit_RejectedOnTemplatedInterpreter(t *testing.T) {
 }
 
 func TestBuildCommand_ShellPayloadBlocklistLint_RecognizesFullPathWrapper(t *testing.T) {
-	// Same full-path normalization gap, but in the pre-existing B20
+	// Same full-path normalization gap, but in the pre-existing shell-wrapper
 	// blocklist lint itself (found alongside the argv_split guard's
 	// version of this bug): a `/bin/sh -c '...'` payload containing a
 	// blocked command must still be caught, not just a bare `sh -c '...'`.
@@ -606,7 +606,7 @@ func TestBuildCommand_ShellPayloadBlocklistLint_RecognizesFullPathWrapper(t *tes
 		"args": "echo hi; rm -rf /tmp/whatever",
 	})
 	if err == nil {
-		t.Fatal("expected the B20 lint to catch a blocked command behind /bin/sh -c, got none")
+		t.Fatal("expected the blocklist lint to catch a blocked command behind /bin/sh -c, got none")
 	}
 	if !strings.Contains(err.Error(), "rm") {
 		t.Errorf("error should mention the blocked command, got: %v", err)
@@ -1149,7 +1149,7 @@ func TestExecute_ContextCancelled(t *testing.T) {
 }
 
 // ============================================================
-// B20 regression — shell-wrapper command templates
+// shell-wrapper regression — shell-wrapper command templates
 // ============================================================
 
 func TestSplitCommand_SimpleWhitespace(t *testing.T) {
@@ -1196,7 +1196,7 @@ func TestSplitCommand_NestedDoubleQuotesInSingle(t *testing.T) {
 }
 
 func TestBuildCommand_ShellWrapperPlaceholder(t *testing.T) {
-	// B20 regression: confirm that {{args}} substitution happens on the
+	// shell-wrapper regression: confirm that {{args}} substitution happens on the
 	// shell payload slot (not on the split pieces of the payload).
 	def := &config.ToolDefinition{
 		Name:    "git-shell",
@@ -1228,7 +1228,7 @@ func TestBuildCommand_ShellWrapperPlaceholder(t *testing.T) {
 }
 
 func TestIsCommandAllowed_ShAndBashInWhitelist(t *testing.T) {
-	// B20: sh and bash must be in the system whitelist so that
+	// shell-wrapper: sh and bash must be in the system whitelist so that
 	// `sh -c '...'` command templates work as documented.
 	tool := newTool("sh", nil)
 	if !tool.isCommandAllowed("sh") {
@@ -1240,7 +1240,7 @@ func TestIsCommandAllowed_ShAndBashInWhitelist(t *testing.T) {
 }
 
 func TestBuildCommand_ShellPayloadBlocklistLint(t *testing.T) {
-	// B20 mitigation: when the shell payload (after {{args}} substitution)
+	// shell-wrapper mitigation: when the shell payload (after {{args}} substitution)
 	// contains a blocked command name as a standalone token, reject it.
 	def := &config.ToolDefinition{
 		Name:    "git-shell",
@@ -1419,7 +1419,7 @@ func TestStress_ConcurrentSecurityChecks(t *testing.T) {
 }
 
 // ============================================================
-// B15 regression — cli tool output truncation
+// output-truncation regression — cli tool output truncation
 // ============================================================
 
 func TestTruncateOutput_BelowCap(t *testing.T) {

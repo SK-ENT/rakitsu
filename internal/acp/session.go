@@ -7,6 +7,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -43,6 +44,9 @@ type Session struct {
 	cancel    context.CancelFunc // set for the duration of the in-flight session/prompt call; nil when idle
 	cancelled bool               // sticky for the current/just-finished turn; cleared by the next startTurn
 	history   []promptTurn       // recorded session/prompt turns, oldest first
+	conv      *sessionConv       // settings.memory.conversation state; nil until first engaged turn (see conversation.go)
+	pins      int                // lookups held by in-progress handlePrompt calls; pinned sessions are never evicted
+	lastUsed  time.Time          // last add/get/touch; drives sessionMap eviction
 }
 
 // promptTurn is one session/prompt request/response pair, recorded so a
@@ -54,6 +58,20 @@ type promptTurn struct {
 
 func newSession(id string) *Session {
 	return &Session{ID: id}
+}
+
+func (s *Session) touch(t time.Time) {
+	s.mu.Lock()
+	s.lastUsed = t
+	s.mu.Unlock()
+}
+
+// activity reports when the session was last used and whether a prompt is
+// in flight.
+func (s *Session) activity() (time.Time, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastUsed, s.cancel != nil || s.pins > 0
 }
 
 // startTurn attempts to arm the session for a new in-flight session/prompt
@@ -182,28 +200,120 @@ func truncateHistoryText(s string) string {
 	return s
 }
 
-// sessionMap is a thread-safe registry of known sessions. Sessions live for
-// the lifetime of the server process in v1 — there is no polling method to
-// race against deletion the way the old agent/status did, so nothing needs
-// to prune this map yet.
+const (
+	// defaultMaxSessions caps how many sessions one serve process retains.
+	defaultMaxSessions = 256
+	// defaultSessionIdleTTL is how long a session may sit unused before it
+	// becomes evictable.
+	defaultSessionIdleTTL = 24 * time.Hour
+)
+
+// sessionMap is a thread-safe registry of known sessions with bounded
+// retention. Eviction is lazy (runs inside add, no background goroutine):
+// sessions idle longer than idleTTL go first, then, if still over
+// maxSessions, the least recently used idle ones. A session with an
+// in-flight prompt is never evicted, so the cap can be exceeded temporarily
+// when every session is busy. maxSessions/idleTTL <= 0 disable that bound.
 type sessionMap struct {
-	mu   sync.Mutex
-	data map[string]*Session
+	mu          sync.Mutex
+	data        map[string]*Session
+	now         func() time.Time
+	maxSessions int
+	idleTTL     time.Duration
 }
 
 func newSessionMap() *sessionMap {
-	return &sessionMap{data: make(map[string]*Session)}
+	return &sessionMap{
+		data:        make(map[string]*Session),
+		now:         time.Now,
+		maxSessions: defaultMaxSessions,
+		idleTTL:     defaultSessionIdleTTL,
+	}
 }
 
 func (m *sessionMap) add(s *Session) {
 	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := m.now()
+	s.touch(now)
 	m.data[s.ID] = s
-	m.mu.Unlock()
+	m.evictLocked(now, s.ID)
 }
 
+// get returns the session and refreshes its idle clock.
 func (m *sessionMap) get(id string) (*Session, bool) {
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	s, ok := m.data[id]
-	m.mu.Unlock()
+	if ok {
+		s.touch(m.now())
+	}
 	return s, ok
+}
+
+// acquire is get plus a pin taken under the same map lock, so no eviction can
+// slip between lookup and the session being marked in flight by startTurn.
+// The caller must call release (typically via defer) when done. Returns nil,
+// nil if the session does not exist.
+func (m *sessionMap) acquire(id string) (*Session, func()) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.data[id]
+	if !ok {
+		return nil, nil
+	}
+	now := m.now()
+	s.mu.Lock()
+	s.pins++
+	s.lastUsed = now
+	s.mu.Unlock()
+	var once sync.Once
+	return s, func() {
+		once.Do(func() {
+			s.mu.Lock()
+			s.pins--
+			s.mu.Unlock()
+		})
+	}
+}
+
+func (m *sessionMap) len() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.data)
+}
+
+// evictLocked drops expired, then excess, idle sessions. keep is never
+// evicted (the session just added). Caller holds m.mu.
+func (m *sessionMap) evictLocked(now time.Time, keep string) {
+	if m.idleTTL > 0 {
+		for id, s := range m.data {
+			if id == keep {
+				continue
+			}
+			if last, busy := s.activity(); !busy && now.Sub(last) > m.idleTTL {
+				delete(m.data, id)
+			}
+		}
+	}
+	for m.maxSessions > 0 && len(m.data) > m.maxSessions {
+		var victim string
+		var oldest time.Time
+		for id, s := range m.data {
+			if id == keep {
+				continue
+			}
+			last, busy := s.activity()
+			if busy {
+				continue
+			}
+			if victim == "" || last.Before(oldest) {
+				victim, oldest = id, last
+			}
+		}
+		if victim == "" {
+			return // everything left is in flight
+		}
+		delete(m.data, victim)
+	}
 }

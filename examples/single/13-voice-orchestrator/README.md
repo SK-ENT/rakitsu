@@ -71,8 +71,8 @@ Four rakitsu-side dispatch mechanisms were surveyed before picking one:
 
 **Result: zero new rakitsu core code.** This example is entirely a new
 external bridge script + a worker config, reusing `serve`'s existing HTTP
-surface as-is — the same "keep the volatile part external" pattern a
-media-generation shell script would follow, just dispatching to a full rakitsu
+surface as-is — the same "keep the volatile part external" pattern as
+`12-media-generation`'s shell script, just dispatching to a full rakitsu
 agent instead of a one-off `cli` tool call.
 
 ## What's here
@@ -114,8 +114,7 @@ agent instead of a one-off `cli` tool call.
   system-role conversation item so the model reports it naturally;
   replies starting with "no action needed" stay silent. Model/endpoint/
   token names are all env vars, never hardcoded as the only option.
-- `bridge/voice_bridge_local.py` — the local, turn-based variant
-  (turn-based, with automatic voice-activity detection). Not a
+- `bridge/voice_bridge_local.py` — the local, turn-based variant. Not a
   realtime duplex connection like the two bridges above — still turn-based
   transcription, no word-by-word streaming — but turn boundaries are now
   found automatically with **Silero VAD** (ONNX variant) instead of a
@@ -136,7 +135,7 @@ agent instead of a one-off `cli` tool call.
   loop available with no VAD and no barge-in.
 - `bridge/gemini_tts_test.py` — a standalone probe for Gemini's *dedicated*
   TTS models (`gemini-3.8-flash-lite-tts` / `gemini-3.8-flash-tts`,
-  shipped September 2026), not a bridge and not wired to rakitsu at all. It's
+  shipped 2026-09-23), not a bridge and not wired to rakitsu at all. It's
   for exploring single-speaker style control and multi-speaker dialogue
   outside any realtime/conversational context. Uses the `:generateContent`
   request shape (not the newer `/v1beta/interactions` endpoint Google's
@@ -431,8 +430,8 @@ See `voice_bridge_local.py`'s module docstring for the full env var list
 
 **VAD timing/barge-in feel not live-tested with a real microphone/speaker
 as of this writing** — the underlying turn-based push-to-talk path
-was live-tested and works end-to-end; what's new
-here (the auto-VAD turn detection and playback-interrupt behavior)
+was live-tested 2026-09-28/29 and works end-to-end; what's new here (the
+auto-VAD turn detection and playback-interrupt behavior)
 has only been verified via `py_compile`, `--help`/`--list-voices` running
 cleanly without faster-whisper/silero-vad/Piper installed, and a read-through
 of the VAD/threading/interrupt logic for the usual bug classes (races
@@ -517,7 +516,7 @@ barge-in) are about the WebSocket/audio path, unchanged by that switch:
    `rakitsu serve` session, and `session_msg.enabled: true` grants the
    worker a `send_message` tool it would otherwise use to (uselessly)
    "reply" instead of answering inline. This dispatch mechanism was later
-   replaced by A2A `SendMessage`/`GetTask` once `SendMessage` became asynchronous; the bugs it
+   replaced by asynchronous A2A `SendMessage`/`GetTask`; the bugs it
    caught (and the "always answer inline, never send_message" system
    prompt rule they led to) remain valid history.
 2. **WebSocket connection and session setup** against OpenAI's real
@@ -576,7 +575,7 @@ report it back as an issue.
 natural fit for this kind of async dispatch. That was a deliberate call
 at first — rakitsu's A2A server handler was synchronous, so switching to
 it would've bought nothing (see "Background" above). That gap was fixed
-at the rakitsu core level (`cmd/rakitsu/a2a_serve.go`):
+at the rakitsu core level:
 `SendMessage` runs asynchronously and `CancelTask` genuinely stops an
 in-flight run — and all three bridges here now dispatch via A2A
 (`POST /a2a` `SendMessage` + poll `GetTask`, through the shared
@@ -616,7 +615,7 @@ external script:
   (`/a2a`) HTTP API; the volatile realtime-voice surface (WebSocket
   protocol, audio codec, session config, transcript-driven monitoring)
   lives entirely in an external script, same pattern as
-  an external `cli` tool would.
+  `12-media-generation`'s external `cli` tool.
 - Transcript monitoring, not model-driven tool calling, as the dispatch
   trigger: the realtime model has zero tools and never decides whether to
   dispatch — every non-trivial completed user transcript is checked
@@ -631,7 +630,7 @@ external script:
 ## Testing status summary
 
 - **OpenAI bridge (`voice_bridge.py`)** — live-tested end to end with
-  real spoken conversations including a fixed interrupt/
+  real spoken conversations, including a fixed interrupt/
   barge-in path. One known remaining gap: no `conversation.item.truncate`
   call, so the model's own history can misremember what it actually said
   after being cut off mid-sentence (see "Live-tested" above).

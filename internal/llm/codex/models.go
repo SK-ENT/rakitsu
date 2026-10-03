@@ -12,6 +12,11 @@ import (
 	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
+// DefaultClientVersion is the default Codex backend client version used when
+// querying the model catalog. The backend filters newer models (e.g., gpt-6.1-sol,
+// gpt-6-luna) for older versions, so this must be current to expose the full model list.
+const DefaultClientVersion = "1.0.0"
+
 // ModelInfo is the subset of the Codex model catalog entry rakitsu shows.
 type ModelInfo struct {
 	Slug        string `json:"slug"`
@@ -21,7 +26,8 @@ type ModelInfo struct {
 
 // ListModels fetches the model catalog the subscription backend offers this
 // login. config.CredentialsFile and config.BaseURL are honored like in
-// NewProvider; config.Model is not needed.
+// NewProvider; config.Model is not needed. config.ClientVersion overrides
+// the default version sent in the /models request.
 func ListModels(ctx context.Context, config *llm.ProviderConfig) ([]ModelInfo, error) {
 	authPath := config.CredentialsFile
 	if authPath == "" {
@@ -31,12 +37,16 @@ func ListModels(ctx context.Context, config *llm.ProviderConfig) ([]ModelInfo, e
 	if config.BaseURL != "" {
 		baseURL = config.BaseURL
 	}
+	clientVersion := DefaultClientVersion
+	if config.ClientVersion != "" {
+		clientVersion = config.ClientVersion
+	}
 	client := &http.Client{Timeout: 15 * time.Second}
 	access, account, err := newTokenSource(authPath).token(ctx, client)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(baseURL, "/")+"/models?client_version=0.0.0", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(baseURL, "/")+"/models?client_version="+clientVersion, nil)
 	if err != nil {
 		return nil, fmt.Errorf("codex: build models request: %w", err)
 	}

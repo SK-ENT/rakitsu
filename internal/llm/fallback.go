@@ -49,7 +49,24 @@ func (f *FallbackProvider) Generate(
 
 	var lastErr error
 	for i := start; i < len(f.providers); i++ {
-		result, err := f.providers[i].Generate(ctx, systemPrompt, history, tools)
+		candidateHistory := history
+		if hasAudioInput(history) {
+			preparer, ok := f.providers[i].(InputPreparer)
+			if !ok {
+				lastErr = fmt.Errorf("provider %q cannot accept or prepare audio input", f.providers[i].GetName())
+				continue
+			}
+			var err error
+			candidateHistory, err = preparer.PrepareInput(ctx, history)
+			if err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return nil, err
+				}
+				lastErr = err
+				continue
+			}
+		}
+		result, err := f.providers[i].Generate(ctx, systemPrompt, candidateHistory, tools)
 		if err == nil {
 			return result, nil
 		}
@@ -58,14 +75,29 @@ func (f *FallbackProvider) Generate(
 		// but not for a caller-side context cancellation/timeout, which says
 		// nothing about this provider's health and shouldn't demote it.
 		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-			f.mu.Lock()
-			if f.current == i {
-				f.current = i + 1
-			}
-			f.mu.Unlock()
+			f.advance(i)
 		}
 	}
 	return nil, fmt.Errorf("all providers failed; last error: %w", lastErr)
+}
+
+func (f *FallbackProvider) advance(i int) {
+	f.mu.Lock()
+	if f.current == i {
+		f.current = i + 1
+	}
+	f.mu.Unlock()
+}
+
+func hasAudioInput(history []Message) bool {
+	for _, msg := range history {
+		for _, block := range msg.Content {
+			if block.Type == ContentTypeAudio {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // GetName returns a descriptive name listing all provider names.

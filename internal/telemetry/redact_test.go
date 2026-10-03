@@ -556,7 +556,7 @@ func TestSetExtraRedactKeywords_CustomKeyword_RedactsStructuredArg(t *testing.T)
 		ToolName:   "cli",
 		Arguments: map[string]interface{}{
 			"internal_project_code": "hunter2",
-			"note":                   "fine",
+			"note":                  "fine",
 		},
 	})
 	out := RedactEventPayload(EventToolCallStart, payload)

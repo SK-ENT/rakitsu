@@ -64,6 +64,10 @@ export type EventType =
    * message into its turn queue. Sender attribution is unverified.
    */
   | 'SESSION_MSG_RECEIVED'
+  | 'WAKE_TICK'
+  | 'WAKE_ESCALATE'
+  | 'WAKE_TASK_START'
+  | 'WAKE_TASK_END'
   /**
    * Final lifecycle marker written as the last line of a session JSONL by
    * SessionStore.EndSession. JSONL-only — never published to the EventBus,
@@ -363,6 +367,44 @@ export interface SessionMsgReceivedPayload {
    *  the queue was full; 'dropped_at_exit' = run ended first. Absent for
    *  ordinary chat deliveries. Backend: SessionMsgReceivedPayload.Status. */
   status?: 'injected' | 'dropped_overflow' | 'dropped_at_exit';
+}
+
+export interface WakeCheckResult {
+  name: string
+  status: 'ok' | 'alarm' | 'unknown'
+  detail?: string
+  label?: string
+}
+
+export interface WakeTickPayload {
+  tick: number
+  interval_seconds: number
+  results?: WakeCheckResult[]
+  outcome: 'quiet' | 'changed' | 'alarm' | 'unknown'
+  result?: 'killed' | 'degraded'
+  note?: string
+  summary_chars: number
+  summary_cap: number
+}
+
+export interface WakeEscalatePayload {
+  tick: number
+  reason: string
+  deferred?: boolean
+  suppressed?: 'hourly_cap' | 'single_flight' | 'degraded'
+  result?: 'timeout' | 'done' | 'error'
+  level: string
+  summary_chars: number
+  summary_cap: number
+}
+
+export interface WakeTaskPayload {
+  task_id?: string
+  config: string
+  status: 'started' | 'refused' | 'done' | 'error' | 'timeout' | 'cancelled'
+  reason?: string
+  args?: Record<string, string>
+  summary?: string
 }
 
 export interface DebugTreeNode {

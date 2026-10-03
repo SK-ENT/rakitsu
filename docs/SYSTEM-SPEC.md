@@ -1,6 +1,6 @@
 # Rakitsu System Specification
 
-**Version**: v0.3.0-alpha.3 (see `Makefile` `VERSION_CORE` / latest git tag for current)
+**Version**: v0.3.0-alpha.3-internal (see `Makefile` `VERSION_CORE` / latest git tag for current)
 **Stack**: Go 1.25 + Vue 3 / Vite 7 / TypeScript 5.9
 **Module**: `github.com/SK-ENT/rakitsu`
 
@@ -329,6 +329,7 @@ Start the SSE hub, web UI, runner, and debugger. Also serves an MCP server at `/
 | `--mcp-port N` | 0 (disabled) | Start the MCP HTTP server on this port (requires `--config`) |
 | `--config PATH` | — | YAML config to load tools/agents from, for the MCP server and A2A endpoint |
 | `--config-dir` | — | Extra directory to scan for agent configs in the UI |
+| `--sessions-dir PATH` | `~/.rakitsu/sessions` | Session file directory (also `settings.sessions_dir`). Running several instances: give each its own dir (and `settings.memory.dir`); see [configuration.md](configuration.md#running-isolated-instances). Also on `run` and `sessions`. |
 
 ### `rakitsu ui` — deprecated alias for `rakitsu serve`
 
@@ -1514,10 +1515,10 @@ make clean              # Remove build artifacts
 ```bash
 # Format: v{major}.{minor}.{patch}-alpha.{N}.{build}
 # ({build} is branch-aware: short commit hash on main, commit count elsewhere)
-make build VERSION=v0.3.0-alpha.3
+make build VERSION=v0.3.0-alpha.3-internal
 
 # Runtime output:
-rakitsu version v0.3.0-alpha.3.30132e9
+rakitsu version v0.3.0-alpha.3-internal.30132e9
 ```
 
 ### Project Structure

@@ -64,6 +64,15 @@ func NewSessionStore() (*SessionStore, error) {
 	return newSessionStoreAt(filepath.Join(home, ".rakitsu", "sessions"))
 }
 
+// NewSessionStoreAt creates a session store at an explicit directory (created
+// 0700 if missing). Use it to give each rakitsu instance its own session dir.
+func NewSessionStoreAt(dir string) (*SessionStore, error) {
+	return newSessionStoreAt(dir)
+}
+
+// Dir returns the directory this store reads and writes.
+func (s *SessionStore) Dir() string { return s.dir }
+
 // newSessionStoreAt creates a session store at dir. Session files hold
 // config snapshots and tool output, so the directory is owner-only (0700);
 // an existing, more open directory from an older version is tightened.

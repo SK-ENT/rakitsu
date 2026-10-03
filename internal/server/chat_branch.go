@@ -528,7 +528,7 @@ func (s *SSEServer) handleChatFork(w http.ResponseWriter, r *http.Request, sourc
 	opts.BuildFunc = s.chatManager.buildFunc
 	opts.ForwardBus = s.chatManager.hubBus
 	if s.chatManager.sessionStore != nil {
-		if ss, err := store.NewSessionStore(); err == nil {
+		if ss, err := store.NewSessionStoreAt(s.chatManager.sessionStore.Dir()); err == nil {
 			opts.SessionStore = ss
 		}
 	}

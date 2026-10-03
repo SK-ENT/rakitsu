@@ -506,7 +506,7 @@ func TestAgentCardHandler_URLFallsBackWhenHostEmpty(t *testing.T) {
 	}
 }
 
-// TestAgentCardHandler_SecuritySchemesWhenTokenConfigured covers issue #22
+// TestAgentCardHandler_SecuritySchemesWhenTokenConfigured covers the agent-card security schemes
 // item 3: docs/SECURITY.md justifies leaving the agent-card route
 // unauthenticated on the grounds a client can learn what auth is required
 // before authenticating — but the card conveyed nothing, so that claim
@@ -720,5 +720,271 @@ func TestA2ATaskStore_FinishAfterCancel(t *testing.T) {
 				t.Fatalf("stored cancellation changed: %+v", stored)
 			}
 		})
+	}
+}
+
+// ─── Red-team / abuse tests ──────────────────────────────────────────────────
+
+// Test_A2ASendMessage_OversizedBodyReturnsError verifies that a POST with a
+// 2 MB JSON body is rejected cleanly without panic.
+func Test_A2ASendMessage_OversizedBodyReturnsError(t *testing.T) {
+	var calls int32
+	handler := a2aHandlerFunc(testConfig(), func(ctx context.Context, cfg *config.Config, query string) (string, error) {
+		atomic.AddInt32(&calls, 1)
+		return "unexpected", nil
+	})
+	var panics int32
+	wrappedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if recover() != nil {
+				atomic.AddInt32(&panics, 1)
+				http.Error(w, "handler panicked", http.StatusInternalServerError)
+			}
+		}()
+		handler(w, r)
+	})
+
+	// Make the entire valid JSON request exactly 2 MiB.
+	prefix := `{"jsonrpc":"2.0","id":"oversized","method":"SendMessage","params":{"tenant":"Researcher","message":{"messageId":"m","role":"ROLE_USER","parts":[{"text":"`
+	suffix := `"}]}}}`
+	body := prefix + strings.Repeat("x", (2<<20)-len(prefix)-len(suffix)) + suffix
+	if len(body) != 2<<20 || !json.Valid([]byte(body)) {
+		t.Fatal("expected a valid, exactly 2 MiB JSON request")
+	}
+
+	srv := httptest.NewServer(wrappedHandler)
+	defer srv.Close()
+	client := srv.Client()
+	client.Timeout = 5 * time.Second
+	resp, err := client.Post(srv.URL, "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var out testA2AResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode rejection: %v", err)
+	}
+	if out.Error == nil || out.Error.Code != -32700 {
+		t.Fatalf("error = %+v, want JSON parse error (-32700)", out.Error)
+	}
+	if len(out.Result) != 0 {
+		t.Fatalf("rejected request returned a result: %s", out.Result)
+	}
+	if got := atomic.LoadInt32(&panics); got != 0 {
+		t.Fatalf("handler panicked %d times", got)
+	}
+	if got := atomic.LoadInt32(&calls); got != 0 {
+		t.Fatalf("rejected request invoked run %d times", got)
+	}
+}
+
+// Test_A2A_TaskStoreDoesNotGrowUnbounded verifies that flooding the store
+// with 600 SendMessage requests keeps the store size bounded at maxStoredA2ATasks.
+func Test_A2A_TaskStoreDoesNotGrowUnbounded(t *testing.T) {
+	store := newA2ATaskStore()
+	cfg := testConfig()
+	run := func(context.Context, *config.Config, string) (string, error) {
+		return "done", nil
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req srvA2ARequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode request: %v", err)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		writeResult := func(id json.RawMessage, result interface{}) {
+			if err := json.NewEncoder(w).Encode(srvA2AResponse{
+				JSONRPC: "2.0", ID: id, Result: result,
+			}); err != nil {
+				t.Errorf("encode result: %v", err)
+			}
+		}
+		writeErr := func(id json.RawMessage, code int, message string) {
+			if err := json.NewEncoder(w).Encode(srvA2AResponse{
+				JSONRPC: "2.0", ID: id,
+				Error: &srvA2ARPCErr{Code: code, Message: message},
+			}); err != nil {
+				t.Errorf("encode error: %v", err)
+			}
+		}
+		handleA2ASendMessage(r.Context(), cfg, run, store, req, writeResult, writeErr)
+	})
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+	client := srv.Client()
+	client.Timeout = 5 * time.Second
+
+	body := `{"jsonrpc":"2.0","id":"send","method":"SendMessage","params":{"tenant":"Researcher","message":{"messageId":"m","role":"ROLE_USER","parts":[{"text":"hi"}]}}}`
+	ids := make([]string, 0, 600)
+	for i := 0; i < 600; i++ {
+		resp, err := client.Post(srv.URL, "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("request %d: %v", i, err)
+		}
+		var out testA2AResponse
+		err = json.NewDecoder(resp.Body).Decode(&out)
+		resp.Body.Close()
+		if err != nil {
+			t.Fatalf("decode request %d: %v", i, err)
+		}
+		if out.Error != nil {
+			t.Fatalf("request %d RPC error: %+v", i, out.Error)
+		}
+		var result srvSendMessageResult
+		if err := json.Unmarshal(out.Result, &result); err != nil {
+			t.Fatalf("decode task %d: %v", i, err)
+		}
+		if result.Task == nil || result.Task.ID == "" {
+			t.Fatalf("request %d returned no task ID", i)
+		}
+		ids = append(ids, result.Task.ID)
+
+		store.mu.Lock()
+		n, orderLen := len(store.tasks), len(store.order)
+		store.mu.Unlock()
+		if n > maxStoredA2ATasks || orderLen > maxStoredA2ATasks {
+			t.Fatalf("request %d exceeded capacity: tasks=%d, order=%d", i, n, orderLen)
+		}
+	}
+
+	// Wait for background completion and cancel-function cleanup.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		store.mu.Lock()
+		settled := len(store.cancels) == 0
+		for _, task := range store.tasks {
+			settled = settled && task.Status.State == taskStateCompleted
+		}
+		store.mu.Unlock()
+		if settled {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("background tasks did not finish")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if len(store.tasks) != maxStoredA2ATasks || len(store.order) != maxStoredA2ATasks {
+		t.Fatalf("store size: tasks=%d, order=%d; want %d",
+			len(store.tasks), len(store.order), maxStoredA2ATasks)
+	}
+	for i, id := range ids {
+		_, found := store.tasks[id]
+		if want := i >= len(ids)-maxStoredA2ATasks; found != want {
+			t.Fatalf("task %d retained=%v, want %v", i, found, want)
+		}
+	}
+}
+
+// Test_A2A_RaceConditionCancelAndCompletion verifies that concurrent
+// CancelTask and task completion don't corrupt state.
+func Test_A2A_RaceConditionCancelAndCompletion(t *testing.T) {
+	store := newA2ATaskStore()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req srvA2ARequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode request: %v", err)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		writeResult := func(id json.RawMessage, result interface{}) {
+			if err := json.NewEncoder(w).Encode(srvA2AResponse{
+				JSONRPC: "2.0", ID: id, Result: result,
+			}); err != nil {
+				t.Errorf("encode result: %v", err)
+			}
+		}
+		writeErr := func(id json.RawMessage, code int, message string) {
+			if err := json.NewEncoder(w).Encode(srvA2AResponse{
+				JSONRPC: "2.0", ID: id,
+				Error: &srvA2ARPCErr{Code: code, Message: message},
+			}); err != nil {
+				t.Errorf("encode error: %v", err)
+			}
+		}
+		handleA2ACancelTask(store, req, writeResult, writeErr)
+	})
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+	client := srv.Client()
+	client.Timeout = 5 * time.Second
+
+	// Exercise both contenders repeatedly. Completion uses the same atomic
+	// finalization path as the background SendMessage goroutine.
+	for i := 0; i < 200; i++ {
+		store.put(&srvA2ATask{
+			ID: "task", ContextID: "context",
+			Status: srvA2AStatus{State: taskStateWorking},
+		})
+		start := make(chan struct{})
+		finished := make(chan bool, 1)
+		go func() {
+			<-start
+			_, ok := store.finishIfNotCanceled(
+				"task",
+				srvA2AStatus{State: taskStateCompleted},
+				[]srvA2AArtifact{{ArtifactID: "result", Parts: []srvA2APart{{Text: "done"}}}},
+			)
+			finished <- ok
+		}()
+
+		var out testA2AResponse
+		var requestErr error
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			resp, err := client.Post(srv.URL, "application/json", strings.NewReader(
+				`{"jsonrpc":"2.0","id":"cancel","method":"CancelTask","params":{"id":"task"}}`,
+			))
+			if err != nil {
+				requestErr = err
+				return
+			}
+			defer resp.Body.Close()
+			requestErr = json.NewDecoder(resp.Body).Decode(&out)
+		}()
+
+		close(start)
+		completionWon := <-finished
+		wg.Wait()
+		if requestErr != nil {
+			t.Fatalf("iteration %d: CancelTask: %v", i, requestErr)
+		}
+
+		final, found := store.get("task")
+		if !found || final.ID != "task" || final.ContextID != "context" {
+			t.Fatalf("iteration %d: task identity corrupted: %+v", i, final)
+		}
+		if completionWon {
+			if out.Error == nil || out.Error.Code != -32002 {
+				t.Fatalf("iteration %d: completion won, cancel error=%+v, want code -32002", i, out.Error)
+			}
+			if final.Status.State != taskStateCompleted ||
+				len(final.Artifacts) != 1 ||
+				len(final.Artifacts[0].Parts) != 1 ||
+				final.Artifacts[0].Parts[0].Text != "done" {
+				t.Fatalf("iteration %d: corrupted completed task: %+v", i, final)
+			}
+		} else {
+			if out.Error != nil {
+				t.Fatalf("iteration %d: cancellation won, error=%+v", i, out.Error)
+			}
+			var canceled srvA2ATask
+			if err := json.Unmarshal(out.Result, &canceled); err != nil {
+				t.Fatalf("iteration %d: decode canceled task: %v", i, err)
+			}
+			if canceled.Status.State != taskStateCanceled ||
+				final.Status.State != taskStateCanceled || len(final.Artifacts) != 0 {
+				t.Fatalf("iteration %d: cancellation overwritten: %+v", i, final)
+			}
+		}
 	}
 }

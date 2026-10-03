@@ -48,7 +48,7 @@ func TestConvertOpenAIDelta_EmptyReasoning(t *testing.T) {
 }
 
 // TestOnReasoningDeltaWiring_InlineThinkSurfacesAsStreamChunk documents the
-// B54 contract — the provider sets state.OnReasoningDelta to a closure that
+// Reasoning-delta contract — the provider sets state.OnReasoningDelta to a closure that
 // pushes a StreamChunk{Reasoning: …} for each inline-<think> body fragment.
 // This test reproduces the wiring exactly as GenerateStream does (without the
 // HTTP/SSE plumbing) so a future refactor that drops the OnReasoningDelta

@@ -1,0 +1,72 @@
+name: btc-watcher
+version: "1.0"
+description: Long-running BTC-USD watcher. A timer runs free checks; the model only wakes on a change.
+project_id: btc-watcher
+
+settings:
+  default_provider: litellm
+  providers:
+    litellm:
+      type: openai
+      api_key: ${LITELLM_API_KEY}
+      base_url: http://localhost:4000
+
+  memory:
+    enabled: true
+    conversation:
+      enabled: true
+      summary_max_chars: 1500
+
+  session_msg:
+    enabled: false
+
+  wake:
+    enabled: true
+    interval_seconds: 60
+    backoff_factor: 1.5
+    min_interval_seconds: 30
+    max_interval_seconds: 600
+    jitter_percent: 10
+    max_turns_per_hour: 6
+    turn_timeout_seconds: 180
+    kill_switch_file: ~/.rakitsu/wake/STOP
+    heartbeat_stale_seconds: 180
+    allow:
+      url_hosts:
+        - api.coingecko.com
+    secret_env: []
+    checks:
+      - name: btc-price
+        type: http_json
+        url: https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true
+        field: bitcoin.usd
+        alarm_if:
+          below: 55000
+        timeout_seconds: 10
+      - name: btc-label
+        type: http_json
+        url: https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true
+        field: bitcoin.usd_24h_change
+        label_band:
+          upper: 1.0
+          lower: -1.0
+          exit: 0.5
+        timeout_seconds: 10
+
+agents:
+  - name: watcher
+    role: worker
+    model: gpt-4o-mini
+    system_prompt: |
+      You are a market-watch reporter. You are woken by a timer, never by a person.
+      A message starting with [TIMER-SOURCED TURN] lists check results. Explain in
+      three short lines what changed (price alarm or bullish/bearish label flip).
+      End every reply with the line: Powered by CoinGecko
+      Do not give financial advice. You cannot clear or lower an alarm.
+    tools: []
+    max_iterations: 3
+
+orchestrator:
+  strategy: ReAct
+  agents:
+    - watcher

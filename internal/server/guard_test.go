@@ -32,8 +32,8 @@ func TestGuardMiddleware(t *testing.T) {
 		{"cross-site GET passes (CORS hides response)", "localhost", guardReq("GET", "localhost:9100", "https://evil.example"), 200},
 		{"dns rebinding host", "localhost", guardReq("POST", "evil.example:9100", ""), 403},
 		{"dns rebinding GET", "localhost", guardReq("GET", "evil.example:9100", ""), 403},
-		{"network bind, same-origin ui", "0.0.0.0", guardReq("POST", "192.168.1.5:9100", "http://192.168.1.5:9100"), 200},
-		{"network bind, csrf", "0.0.0.0", guardReq("POST", "192.168.1.5:9100", "https://evil.example"), 403},
+		{"network bind, same-origin ui", "0.0.0.0", guardReq("POST", "203.0.113.5:9100", "http://203.0.113.5:9100"), 200},
+		{"network bind, csrf", "0.0.0.0", guardReq("POST", "203.0.113.5:9100", "https://evil.example"), 403},
 	}
 	for _, c := range cases {
 		rec := httptest.NewRecorder()

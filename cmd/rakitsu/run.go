@@ -14,16 +14,18 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/SK-ENT/rakitsu/internal/acp"
 	"github.com/SK-ENT/rakitsu/internal/agent"
 	"github.com/SK-ENT/rakitsu/internal/chat"
 	"github.com/SK-ENT/rakitsu/internal/config"
 	"github.com/SK-ENT/rakitsu/internal/debug"
 	"github.com/SK-ENT/rakitsu/internal/llm"
-	"github.com/SK-ENT/rakitsu/internal/secret"
 	anthropicProvider "github.com/SK-ENT/rakitsu/internal/llm/anthropic"
 	codexProvider "github.com/SK-ENT/rakitsu/internal/llm/codex"
 	geminiProvider "github.com/SK-ENT/rakitsu/internal/llm/gemini"
 	openaiProvider "github.com/SK-ENT/rakitsu/internal/llm/openai"
+	"github.com/SK-ENT/rakitsu/internal/memory"
+	"github.com/SK-ENT/rakitsu/internal/secret"
 	"github.com/SK-ENT/rakitsu/internal/server"
 	"github.com/SK-ENT/rakitsu/internal/store"
 	"github.com/SK-ENT/rakitsu/internal/telemetry"
@@ -109,12 +111,14 @@ var (
 	maxTokensOverride  int
 	interactiveFlag    bool
 	attachPaths        []string
+	noAutoAttach       bool
 )
 
 func init() {
 	rootCmd.AddCommand(runCmd)
 	runCmd.Flags().IntVarP(&timeoutSeconds, "timeout", "t", defaultTimeoutSeconds, "total execution timeout in seconds, per turn in --interactive (unset or <=0 = no time limit, and agents without max_iterations then have no iteration cap; also via settings.execution.timeout_seconds)")
 	runCmd.Flags().IntVar(&idleTimeoutSeconds, "idle-timeout", 0, "cancel the run after N seconds with no streaming activity (0=disabled); a slow-but-progressing model never trips this")
+	runCmd.Flags().StringVar(&sessionsDirFlag, "sessions-dir", "", sessionsDirFlagHelp)
 	runCmd.Flags().BoolVar(&traceEnabled, "trace", false, "show real-time agent execution trace on stderr")
 	runCmd.Flags().IntVar(&debugPort, "debug-port", 0, "start debug SSE server on this port (e.g. 9100) for web UI inspector")
 	runCmd.Flags().StringVar(&hubURL, "hub", "http://localhost:9100", "SSE hub URL for event streaming")
@@ -128,7 +132,8 @@ func init() {
 	runCmd.Flags().StringVar(&modelOverride, "model", "", "override default model for all agents (e.g. gpt-4o, claude-sonnet-4-20250514)")
 	runCmd.Flags().IntVar(&maxTokensOverride, "max-tokens", 0, "override max output tokens for all agents/orchestrators (0=leave config value); raise this for reasoning models like gpt-5-nano, whose hidden reasoning tokens share the same budget as visible output")
 	runCmd.Flags().BoolVarP(&interactiveFlag, "interactive", "i", false, "run as interactive chat (overrides config interactive flag)")
-	runCmd.Flags().StringArrayVar(&attachPaths, "attach", nil, "attach a local image file to the query (repeatable, e.g. --attach a.png --attach b.png); requires the resolved agent's `vision: true`")
+	runCmd.Flags().BoolVar(&noAutoAttach, "no-auto-attach", false, "do not auto-attach image/audio files named in the query text (files inside the workdir are otherwise picked up automatically)")
+	runCmd.Flags().StringArrayVar(&attachPaths, "attach", nil, "attach a local image or audio file to the query (repeatable, e.g. --attach a.png --attach memo.wav); requires the resolved agent's `vision: true`. Audio is native on gemini, transcribed on OpenAI-compatible providers, rejected on anthropic")
 }
 
 // defaultTimeoutSeconds is the --timeout default: off. Long agent operations
@@ -540,13 +545,23 @@ func runAgent(cmd *cobra.Command, args []string) (runErr error) {
 		if visionAgent.Vision == nil || !*visionAgent.Vision {
 			return fmt.Errorf("agent %q does not accept image input (set `vision: true` in its config) — cannot use --attach", visionAgent.Name)
 		}
-		for _, p := range attachPaths {
-			block, err := llm.LoadImageAttachment(p)
-			if err != nil {
-				return fmt.Errorf("cannot attach %q: %w", p, err)
-			}
-			attachments = append(attachments, block)
+		var err error
+		providerType := resolveAgentProviderType(cfg, visionAgent)
+		if len(visionAgent.Providers) > 1 {
+			// The candidate provider, not the first entry, decides how audio
+			// is represented. FallbackProvider prepares it per candidate.
+			providerType = "fallback"
 		}
+		attachments, err = loadAttachments(attachPaths, providerType, visionAgent.Name)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Files named in the query text (CLI only; never wired into serve/hub).
+	// Best effort: ignored when the run cannot take attachments.
+	if !noAutoAttach {
+		attachPaths, attachments = autoAttachFromQuery(cfg, query, runWorkdir, attachPaths, attachments, dryRun)
 	}
 
 	// Use config hub_url as default when --hub flag was not explicitly passed.
@@ -614,7 +629,7 @@ func runAgent(cmd *cobra.Command, args []string) (runErr error) {
 
 	// Start session persistence (always-on, failure-tolerant)
 	var sessionStore *store.SessionStore
-	if ss, err := store.NewSessionStore(); err != nil {
+	if ss, err := openSessionStore(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: session persistence unavailable: %v\n", err)
 	} else {
 		sessionStore = ss
@@ -983,6 +998,15 @@ func runAgent(cmd *cobra.Command, args []string) (runErr error) {
 		return fmt.Errorf("cannot create LLM provider for agent %q: %w\n  hint: check your API key and provider settings in the config", agentDef.Name, err)
 	}
 
+	// Audio attachments for providers without native audio input are
+	// transcribed here: this is the first point the provider instance exists.
+	if len(attachments) > 0 && len(agentDef.Providers) <= 1 {
+		attachments, err = transcribeAudioAttachments(ctx, llmProvider, resolveAgentProviderType(cfg, agentDef), agentDef.Name, attachments, attachPaths)
+		if err != nil {
+			return err
+		}
+	}
+
 	// Inline tools (tools_inline:) — unlike the orchestrator branch of
 	// executeConfig and runtime.go's buildAgentToolRegistryDepth, this
 	// single-agent/no-orchestrator path previously never registered these
@@ -1044,12 +1068,16 @@ func runAgent(cmd *cobra.Command, args []string) (runErr error) {
 	if len(attachments) > 0 {
 		for i, block := range attachments {
 			sizeBytes, _ := block.Metadata["size_bytes"].(int64)
+			modality, mimeType := string(block.Type), block.MIMEType
+			if from, ok := block.Metadata["transcribed_from"].(string); ok {
+				modality, mimeType = string(llm.ContentTypeAudio), from
+			}
 			eventBus.Emit(agentDef.Name, telemetry.EventMediaAttached, telemetry.MediaAttachedPayload{
-				Modality:  string(block.Type),
+				Modality:  modality,
 				Via:       "cli_attach",
 				Path:      attachPaths[i],
 				SizeBytes: sizeBytes,
-				MIMEType:  block.MIMEType,
+				MIMEType:  mimeType,
 			})
 		}
 		result, err = ag.RunWithAttachments(ctx, query, priorHistory, attachments)
@@ -1230,16 +1258,18 @@ func createLLMProvider(ctx context.Context, cfg *config.Config, providerName, mo
 	}
 
 	pc := &llm.ProviderConfig{
-		APIKey:          secret.New(cfg.GetAPIKey(providerName)),
-		Model:           model,
-		BaseURL:         cfg.GetBaseURL(providerName),
-		CredentialsFile: cfg.GetCredentialsFile(providerName),
-		Location:        cfg.GetLocation(providerName),
-		Project:         cfg.GetProject(providerName),
-		ResponseFormat:  cfg.GetResponseFormat(providerName),
-		ReasoningEffort: cfg.GetReasoningEffort(providerName),
-		Temperature:     cfg.Settings.Defaults.Temperature,
-		MaxTokens:       cfg.Settings.Defaults.MaxTokens,
+		APIKey:             secret.New(cfg.GetAPIKey(providerName)),
+		Model:              model,
+		BaseURL:            cfg.GetBaseURL(providerName),
+		CredentialsFile:    cfg.GetCredentialsFile(providerName),
+		Location:           cfg.GetLocation(providerName),
+		Project:            cfg.GetProject(providerName),
+		ResponseFormat:     cfg.GetResponseFormat(providerName),
+		ReasoningEffort:    cfg.GetReasoningEffort(providerName),
+		TranscriptionModel: cfg.GetTranscriptionModel(providerName),
+		ClientVersion:      cfg.GetClientVersion(providerName),
+		Temperature:        cfg.Settings.Defaults.Temperature,
+		MaxTokens:          cfg.Settings.Defaults.MaxTokens,
 	}
 
 	// Apply per-agent model config overrides
@@ -1469,6 +1499,14 @@ func GetProviderFactory(name string) (ProviderFactory, bool) {
 // audit every caller: interactive semantics don't make sense in RPC/web-run
 // contexts where no human is attached to the process.
 func executeConfig(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, debugCtrl *debug.DebugController, query string, registrar func([]debug.Attachable)) (string, error) {
+	return executeConfigConv(ctx, cfg, eventBus, debugCtrl, query, registrar, nil)
+}
+
+// executeConfigConv is executeConfig plus the ACP conversation-memory hook:
+// with a non-nil conv and a single-agent config, the turn runs through
+// RunWithHistory(conv.History) and conv.Summarize is set to a summarizer over
+// that agent's own provider. Multi-agent/orchestrator configs ignore conv.
+func executeConfigConv(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, debugCtrl *debug.DebugController, query string, registrar func([]debug.Attachable), conv *acp.ConvTurn) (string, error) {
 	toolRegistry := createToolRegistry(ctx, cfg)
 	defer toolRegistry.CloseAll()
 
@@ -1680,6 +1718,15 @@ func executeConfig(ctx context.Context, cfg *config.Config, eventBus *telemetry.
 	if registrar != nil {
 		registrar([]debug.Attachable{ag})
 	}
+	if conv != nil {
+		// Conversation memory (settings.memory.conversation): the caller
+		// composed a bounded history; summarize with this same agent's provider,
+		// re-read per call like chat does.
+		conv.Summarize = func(c context.Context, prompt string) (string, error) {
+			return memory.ProviderSummarize(c, ag.LLMProvider(), prompt)
+		}
+		return ag.RunWithHistory(ctx, query, conv.History)
+	}
 	return ag.Run(ctx, query)
 }
 
@@ -1794,6 +1841,125 @@ func buildRateLimiters(cfg *config.Config) map[string]*agent.RateLimiter {
 		}
 	}
 	return limiters
+}
+
+// resolveAgentProviderType returns the lower-cased underlying provider type
+// (openai, anthropic, gemini, ...) an agent will use, with the same
+// "openai" fallback createLLMProvider applies.
+func resolveAgentProviderType(cfg *config.Config, def *config.AgentDefinition) string {
+	name := resolveAgentProviderName(cfg, def)
+	if name == "" {
+		name = "openai"
+	}
+	return strings.ToLower(cfg.GetProviderType(name))
+}
+
+// autoAttachFromQuery appends image/audio files named in query (inside the
+// workdir, else the current directory) to the explicit --attach set. It never
+// fails the run: it does nothing when attachments are unsupported here
+// (interactive, dry-run, multi-agent, agent without vision), skips files
+// already attached, and skips with a stderr note any file that fails to load.
+// paths[i] names blocks[i] on return.
+func autoAttachFromQuery(cfg *config.Config, query, workdir string, paths []string, blocks []llm.ContentBlock, dry bool) ([]string, []llm.ContentBlock) {
+	if cfg.Interactive || dry || len(cfg.Agents) == 0 || (cfg.Orchestrator != nil && len(cfg.Agents) > 0) {
+		return paths, blocks
+	}
+	agent := &cfg.Agents[0]
+	if agent.Vision == nil || !*agent.Vision {
+		return paths, blocks
+	}
+	base := workdir
+	if base == "" {
+		base = "."
+	}
+	have := map[string]bool{}
+	for _, p := range paths {
+		if abs, err := filepath.Abs(p); err == nil {
+			if r, err := filepath.EvalSymlinks(abs); err == nil {
+				abs = r
+			}
+			have[abs] = true
+		}
+	}
+	providerType := resolveAgentProviderType(cfg, agent)
+	if len(agent.Providers) > 1 {
+		providerType = "fallback"
+	}
+	for _, p := range llm.ScanQueryForAttachments(query, base) {
+		if have[p] {
+			continue
+		}
+		loaded, err := loadAttachments([]string{p}, providerType, agent.Name)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "auto-attach skipped: %v\n", err)
+			continue
+		}
+		have[p] = true
+		paths = append(paths, p)
+		blocks = append(blocks, loaded...)
+	}
+	return paths, blocks
+}
+
+// loadAttachments sniffs each --attach path and loads it as an image or
+// audio block. It runs before any provider exists, so it only rejects what
+// is known from config alone: audio on an anthropic agent.
+func loadAttachments(paths []string, providerType, agentName string) ([]llm.ContentBlock, error) {
+	blocks := make([]llm.ContentBlock, 0, len(paths))
+	for _, p := range paths {
+		kind, err := llm.SniffAttachmentKind(p)
+		if err != nil {
+			return nil, fmt.Errorf("cannot attach %q: %w", p, err)
+		}
+		var block llm.ContentBlock
+		if kind == llm.ContentTypeAudio {
+			if providerType == "anthropic" {
+				return nil, fmt.Errorf("cannot attach %q: agent %q's provider (anthropic) does not accept audio input — Claude has no audio input support", p, agentName)
+			}
+			block, err = llm.LoadAudioAttachment(p)
+		} else {
+			block, err = llm.LoadImageAttachment(p)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("cannot attach %q: %w", p, err)
+		}
+		blocks = append(blocks, block)
+	}
+	return blocks, nil
+}
+
+// transcribeAudioAttachments replaces each audio block with a text
+// transcript when the provider has no native audio input (anything but
+// gemini). The provider must implement llm.AudioTranscriber; if not, the
+// attachment fails rather than being dropped. paths[i] names blocks[i].
+func transcribeAudioAttachments(ctx context.Context, provider llm.LLMProvider, providerType, agentName string, blocks []llm.ContentBlock, paths []string) ([]llm.ContentBlock, error) {
+	if providerType == "gemini" {
+		return blocks, nil // native inline audio
+	}
+	out := make([]llm.ContentBlock, len(blocks))
+	for i, b := range blocks {
+		if b.Type != llm.ContentTypeAudio {
+			out[i] = b
+			continue
+		}
+		tr, ok := provider.(llm.AudioTranscriber)
+		if !ok {
+			return nil, fmt.Errorf("cannot attach %q: agent %q's provider (%s) has no native audio input and cannot transcribe audio", paths[i], agentName, providerType)
+		}
+		text, err := tr.Transcribe(ctx, b)
+		if err != nil {
+			return nil, fmt.Errorf("cannot attach %q: %w", paths[i], err)
+		}
+		out[i] = llm.ContentBlock{
+			Type: llm.ContentTypeText,
+			Text: fmt.Sprintf("[transcript of %s]: %s", filepath.Base(paths[i]), text),
+			Metadata: map[string]any{
+				"size_bytes":       b.Metadata["size_bytes"],
+				"transcribed_from": b.MIMEType,
+			},
+		}
+	}
+	return out, nil
 }
 
 // resolveAgentProviderName returns the provider name an agent will use.

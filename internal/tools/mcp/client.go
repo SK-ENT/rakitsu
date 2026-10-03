@@ -337,6 +337,9 @@ func (c *StdioClient) send(ctx context.Context, method string, params interface{
 		c.mu.Unlock()
 		return rpcResponse{}, ctx.Err()
 	case <-c.done:
+		c.mu.Lock()
+		delete(c.pending, id)
+		c.mu.Unlock()
 		return rpcResponse{}, fmt.Errorf("mcp stdio: server exited")
 	}
 }
@@ -683,11 +686,12 @@ func parseToolCallContent(raw json.RawMessage) (string, []llm.ContentBlock, erro
 			lines = append(lines, fmt.Sprintf("[image omitted: %s, %d bytes — unsupported image type]", mimeType, size))
 			continue
 		}
+		data, mimeType, sent := llm.ShrinkBase64Image(data, mimeType)
 		blocks = append(blocks, llm.ContentBlock{
 			Type:     llm.ContentTypeImage,
 			MIMEType: mimeType,
 			Source:   &llm.BlockSource{Kind: llm.SourceKindBase64, Base64: data},
-			Metadata: map[string]any{"size_bytes": int64(size)},
+			Metadata: map[string]any{"size_bytes": sent},
 		})
 	}
 	return strings.Join(lines, "\n"), blocks, nil

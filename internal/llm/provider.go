@@ -228,17 +228,36 @@ type ProviderConfig struct {
 	// printed/logged by this or a future call site — use .Reveal() only
 	// at the point a provider constructor actually needs the raw string
 	// (building an Authorization/x-api-key header).
-	APIKey            secret.Value
-	Model             string
-	BaseURL           string // optional: custom endpoint (e.g., Ollama at http://localhost:11434/v1)
-	CredentialsFile   string // optional: path to service account JSON key file (Gemini)
-	Location          string // optional: cloud region (e.g., "us-central1", "global") for Vertex AI
-	Project           string // optional: GCP project ID for Vertex AI
-	Temperature       float64
-	MaxTokens         int
-	TopP              float64
-	TimeoutSec        int    // optional: per-request timeout in seconds (sent as X-LiteLLM-Timeout header)
-	MaxThinkingTokens int    // optional: thinking budget cap (Anthropic extended thinking; must be >=1024)
-	ResponseFormat    string // optional: explicit format-adapter override ("standard_openai", "reasoning_content_field"). Empty = auto-detect from model name.
-	ReasoningEffort   string // optional: OpenAI reasoning_effort ("none", "minimal", "low", "medium", "high"); GPT-5.6 models require it when function tools are sent
+	APIKey             secret.Value
+	Model              string
+	BaseURL            string // optional: custom endpoint (e.g., Ollama at http://localhost:11434/v1)
+	CredentialsFile    string // optional: path to service account JSON key file (Gemini)
+	Location           string // optional: cloud region (e.g., "us-central1", "global") for Vertex AI
+	Project            string // optional: GCP project ID for Vertex AI
+	Temperature        float64
+	MaxTokens          int
+	TopP               float64
+	TimeoutSec         int    // optional: per-request timeout in seconds (sent as X-LiteLLM-Timeout header)
+	MaxThinkingTokens  int    // optional: thinking budget cap (Anthropic extended thinking; must be >=1024)
+	ResponseFormat     string // optional: explicit format-adapter override ("standard_openai", "reasoning_content_field"). Empty = auto-detect from model name.
+	ReasoningEffort    string // optional: OpenAI reasoning_effort ("none", "minimal", "low", "medium", "high"); GPT-5.6 models require it when function tools are sent
+	TranscriptionModel string // optional: model name for audio transcription (AudioTranscriber); empty = provider's own default
+	ClientVersion      string // optional: Codex backend client version (default 1.0.0); overrides the version sent in /models requests
+}
+
+// AudioTranscriber is implemented by providers that can turn an audio
+// ContentBlock into a text transcript before it reaches the model's
+// chat/message API — used by providers whose SDK has no native
+// input_audio content part (see the OpenAI-compatible provider).
+//
+// block is an already-loaded ContentTypeAudio block (base64 payload +
+// MIMEType, as returned by LoadAudioAttachment), not a file path.
+type AudioTranscriber interface {
+	Transcribe(ctx context.Context, block ContentBlock) (string, error)
+}
+
+// InputPreparer lets a provider adapt message content to its API before a
+// fallback attempt. The input is the original history for each candidate.
+type InputPreparer interface {
+	PrepareInput(ctx context.Context, history []Message) ([]Message, error)
 }

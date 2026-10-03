@@ -696,7 +696,7 @@ Check browser console (F12 → Console) for JavaScript errors during each test.
 ### 16.3 Concurrent tool calls — no race condition
 | | |
 |---|---|
-| **Steps** | Ask agent to "Read README.md and CLAUDE.md simultaneously" |
+| **Steps** | Ask agent to "Read README.md and go.mod simultaneously" |
 | **Expected** | Both files read, correct content returned. No errors. |
 | **Result** | |
 | **Notes** | Whether the model actually calls both tools in parallel depends on the model/provider. If it calls them sequentially, that's also acceptable — the test verifies no crash in either case. |

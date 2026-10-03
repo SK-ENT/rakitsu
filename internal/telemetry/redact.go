@@ -177,6 +177,15 @@ func buildFreeTextRules(keyword string) []freeTextRule {
 			template: redactedMask,
 		},
 		{
+			// Credential keywords (token, api_key, etc.) followed by space and
+			// a token-shaped value (alphanumeric, dashes, dots, etc), e.g.
+			// "token sk-xxx" or "api_key pk-yyy". Uses the same token alphabet
+			// as the Bearer rule (RFC 6750 token68 + common variations) to avoid
+			// false positives on KEY=value patterns.
+			pattern:  regexp.MustCompile(`(?im)\b(?:` + keyword + `)[\t ]+[a-z0-9\-._~+/]+`),
+			template: redactedMask,
+		},
+		{
 			// KEY=value / KEY: value anywhere on a line whose key looks
 			// credential-shaped, the free-text analogue of sensitiveArgKey
 			// (e.g. a printed .env file, `export KEY=...`, or an inline
@@ -353,6 +362,43 @@ func RedactEventPayload(eventType EventType, payload json.RawMessage) json.RawMe
 		}
 		redactFreeTextField(obj, "output")
 		redactFreeTextField(obj, "error")
+		out, err := json.Marshal(obj)
+		if err != nil {
+			return payload
+		}
+		return out
+
+	case EventWakeTaskStart, EventWakeTaskEnd:
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(payload, &obj); err != nil {
+			return payload
+		}
+		redactFreeTextField(obj, "reason")
+		redactFreeTextField(obj, "summary")
+		out, err := json.Marshal(obj)
+		if err != nil {
+			return payload
+		}
+		return out
+
+	case EventWakeTick, EventWakeEscalate:
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(payload, &obj); err != nil {
+			return payload
+		}
+		redactFreeTextField(obj, "note")
+		redactFreeTextField(obj, "reason")
+		if raw, ok := obj["results"]; ok {
+			var rs []map[string]json.RawMessage
+			if json.Unmarshal(raw, &rs) == nil {
+				for _, r := range rs {
+					redactFreeTextField(r, "detail")
+				}
+				if b, err := json.Marshal(rs); err == nil {
+					obj["results"] = b
+				}
+			}
+		}
 		out, err := json.Marshal(obj)
 		if err != nil {
 			return payload

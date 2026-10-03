@@ -30,7 +30,8 @@ back to --model gemini-3.1-flash-tts-preview if it's rejected.
 
 Usage:
     # Gemini Developer API (API key), single speaker
-    GEMINI_API_KEY=$(secret GEMINI_API_KEY) python gemini_tts_test.py "Have a wonderful day!" --voice Kore --style "cheerful and friendly"
+    export GEMINI_API_KEY=...
+    python gemini_tts_test.py "Have a wonderful day!" --voice Kore --style "cheerful and friendly"
 
     # Vertex AI (GCP), single speaker
     gcloud auth application-default login   # once

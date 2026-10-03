@@ -3,12 +3,16 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/SK-ENT/rakitsu/internal/agent"
+	"github.com/SK-ENT/rakitsu/internal/alert"
 	"github.com/SK-ENT/rakitsu/internal/config"
 	"github.com/SK-ENT/rakitsu/internal/server"
 	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/tools"
 	"github.com/SK-ENT/rakitsu/internal/tools/userinput"
+	"github.com/SK-ENT/rakitsu/internal/wake"
 )
 
 // buildChatRunner is the shared chat-runner factory used by both the CLI
@@ -27,11 +31,32 @@ func buildChatRunner(
 	sessionID string,
 	selfURL string,
 ) (runner agent.Runner, innerRunner agent.Runner, cleanup func(), agentName string, modelLabel string, err error) {
+	// Create alert notifier if wake alerts are configured
+	var alertNotifier interface{}
+	if cfg.Settings.Wake.Enabled && len(cfg.Settings.Wake.Alerts.Sinks) > 0 {
+		notifier, err := alert.NewNotifier(cfg.Settings.Wake.Alerts, nil, alert.Options{
+			Getenv: os.Getenv,
+		})
+		if err != nil {
+			// Log but don't fail the session if alert creation fails
+			eventBus.Emit("system", telemetry.EventError, telemetry.ErrorPayload{
+				Message: fmt.Sprintf("alert notifier creation failed: %v", err),
+			})
+		} else {
+			alertNotifier = notifier
+		}
+	}
+	var extra []tools.Tool
+	if h := wake.TaskHandleFrom(ctx); h != nil {
+		extra = h.Tools() // wake session with settings.wake.allow.configs only
+	}
 	br, err := BuildRunner(ctx, cfg, eventBus, BuildOptions{
+		ExtraTools:      extra,
 		UserInputReqCh:  userInputReqCh,
 		UserInputRespCh: userInputRespCh,
 		SessionID:       sessionID,
 		HubURL:          selfURL,
+		AlertNotifier:   alertNotifier,
 	})
 	if err != nil {
 		return nil, nil, nil, "", "", err

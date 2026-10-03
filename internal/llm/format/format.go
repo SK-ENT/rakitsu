@@ -72,8 +72,8 @@ type Result struct {
 	// falls through to the [REASONING-ONLY OUTPUT — …] prefix path.
 	//
 	// Consumers (agent loop, supervisor, chat host) should NOT treat
-	// salvaged Content as a successful final answer. See Phase 6.2
-	// Mitigation A in PLAN-extraction-phase-6.md.
+	// salvaged Content as a successful final answer. See the
+	// extraction phase 6.2 mitigation.
 	Salvaged bool
 }
 
@@ -117,12 +117,28 @@ type FormatState struct {
 	// before this peer-emit hook existed).
 	OnReasoningDelta func(reasoning string)
 
+	// allowedTools is the set of tool names registered on this request.
+	// Text-protocol tool-call parsers (Qwen3-Coder <function=...>) only
+	// convert a block into a tool call when its name is in this set. Nil/empty
+	// means "no registry known": such blocks stay plain text.
+	allowedTools map[string]struct{}
+
 	// thinkInline holds per-request state for ThinkTagInline's streaming
 	// <think>...</think> parser. nil until first ApplyDelta call on a
 	// ThinkTagInline adapter; lazily initialized via getThinkInlineState.
 	// Kept on FormatState (rather than in Scratch) so it doesn't collide
 	// with Sniffing when ThinkTagInline wraps it.
 	thinkInline *thinkInlineState
+}
+
+// SetAllowedTools records the tool names registered for this request.
+func (s *FormatState) SetAllowedTools(names []string) {
+	s.allowedTools = make(map[string]struct{}, len(names))
+	for _, n := range names {
+		if n != "" {
+			s.allowedTools[n] = struct{}{}
+		}
+	}
 }
 
 type toolCallMeta struct {

@@ -192,6 +192,28 @@ func retryWithBackoff(ctx context.Context, cfg RetryConfig, fn func() error, onR
 	return lastErr
 }
 
+// isEmptyNonToolResult reports whether result is a "successful" call that
+// produced nothing usable: no tool calls and no response text. Seen live
+// from Gemini as an empty candidate (finishReason STOP, one blank part)
+// intermittently right after a turn whose tool result carried inline audio
+// or image data — a provider-side quirk, not a caller error, so it is worth
+// one retry rather than being accepted as the final answer.
+//
+// Two cases are deliberately excluded because they are already-handled,
+// meaningful outcomes rather than genuine emptiness: FinishReason=="length"
+// (real token-budget exhaustion — see truncated_empty below in this
+// package) and a non-blank ThinkingContent (a reasoning model that put its
+// real answer in the reasoning channel instead of Response — see the
+// ThinkingContent fallback). Retrying either would just burn an attempt
+// re-fetching content that downstream logic already knows how to use.
+func isEmptyNonToolResult(result *llm.GenerateResult) bool {
+	return result != nil &&
+		len(result.ToolCalls) == 0 &&
+		strings.TrimSpace(result.Response) == "" &&
+		strings.TrimSpace(result.ThinkingContent) == "" &&
+		result.FinishReason != "length"
+}
+
 // retryDelay returns exponential backoff duration for the given attempt (0-indexed).
 // When rateLimited is true, a longer base delay is used because rate-limit
 // windows are typically measured in minutes, not seconds.

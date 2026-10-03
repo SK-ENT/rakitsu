@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/SK-ENT/rakitsu/internal/agent"
 	"github.com/SK-ENT/rakitsu/internal/chat"
 	"github.com/SK-ENT/rakitsu/internal/config"
@@ -19,6 +18,7 @@ import (
 	"github.com/SK-ENT/rakitsu/internal/store"
 	"github.com/SK-ENT/rakitsu/internal/telemetry"
 	"github.com/SK-ENT/rakitsu/internal/tools/userinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"gopkg.in/yaml.v3"
 )
 
@@ -103,7 +103,7 @@ func runInteractive(ctx context.Context, cfg *config.Config, initialQuery string
 	// one session; all events (turns, tool calls, streaming tokens) are
 	// persisted to ~/.rakitsu/sessions/<id>.jsonl for later replay/inspection.
 	var sessionStore *store.SessionStore
-	if ss, err := store.NewSessionStore(); err != nil {
+	if ss, err := openSessionStore(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: session persistence unavailable: %v\n", err)
 	} else {
 		sessionStore = ss

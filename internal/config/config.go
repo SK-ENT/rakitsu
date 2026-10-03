@@ -14,6 +14,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
+	"regexp"
+	"sort"
 )
 
 // Config is the root configuration structure
@@ -32,6 +34,8 @@ type Config struct {
 	Orchestrator       *OrchestratorConfig  `mapstructure:"orchestrator"`
 	Orchestrators      []OrchestratorConfig `mapstructure:"orchestrators" yaml:"orchestrators,omitempty"`
 	Workflows          []WorkflowDefinition `mapstructure:"workflows"`
+	Monitors           []MonitorConfig      `mapstructure:"monitors" yaml:"monitors,omitempty"` // serve config: autostarted wake sessions
+	Healthz            HealthzConfig        `mapstructure:"healthz" yaml:"healthz,omitempty"`
 
 	// settingsEnvRefs maps a settings field (see settingsRefKey) to the
 	// ${VAR} text it held before Load expanded it, so Redacted can write the
@@ -61,6 +65,8 @@ type Settings struct {
 	Spawn            SpawnConfig                   `mapstructure:"spawn" yaml:"spawn,omitempty"`
 	AgentChat        AgentChatConfig               `mapstructure:"agent_chat" yaml:"agent_chat,omitempty"`
 	SessionMsg       SessionMsgConfig              `mapstructure:"session_msg" yaml:"session_msg,omitempty"`
+	SessionsDir      string                        `mapstructure:"sessions_dir" yaml:"sessions_dir,omitempty"` // session JSONL dir; default ~/.rakitsu/sessions
+	Wake             WakeConfig                    `mapstructure:"wake" yaml:"wake,omitempty"`
 	RedactKeywords   []string                      `mapstructure:"redact_keywords" yaml:"redact_keywords,omitempty"` // extra credential-shaped keywords for telemetry redaction, on top of the built-in list
 }
 
@@ -226,16 +232,18 @@ type ServerConfig struct {
 // ProviderDefinition defines a named provider instance with its credentials.
 // Agents reference providers by instance name (the map key in Settings.Providers).
 type ProviderDefinition struct {
-	Type            string `mapstructure:"type" yaml:"type"` // underlying provider: openai, anthropic, gemini, ollama
-	APIKey          string `mapstructure:"api_key" yaml:"api_key"`
-	BaseURL         string `mapstructure:"base_url,omitempty" yaml:"base_url,omitempty"`
-	CredentialsFile string `mapstructure:"credentials_file,omitempty" yaml:"credentials_file,omitempty"`
-	Location        string `mapstructure:"location,omitempty" yaml:"location,omitempty"`                 // cloud region for Vertex AI (e.g., "us-central1", "global")
-	Project         string `mapstructure:"project,omitempty" yaml:"project,omitempty"`                   // GCP project ID for Vertex AI
-	DefaultModel    string `mapstructure:"default_model,omitempty" yaml:"default_model,omitempty"`       // default model for this provider; falls back behind agent.Model, ahead of settings.defaults.model
-	ResponseFormat  string `mapstructure:"response_format,omitempty" yaml:"response_format,omitempty"`   // optional adapter override: "standard_openai", "reasoning_content_field". Empty = auto-detect from model name.
-	RateLimit       int    `mapstructure:"rate_limit,omitempty" yaml:"rate_limit,omitempty"`             // max requests per minute to this provider (0 = unlimited)
-	ReasoningEffort string `mapstructure:"reasoning_effort,omitempty" yaml:"reasoning_effort,omitempty"` // OpenAI reasoning_effort sent on every request ("none", "minimal", "low", "medium", "high"); GPT-5.6 models require it with tools
+	Type               string `mapstructure:"type" yaml:"type"` // underlying provider: openai, anthropic, gemini, ollama
+	APIKey             string `mapstructure:"api_key" yaml:"api_key"`
+	BaseURL            string `mapstructure:"base_url,omitempty" yaml:"base_url,omitempty"`
+	CredentialsFile    string `mapstructure:"credentials_file,omitempty" yaml:"credentials_file,omitempty"`
+	Location           string `mapstructure:"location,omitempty" yaml:"location,omitempty"`                       // cloud region for Vertex AI (e.g., "us-central1", "global")
+	Project            string `mapstructure:"project,omitempty" yaml:"project,omitempty"`                         // GCP project ID for Vertex AI
+	DefaultModel       string `mapstructure:"default_model,omitempty" yaml:"default_model,omitempty"`             // default model for this provider; falls back behind agent.Model, ahead of settings.defaults.model
+	ResponseFormat     string `mapstructure:"response_format,omitempty" yaml:"response_format,omitempty"`         // optional adapter override: "standard_openai", "reasoning_content_field". Empty = auto-detect from model name.
+	RateLimit          int    `mapstructure:"rate_limit,omitempty" yaml:"rate_limit,omitempty"`                   // max requests per minute to this provider (0 = unlimited)
+	ReasoningEffort    string `mapstructure:"reasoning_effort,omitempty" yaml:"reasoning_effort,omitempty"`       // OpenAI reasoning_effort sent on every request ("none", "minimal", "low", "medium", "high"); GPT-5.6 models require it with tools
+	TranscriptionModel string `mapstructure:"transcription_model,omitempty" yaml:"transcription_model,omitempty"` // audio transcription model for --attach on OpenAI-compatible providers (default "whisper-1")
+	ClientVersion      string `mapstructure:"client_version,omitempty" yaml:"client_version,omitempty"`           // codex only: client version sent on catalog (/models) requests; gates which models the backend lists (default "1.0.0")
 }
 
 // DefaultSettings contains default model configuration
@@ -835,6 +843,9 @@ func load(configPath string) (*Config, error) {
 		}
 	}
 
+	// Apply wake-up timer defaults if enabled
+	config.Settings.Wake.ApplyDefaults()
+
 	// Merge each agent's referenced skills' prompt_template into its
 	// effective SystemPrompt — in memory only, same convention as the
 	// expandEnvVar/resolveFileReferences mutations above. Must run after
@@ -1129,6 +1140,24 @@ func (c *Config) GetReasoningEffort(provider string) string {
 	return ""
 }
 
+// GetClientVersion returns the codex catalog client version for a provider
+// ("" = the provider's own default).
+func (c *Config) GetClientVersion(provider string) string {
+	if pd, ok := c.findProvider(provider); ok {
+		return pd.ClientVersion
+	}
+	return ""
+}
+
+// GetTranscriptionModel returns the audio transcription model for a provider
+// ("" = the provider's own default).
+func (c *Config) GetTranscriptionModel(provider string) string {
+	if pd, ok := c.findProvider(provider); ok {
+		return pd.TranscriptionModel
+	}
+	return ""
+}
+
 // GetProject returns the GCP project ID for a provider.
 // Checks named providers first, then falls back to flat projects map.
 func (c *Config) GetProject(provider string) string {
@@ -1336,6 +1365,13 @@ func (c *Config) Validate() []*ValidationError {
 	}
 
 	c.validateToolSecurity(add)
+	if err := validateSessionsDir(c.Settings.SessionsDir); err != nil {
+		add("settings.sessions_dir", err.Error())
+	}
+	c.validateWake(add)
+	c.validateWakeAlerts(add)
+	c.validateMonitors(add)
+	c.validateProviderClientVersions(add)
 
 	// 1. Duplicate agent names
 	agentNames := make(map[string]int)
@@ -1988,4 +2024,22 @@ func splitFrontMatter(data []byte) ([]byte, []byte, error) {
 		body = body[1:]
 	}
 	return []byte(frontMatter), []byte(body), nil
+}
+
+var clientVersionRE = regexp.MustCompile(`^[0-9]+(\.[0-9]+){0,3}$`)
+
+// validateProviderClientVersions checks client_version is a dotted numeric
+// version; it is placed in a URL query, so nothing else is accepted.
+func (c *Config) validateProviderClientVersions(add func(field, message string)) {
+	names := make([]string, 0, len(c.Settings.Providers))
+	for name := range c.Settings.Providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		v := c.Settings.Providers[name].ClientVersion
+		if v != "" && !clientVersionRE.MatchString(v) {
+			add("settings.providers."+name+".client_version", fmt.Sprintf("invalid client_version %q (want dotted numeric, e.g. 1.0.0)", v))
+		}
+	}
 }

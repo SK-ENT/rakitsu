@@ -2,7 +2,10 @@
 package openai
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +14,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/SK-ENT/rakitsu/internal/llm"
 	"github.com/SK-ENT/rakitsu/internal/llm/format"
@@ -26,6 +30,8 @@ type Provider struct {
 	formatAdapter       format.ResponseFormat // pluggable response-format handler
 	formatResolveReason string                // "pattern_match" | "override" | "fallback"
 	formatResolver      string                // "registry" | "sniffing"
+	transcriptMu        sync.Mutex
+	transcriptCache     map[[32]byte]string
 }
 
 // warnFn receives operator-facing diagnostics this package needs to surface
@@ -104,6 +110,7 @@ func NewProvider(config *llm.ProviderConfig) *Provider {
 		formatAdapter:       detect.Adapter,
 		formatResolveReason: detect.Reason,
 		formatResolver:      detect.Resolver,
+		transcriptCache:     make(map[[32]byte]string),
 	}
 }
 
@@ -335,7 +342,7 @@ func (p *Provider) generate(
 	}
 
 	// Parse the response
-	return p.parseResponse(&resp)
+	return p.parseResponseWithTools(&resp, tools)
 }
 
 // GetName returns the provider name
@@ -346,6 +353,109 @@ func (p *Provider) GetName() string {
 // GetModel returns the model being used
 func (p *Provider) GetModel() string {
 	return p.model
+}
+
+// defaultTranscriptionModel is the fallback when no transcription_model is
+// configured. It is OpenAI's Whisper model name; a LiteLLM or other
+// OpenAI-compatible proxy may map this name to whatever speech-to-text
+// backend it fronts, so it is a default, not a hard requirement.
+const defaultTranscriptionModel = "whisper-1"
+
+// audioFileExt maps an audio MIME type to the file extension the
+// transcription endpoint uses to detect the upload's format.
+var audioFileExt = map[string]string{
+	"audio/mpeg":      ".mp3",
+	"audio/wave":      ".wav",
+	"audio/wav":       ".wav",
+	"audio/ogg":       ".ogg",
+	"application/ogg": ".ogg",
+	"audio/flac":      ".flac",
+	"audio/mp4":       ".m4a",
+	"audio/webm":      ".webm",
+}
+
+// Transcribe implements llm.AudioTranscriber via the OpenAI-compatible
+// /audio/transcriptions endpoint. block must be a base64 ContentTypeAudio
+// block (see llm.LoadAudioAttachment).
+func (p *Provider) Transcribe(ctx context.Context, block llm.ContentBlock) (string, error) {
+	if block.Type != llm.ContentTypeAudio || block.Source == nil || block.Source.Kind != llm.SourceKindBase64 {
+		return "", fmt.Errorf("transcribe: expected a base64 audio block, got type %q", block.Type)
+	}
+	data, err := base64.StdEncoding.DecodeString(block.Source.Base64)
+	if err != nil {
+		return "", fmt.Errorf("transcribe: decoding audio payload: %w", err)
+	}
+	ext, ok := audioFileExt[block.MIMEType]
+	if !ok {
+		return "", fmt.Errorf("transcribe: unsupported audio type %q", block.MIMEType)
+	}
+	model := defaultTranscriptionModel
+	if p.config != nil && p.config.TranscriptionModel != "" {
+		model = p.config.TranscriptionModel
+	}
+	resp, err := p.client.CreateTranscription(ctx, openai.AudioRequest{
+		Model: model,
+		// With Reader set, FilePath is only the upload's filename; its
+		// extension tells the server the audio format.
+		FilePath: "audio" + ext,
+		Reader:   bytes.NewReader(data),
+	})
+	if err != nil {
+		return "", fmt.Errorf("transcription with model %q failed: %w", model, err)
+	}
+	return resp.Text, nil
+}
+
+// PrepareInput converts audio blocks to transcript text for this provider's
+// Chat Completions API. The cache avoids retranscribing the same attachment
+// on each tool iteration of one agent run.
+func (p *Provider) PrepareInput(ctx context.Context, history []llm.Message) ([]llm.Message, error) {
+	prepared := make([]llm.Message, len(history))
+	copy(prepared, history)
+	for i := range prepared {
+		if len(history[i].Content) == 0 {
+			continue
+		}
+		prepared[i].Content = append([]llm.ContentBlock(nil), history[i].Content...)
+		for j, block := range prepared[i].Content {
+			if block.Type != llm.ContentTypeAudio {
+				continue
+			}
+			if block.Source == nil || block.Source.Kind != llm.SourceKindBase64 {
+				return nil, fmt.Errorf("cannot prepare audio input: expected a base64 audio block")
+			}
+			key := sha256.Sum256([]byte(block.Source.Base64))
+			p.transcriptMu.Lock()
+			transcript, cached := p.transcriptCache[key]
+			p.transcriptMu.Unlock()
+			if !cached {
+				var err error
+				transcript, err = p.Transcribe(ctx, block)
+				if err != nil {
+					return nil, err
+				}
+				p.transcriptMu.Lock()
+				if p.transcriptCache == nil {
+					p.transcriptCache = make(map[[32]byte]string)
+				}
+				p.transcriptCache[key] = transcript
+				p.transcriptMu.Unlock()
+			}
+			filename, _ := block.Metadata["filename"].(string)
+			if filename == "" {
+				filename = "audio"
+			}
+			prepared[i].Content[j] = llm.ContentBlock{
+				Type: llm.ContentTypeText,
+				Text: fmt.Sprintf("[transcript of %s]: %s", filename, transcript),
+				Metadata: map[string]any{
+					"size_bytes":       block.Metadata["size_bytes"],
+					"transcribed_from": block.MIMEType,
+				},
+			}
+		}
+	}
+	return prepared, nil
 }
 
 // buildMessages converts our message format to OpenAI's format
@@ -535,6 +645,7 @@ func (p *Provider) GenerateStream(
 		// whatever shape this model emits (standard OpenAI, reasoning_content
 		// field for Nemotron/DeepSeek, etc). See internal/llm/format/.
 		state := format.NewState()
+		state.SetAllowedTools(toolNames(tools))
 		// Peer-emit reasoning bytes extracted at stream time by ThinkTagInline
 		// (inline <think>...</think> shape). The other shape (delta.reasoning_content
 		// field) is handled below; both converge on StreamChunk.Reasoning so
@@ -612,6 +723,19 @@ func (p *Provider) GenerateStream(
 
 // parseResponse converts OpenAI's response to our format
 func (p *Provider) parseResponse(resp *openai.ChatCompletionResponse) (*llm.GenerateResult, error) {
+	return p.parseResponseWithTools(resp, nil)
+}
+
+// toolNames lists the names of the tools offered on a request.
+func toolNames(tools []llm.ToolDefinition) []string {
+	names := make([]string, 0, len(tools))
+	for _, t := range tools {
+		names = append(names, t.Name)
+	}
+	return names
+}
+
+func (p *Provider) parseResponseWithTools(resp *openai.ChatCompletionResponse, tools []llm.ToolDefinition) (*llm.GenerateResult, error) {
 	if len(resp.Choices) == 0 {
 		return nil, fmt.Errorf("no response choices returned")
 	}
@@ -640,6 +764,7 @@ func (p *Provider) parseResponse(resp *openai.ChatCompletionResponse) (*llm.Gene
 	// Delegate content/reasoning extraction to the adapter. This replaces the
 	// old ad-hoc reasoning_content JSON re-marshal fallback.
 	state := format.NewState()
+	state.SetAllowedTools(toolNames(tools))
 	p.formatAdapter.ApplyFull(state, format.RawMessage{
 		Content:          choice.Message.Content,
 		ReasoningContent: choice.Message.ReasoningContent,

@@ -837,3 +837,30 @@ func TestSessionStore_MultipleInstancesConcurrentWrites_IndexStaysValidAndComple
 		}
 	}
 }
+
+func TestNewSessionStoreAt_CustomDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(t.TempDir(), "a", "b")
+	if err := os.MkdirAll(dir, 0o755); err != nil { // pre-existing, too open
+		t.Fatal(err)
+	}
+	s, err := NewSessionStoreAt(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Dir() != dir {
+		t.Fatalf("Dir() = %q, want %q", s.Dir(), dir)
+	}
+	fi, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o700 {
+		t.Fatalf("mode = %o, want 700", fi.Mode().Perm())
+	}
+	startTestSession(t, s)
+	if _, err := os.Stat(filepath.Join(home, ".rakitsu")); !os.IsNotExist(err) {
+		t.Fatalf("default dir touched, stat err = %v", err)
+	}
+}
