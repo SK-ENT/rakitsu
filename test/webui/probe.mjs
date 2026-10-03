@@ -222,7 +222,7 @@ async function main() {
   }
 
   // -------------------- Phase 2: URL hash deep link + picker-drives-pin --------------------
-  // These tests validate PLAN-session-registry-phase2 §5.2. The picker should
+  // These tests validate the session-registry phase 2 plan. The picker should
   // (a) write `#debug/session/<id>` to window.location.hash when a session is
   // selected, and (b) restore that selection when the hash is already present
   // on page load. Unlike the Stop-button check above, there's no feature

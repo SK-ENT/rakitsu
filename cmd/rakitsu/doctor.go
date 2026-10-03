@@ -608,7 +608,7 @@ func checkCodex(ctx context.Context, name string, p config.ProviderDefinition) (
 
 	probeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	models, err := codexProvider.ListModels(probeCtx, &llm.ProviderConfig{CredentialsFile: p.CredentialsFile, BaseURL: p.BaseURL})
+	models, err := codexProvider.ListModels(probeCtx, &llm.ProviderConfig{CredentialsFile: p.CredentialsFile, BaseURL: p.BaseURL, ClientVersion: p.ClientVersion})
 	if err != nil {
 		out = append(out, finding{sev: sevErr, label: "Codex catalog", subj: name, msg: err.Error()})
 		return out, nil

@@ -116,7 +116,7 @@ func scrubbedEnviron() []string {
 // DefaultMaxOutputBytes is the default cap on tool output when the config
 // does not specify one. Picked to be generous enough for typical `git log`
 // and `grep` output but small enough to keep a single tool call from
-// blowing out the model's context window. Regression: B15 (2026-04-05),
+// blowing out the model's context window. Regression (2026-04-05):
 // where an unbounded `git log` returned 205KB in one call on the weekly
 // dogfood run and consumed the entire context.
 const DefaultMaxOutputBytes = 8192
@@ -169,7 +169,7 @@ type Tool struct {
 //     belong to the payload, not the outer template.
 //   - Backslash escapes are not supported. Keep command templates simple.
 //
-// Regression: B20 (2026-04-05) — the previous implementation used
+// Regression (2026-04-05) — the previous implementation used
 // strings.Fields which whitespace-split `"sh -c 'git {{args}}'"` into
 // `["sh", "-c", "'git", "{{args}}'"]`, breaking every shell-wrapped
 // command template in the repo.
@@ -267,7 +267,7 @@ func lintShellPayload(payload string) error {
 func NewTool(def *config.ToolDefinition, allowedCommands ...[]string) *Tool {
 	// Parse command into parts using shell-aware splitting so that
 	// templates like `sh -c 'git {{args}}'` parse to 3 tokens, not 4.
-	// See splitCommand() comment for the B20 regression details.
+	// See splitCommand() comment for the shell-wrapper regression details.
 	var cmdParts []string
 	if def.Command != "" {
 		cmdParts = splitCommand(def.Command)
@@ -581,7 +581,7 @@ func (t *Tool) buildCommand(args map[string]interface{}) ([]string, error) {
 	// once there are no spaces inside the placeholder itself). Splitting
 	// that slot would hand `sh -c` only the value's first word as its
 	// script and turn every subsequent word into a $0/$1/... positional
-	// parameter instead of script content — and the B20 blocklist lint
+	// parameter instead of script content — and the shell-wrapper blocklist lint
 	// below only ever inspects cmd[2], so it would silently validate just
 	// that truncated first word while the real (also truncated) script
 	// runs unchecked. Reject this combination outright rather than
@@ -589,11 +589,11 @@ func (t *Tool) buildCommand(args map[string]interface{}) ([]string, error) {
 	//
 	// filepath.Base normalizes a full-path wrapper (`/bin/sh -c {{args}}`)
 	// to the same detection as a bare `sh`/`bash` — a review-round-2 gap in
-	// the first version of this guard, applied to the pre-existing B20 lint
+	// the first version of this guard, applied to the pre-existing blocklist lint
 	// trigger below too. A re-invocation wrapper (`env sh -c {{args}}`, a
 	// different index shape entirely) is deliberately NOT covered here: the
-	// B20 blocklist lint itself only ever fires when cmd[0] is literally
-	// sh/bash (see below), so that shape already has no B20 protection
+	// shell-wrapper blocklist lint itself only ever fires when cmd[0] is literally
+	// sh/bash (see below), so that shape already has no blocklist-lint protection
 	// regardless of argv_split — extending only this guard to cover it
 	// would be a false sense of safety, not a real fix. That's a
 	// pre-existing, broader gap in the lint's own detection scope, not
@@ -695,7 +695,7 @@ func (t *Tool) buildCommand(args map[string]interface{}) ([]string, error) {
 		}
 	}
 
-	// B20 mitigation: when the assembled command is a shell wrapper
+	// shell-wrapper mitigation: when the assembled command is a shell wrapper
 	// (sh -c '<payload>' or bash -c '<payload>'), lint the post-substitution
 	// payload for standalone invocations of blocked commands. This catches
 	// obvious cases like `log; rm -rf /` without blocking legitimate uses

@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // --- isRetryable ---
@@ -686,5 +688,98 @@ func TestRetryConfigFromSettings_InvalidDuration(t *testing.T) {
 	}
 	if rc.MaxDelay != defaultRetryConfig.MaxDelay {
 		t.Errorf("MaxDelay = %v, want default on invalid input", rc.MaxDelay)
+	}
+}
+
+// --- isEmptyNonToolResult ---
+
+func TestIsEmptyNonToolResult(t *testing.T) {
+	cases := []struct {
+		name   string
+		result *llm.GenerateResult
+		want   bool
+	}{
+		{"nil result", nil, false},
+		{"empty text, no tool calls, stop", &llm.GenerateResult{Response: "", FinishReason: "stop"}, true},
+		{"whitespace-only text", &llm.GenerateResult{Response: "   \n", FinishReason: "stop"}, true},
+		{"has text", &llm.GenerateResult{Response: "hello", FinishReason: "stop"}, false},
+		{"has tool calls, no text", &llm.GenerateResult{ToolCalls: []llm.ToolCall{{Name: "x"}}, FinishReason: "tool_calls"}, false},
+		{"empty text but finish_reason length", &llm.GenerateResult{Response: "", FinishReason: "length"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isEmptyNonToolResult(tc.result); got != tc.want {
+				t.Errorf("isEmptyNonToolResult(%+v) = %v, want %v", tc.result, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestGenerateWithRetry_RetriesEmptyResponseThenSucceeds is a regression
+// test for a live Gemini quirk: right after a tool turn carrying inline
+// audio/image data, the API sometimes answers with finishReason STOP and a
+// completely empty part — no error, no tool calls, no text. Before this
+// fix, that empty "success" was accepted as the agent's final answer
+// instead of being retried.
+func TestGenerateWithRetry_RetriesEmptyResponseThenSucceeds(t *testing.T) {
+	bus := telemetry.NewEventBus(16)
+	provider := newSequenceProvider(
+		llm.GenerateResult{Response: "", FinishReason: "stop"},
+		stopResponse("This is a test recording."),
+	)
+	a := newE2EAgent("retry-empty", provider, bus)
+	a.SetRetryConfig(RetryConfig{MaxAttempts: 3, BaseDelay: time.Millisecond, MaxDelay: 10 * time.Millisecond})
+
+	result, err := a.Run(context.Background(), "what does the audio say?")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result != "This is a test recording." {
+		t.Errorf("result = %q, want the second (non-empty) response", result)
+	}
+	if provider.callCount() != 2 {
+		t.Errorf("provider called %d times, want 2 (initial empty + one retry)", provider.callCount())
+	}
+}
+
+// TestGenerateWithRetry_GivesUpAfterMaxAttempts confirms the retry is
+// bounded: if every attempt comes back empty, the loop still terminates
+// (returning the last empty result) rather than retrying forever.
+func TestGenerateWithRetry_GivesUpAfterMaxAttempts(t *testing.T) {
+	bus := telemetry.NewEventBus(16)
+	provider := newSequenceProvider(
+		llm.GenerateResult{Response: "", FinishReason: "stop"},
+		llm.GenerateResult{Response: "", FinishReason: "stop"},
+		llm.GenerateResult{Response: "", FinishReason: "stop"},
+	)
+	a := newE2EAgent("retry-exhausted", provider, bus)
+	a.SetRetryConfig(RetryConfig{MaxAttempts: 3, BaseDelay: time.Millisecond, MaxDelay: 10 * time.Millisecond})
+
+	if _, err := a.Run(context.Background(), "what does the audio say?"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if provider.callCount() != 3 {
+		t.Errorf("provider called %d times, want 3 (MaxAttempts, no infinite retry)", provider.callCount())
+	}
+}
+
+// TestGenerateWithRetry_ToolCallsAreNeverTreatedAsEmpty confirms a normal
+// tool-calling turn (text may legitimately be empty) is never mistaken for
+// the empty-response quirk and retried unnecessarily.
+func TestGenerateWithRetry_ToolCallsAreNeverTreatedAsEmpty(t *testing.T) {
+	bus := telemetry.NewEventBus(16)
+	tool := newMockTool("read_media", "loaded")
+	provider := newSequenceProvider(
+		toolCallResponse("", tc("read_media", map[string]interface{}{"path": "/x.wav"})),
+		stopResponse("done"),
+	)
+	a := newE2EAgent("retry-toolcalls", provider, bus, tool)
+	a.SetRetryConfig(RetryConfig{MaxAttempts: 3, BaseDelay: time.Millisecond, MaxDelay: 10 * time.Millisecond})
+
+	if _, err := a.Run(context.Background(), "read the file"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if provider.callCount() != 2 {
+		t.Errorf("provider called %d times, want 2 (one per real turn, no retry on the tool-call turn)", provider.callCount())
 	}
 }

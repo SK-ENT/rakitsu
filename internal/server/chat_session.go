@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/SK-ENT/rakitsu/internal/agent"
 	"github.com/SK-ENT/rakitsu/internal/chat"
 	"github.com/SK-ENT/rakitsu/internal/config"
@@ -21,6 +21,8 @@ import (
 	"github.com/SK-ENT/rakitsu/internal/telemetry"
 	"github.com/SK-ENT/rakitsu/internal/tools/userinput"
 	"github.com/SK-ENT/rakitsu/internal/turntree"
+	"github.com/SK-ENT/rakitsu/internal/wake"
+	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
 
@@ -110,7 +112,7 @@ type serverMsg struct {
 // use to rebuild the visible conversation without replaying the full event
 // stream. Ring-buffered on ChatSession; sent with the `attached` message.
 type transcriptEntry struct {
-	Kind        string `json:"kind"`                  // "user" | "assistant" | "system" | "user_input_request" | "tool" | "reasoning"
+	Kind        string `json:"kind"`                  // "user" | "assistant" | "system" | "user_input_request" | "tool" | "reasoning" | "wake"
 	Text        string `json:"text,omitempty"`        // user turn text, assistant final, or reasoning content
 	Interrupted bool   `json:"interrupted,omitempty"` // assistant turn ended in error/cancel
 	Err         string `json:"error,omitempty"`       // assistant turn error text (Kind == "assistant", Interrupted == true)
@@ -176,6 +178,9 @@ type chatTurn struct {
 	// Both are sender-claimed and unverified.
 	fromSessionID string
 	fromName      string
+	// wake marks a timer-sourced turn; wakeReason is recorded in the transcript.
+	wake       bool
+	wakeReason string
 	// done, when non-nil, is how SubmitExternalWait learns this specific
 	// turn's outcome. nil means fire-and-forget (SubmitExternal). Buffered
 	// (cap 1) so executeTurn's send never blocks even if the waiter already
@@ -268,6 +273,12 @@ type ChatSession struct {
 	// that an incoming user_input_response from any client gets forwarded
 	// even if the original request arrived before the client connected.
 	pendingInputID string
+
+	// Wake timer (optional, settings.wake.enabled)
+	wakeMu         sync.Mutex // guards wake
+	wake           *wakeRunner
+	taskHandle     *wake.TaskHandle // late-bound start_task tools; nil unless allow.configs is set
+	wakeTurnActive atomic.Bool      // set during wake turn execution
 }
 
 // ChatSessionOptions is the input to StartChatSession.
@@ -337,7 +348,13 @@ func StartChatSession(ctx context.Context, opts ChatSessionOptions) (*ChatSessio
 	// Build runner via injected callback (BuildRunner + optional ChatHost overlay).
 	// innerRunner is the orchestrator behind any ChatHost overlay — needed by
 	// the slash-command dispatch path so /model can reach sub-agents.
-	runner, innerRunner, cleanup, agentName, modelLabel, err := opts.BuildFunc(ctx, opts.Cfg, eventBus, userReqCh, userRespCh, sessID, opts.SelfURL)
+	var taskHandle *wake.TaskHandle
+	buildCtx := ctx
+	if w := opts.Cfg.Settings.Wake; w.Enabled && len(w.Allow.Configs) > 0 {
+		taskHandle = &wake.TaskHandle{}
+		buildCtx = wake.WithTaskHandle(ctx, taskHandle)
+	}
+	runner, innerRunner, cleanup, agentName, modelLabel, err := opts.BuildFunc(buildCtx, opts.Cfg, eventBus, userReqCh, userRespCh, sessID, opts.SelfURL)
 	if err != nil {
 		return nil, err
 	}
@@ -353,6 +370,7 @@ func StartChatSession(ctx context.Context, opts ChatSessionOptions) (*ChatSessio
 	s := &ChatSession{
 		ID:              sessID,
 		cfg:             opts.Cfg,
+		taskHandle:      taskHandle,
 		configID:        opts.ConfigID,
 		workdir:         opts.Workdir,
 		interactive:     opts.Cfg.Interactive,
@@ -692,6 +710,17 @@ func (s *ChatSession) executeTurn(turn chatTurn) {
 		s.recordEntryOnActiveTurn(transcriptEntry{
 			Kind: "system",
 			Text: chat.SessionMsgNote(turn.fromSessionID, turn.fromName),
+		})
+		s.broadcast(serverMsg{Type: "transcript_resync", Transcript: s.snapshotTranscript()})
+	}
+
+	// Wake timer turn: record the reason in the transcript and resync.
+	if turn.wake {
+		s.wakeTurnActive.Store(true)
+		defer s.wakeTurnActive.Store(false)
+		s.recordEntryOnActiveTurn(transcriptEntry{
+			Kind: "wake",
+			Text: turn.wakeReason,
 		})
 		s.broadcast(serverMsg{Type: "transcript_resync", Transcript: s.snapshotTranscript()})
 	}
@@ -1096,6 +1125,22 @@ func (s *ChatSession) SubmitExternalWait(ctx context.Context, text, fromSessionI
 	}
 }
 
+// SubmitWake queues a timer-sourced turn. Like SubmitExternal it never calls
+// Interrupt() and never blocks, but it is NOT gated by settings.session_msg.enabled:
+// the wake engine is the session's own clock, not another session.
+func (s *ChatSession) SubmitWake(text, reason string) (<-chan turnOutcome, error) {
+	if s.closed.Load() {
+		return nil, fmt.Errorf("session closed")
+	}
+	done := make(chan turnOutcome, 1)
+	select {
+	case s.turnCh <- chatTurn{text: text, wake: true, wakeReason: reason, done: done}:
+		return done, nil
+	default:
+		return nil, ErrSessionBusy
+	}
+}
+
 // HandleSlashCommand parses a chat input that starts with "/" and dispatches
 // the corresponding command. Returns (replyText, handled): when handled is
 // true the caller should NOT also forward the text to Submit — the command
@@ -1187,6 +1232,16 @@ func (s *ChatSession) Interrupt() {
 	}
 }
 
+// SummaryLen returns the length and capacity of the conversation summary,
+// or (0, 0) if conversation memory is not enabled.
+func (s *ChatSession) SummaryLen() (chars, cap int) {
+	if s.convMem == nil {
+		return 0, 0
+	}
+	summary := s.convMem.Summary()
+	return len([]rune(summary)), s.cfg.Settings.Memory.Conversation.SummaryMaxChars
+}
+
 // RespondUserInput forwards an answer to a pending user_input tool call.
 // Non-blocking: if no tool is waiting, drops the response.
 func (s *ChatSession) RespondUserInput(reqID, text string) {
@@ -1211,6 +1266,10 @@ func (s *ChatSession) RespondUserInput(reqID, text string) {
 func (s *ChatSession) Close() {
 	s.stopOnce.Do(func() {
 		s.closed.Store(true)
+		// Stop and wait for the wake loop to fully exit before other cleanup
+		if err := s.StopWakeAndWait(); err != nil {
+			log.Printf("session %s: %v", s.ID, err)
+		}
 		s.Interrupt()
 		close(s.stopCh)
 		s.broadcast(serverMsg{Type: "closed"})

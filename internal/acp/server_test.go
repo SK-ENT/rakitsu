@@ -34,14 +34,14 @@ func loadTestConfig(t *testing.T) *config.Config {
 
 // stubRunFunc returns a RunFunc that immediately returns the given result/error.
 func stubRunFunc(result string, err error) RunFunc {
-	return func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable)) (string, error) {
+	return func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable), _ *ConvTurn) (string, error) {
 		return result, err
 	}
 }
 
 // panicRunFunc returns a RunFunc that panics instead of returning.
 func panicRunFunc(msg string) RunFunc {
-	return func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable)) (string, error) {
+	return func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable), _ *ConvTurn) (string, error) {
 		panic(msg)
 	}
 }
@@ -51,7 +51,7 @@ func panicRunFunc(msg string) RunFunc {
 // which lets ordering tests count them directly instead of using an
 // unmapped event type that would produce no output at all.
 func eventPublishingRunFunc(n int, result string) RunFunc {
-	return func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable)) (string, error) {
+	return func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable), _ *ConvTurn) (string, error) {
 		for i := 0; i < n; i++ {
 			payload, _ := json.Marshal(telemetry.TokenChunkPayload{Text: fmt.Sprintf("chunk-%d", i)})
 			eventBus.Publish(telemetry.AgentEvent{
@@ -68,7 +68,7 @@ func eventPublishingRunFunc(n int, result string) RunFunc {
 // check the panic-recovery path still flushes pending session/update
 // notifications in order and doesn't leak the event-drain goroutine.
 func panicAfterEventsRunFunc(n int, msg string) RunFunc {
-	return func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable)) (string, error) {
+	return func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable), _ *ConvTurn) (string, error) {
 		for i := 0; i < n; i++ {
 			payload, _ := json.Marshal(telemetry.TokenChunkPayload{Text: fmt.Sprintf("chunk-%d", i)})
 			eventBus.Publish(telemetry.AgentEvent{
@@ -492,7 +492,7 @@ func TestACP_Prompt_NonTextBlock_Rejected(t *testing.T) {
 
 func TestACP_Prompt_MultipleTextBlocks_Joined(t *testing.T) {
 	var gotQuery string
-	captureRunFunc := RunFunc(func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable)) (string, error) {
+	captureRunFunc := RunFunc(func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable), _ *ConvTurn) (string, error) {
 		gotQuery = query
 		return "ok", nil
 	})
@@ -551,7 +551,7 @@ func TestACP_Cancel_UnknownSession_NoResponse(t *testing.T) {
 
 func TestACP_Cancel_MidRun_StopsWithCancelledStopReason(t *testing.T) {
 	started := make(chan struct{})
-	blockingRunFunc := RunFunc(func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable)) (string, error) {
+	blockingRunFunc := RunFunc(func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable), _ *ConvTurn) (string, error) {
 		close(started)
 		<-ctx.Done()
 		return "", ctx.Err()
@@ -686,7 +686,7 @@ func TestACP_Run_RespectsContextCancellation(t *testing.T) {
 func TestACP_Run_WaitsForInFlightSessionPromptOnEOF(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
-	slowRunFunc := RunFunc(func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable)) (string, error) {
+	slowRunFunc := RunFunc(func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable), _ *ConvTurn) (string, error) {
 		close(started)
 		<-release
 		return "done", nil
@@ -933,7 +933,7 @@ func TestACP_Run_NoWaitGroupRaceOnConcurrentCancelAndDispatch(t *testing.T) {
 // that executeConfig only reads cfg, documented but not otherwise proven, in
 // internal/acp/server.go's Server.cfg comment. Run with -race.
 func TestACP_ConcurrentSessionPrompts_NoRace(t *testing.T) {
-	echoRunFunc := RunFunc(func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable)) (string, error) {
+	echoRunFunc := RunFunc(func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable), _ *ConvTurn) (string, error) {
 		return "echo:" + query, nil
 	})
 	ts, cancel := newTestServer(loadTestConfig(t), echoRunFunc)
@@ -1020,7 +1020,7 @@ func TestACP_ConcurrentSessionPrompts_NoRace(t *testing.T) {
 // answer, not just the new question.
 func TestACP_Prompt_SecondTurnSeesFirstTurnHistory(t *testing.T) {
 	var receivedQueries []string
-	echoRunFunc := RunFunc(func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable)) (string, error) {
+	echoRunFunc := RunFunc(func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable), _ *ConvTurn) (string, error) {
 		receivedQueries = append(receivedQueries, query)
 		return fmt.Sprintf("answer-%d", len(receivedQueries)), nil
 	})
@@ -1167,7 +1167,7 @@ func TestACP_Prompt_RespectsConfiguredTimeoutSeconds(t *testing.T) {
 	cfg.Settings.Execution.TimeoutSeconds = 1 // far shorter than defaultPromptTimeout
 
 	started := make(chan struct{})
-	blockingRunFunc := RunFunc(func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable)) (string, error) {
+	blockingRunFunc := RunFunc(func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable), _ *ConvTurn) (string, error) {
 		close(started)
 		<-ctx.Done()
 		return "", ctx.Err()
@@ -1262,7 +1262,7 @@ func TestACP_Prompt_RejectsConcurrentPromptOnSameSession(t *testing.T) {
 	firstStarted := make(chan struct{})
 	releaseFirst := make(chan struct{})
 	var runCount atomic.Int32
-	blockingRunFunc := RunFunc(func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable)) (string, error) {
+	blockingRunFunc := RunFunc(func(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, _ *debug.DebugController, query string, _ func([]debug.Attachable), _ *ConvTurn) (string, error) {
 		if runCount.Add(1) == 1 {
 			close(firstStarted)
 			<-releaseFirst
@@ -1398,4 +1398,200 @@ func TestSessionUpdateFromEvent_ToolCallEnd_ExitCode(t *testing.T) {
 			t.Errorf("want exitCode=1 present, got %v (present=%v)", got, present)
 		}
 	})
+}
+
+// ─── Red-team / abuse tests ──────────────────────────────────────────────────
+
+// Test_ACPServer_LargeLineDoesNotPanic is a regression test for oversized
+// JSON-RPC lines (20 MB, exceeding the 16 MB limit). Verifies the server
+// rejects the line cleanly with an error response, doesn't panic, memory
+// stays bounded, and the server continues accepting requests afterward.
+func Test_ACPServer_LargeLineDoesNotPanic(t *testing.T) {
+	const lineSize = 20 << 20 // 20 MiB, exceeding maxLineSize of 16 MiB
+	const allocationBudget = 120 << 20 // Bounded reader accumulates the line, then discards to newline
+
+	// Valid JSON structure but oversized. The bounded reader will reject it
+	// with -32600 (invalid request / line too large).
+	prefix := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":"`
+	suffix := `"}`
+	line := prefix + strings.Repeat("x", lineSize-len(prefix)-len(suffix)) + suffix + "\n"
+	// Add a valid second request to verify server recovery.
+	followup := `{"jsonrpc":"2.0","id":2,"method":"initialize"}` + "\n"
+
+	var output bytes.Buffer
+	srv := NewServerWithIO(
+		loadTestConfig(t),
+		stubRunFunc("done", nil),
+		strings.NewReader(line + followup),
+		&output,
+	)
+
+	// Exclude construction of the input and config from server allocations.
+	// TotalAlloc measures allocation churn even when GC frees memory.
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	type runResult struct {
+		err        error
+		panicValue interface{}
+	}
+	done := make(chan runResult, 1)
+	go func() {
+		result := runResult{}
+		defer func() {
+			result.panicValue = recover()
+			done <- result
+		}()
+		result.err = srv.Run(ctx, nil, nil)
+	}()
+
+	var result runResult
+	select {
+	case result = <-done:
+	case <-time.After(6 * time.Second):
+		t.Fatal("server did not finish processing the oversized line")
+	}
+
+	if result.panicValue != nil {
+		t.Fatalf("server panicked: %v", result.panicValue)
+	}
+	if result.err == context.DeadlineExceeded {
+		t.Fatal("server timed out processing the oversized line")
+	}
+
+	runtime.ReadMemStats(&after)
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > allocationBudget {
+		t.Errorf("server allocated %d bytes for a %d-byte line; budget is %d",
+			allocated, lineSize, allocationBudget)
+	}
+
+	// Parse responses: the first should be -32600 (line too large),
+	// the second should be a successful initialize.
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected at least 2 response lines, got %d", len(lines))
+	}
+
+	var rejectResp acpResponse
+	if err := json.Unmarshal([]byte(lines[0]), &rejectResp); err != nil {
+		t.Fatalf("unmarshal first response: %v (line=%q)", err, lines[0])
+	}
+	if rejectResp.Error == nil {
+		t.Errorf("expected error response for oversized line, got success")
+	} else if rejectResp.Error.Code != -32600 {
+		t.Errorf("expected -32600 (invalid request), got %d", rejectResp.Error.Code)
+	}
+
+	var okResp acpResponse
+	if err := json.Unmarshal([]byte(lines[1]), &okResp); err != nil {
+		t.Fatalf("unmarshal second response: %v (line=%q)", err, lines[1])
+	}
+	if okResp.Error != nil {
+		t.Errorf("expected success for second initialize after rejection, got error: %+v", okResp.Error)
+	}
+}
+
+// Test_ACPServer_ConcurrentPromptsOnSessionReturnsSessionBusy is a regression
+// test for concurrent prompts on the same session. The second should be
+// rejected with "session busy" without executing the runFunc.
+func Test_ACPServer_ConcurrentPromptsOnSessionReturnsSessionBusy(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	var runCount atomic.Int32
+
+	runFunc := RunFunc(func(
+		ctx context.Context,
+		cfg *config.Config,
+		eventBus *telemetry.EventBus,
+		_ *debug.DebugController,
+		query string,
+		_ func([]debug.Attachable),
+		_ *ConvTurn,
+	) (string, error) {
+		if runCount.Add(1) == 1 {
+			close(started)
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		}
+		return "done", nil
+	})
+
+	ts, cancel := newTestServer(loadTestConfig(t), runFunc)
+	defer func() {
+		releaseOnce.Do(func() { close(release) })
+		cancel()
+		_ = ts.inW.Close()
+	}()
+
+	sessionID := newSessionHelper(t, ts)
+	ts.send(t, acpRequest{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage(`"first"`),
+		Method:  "session/prompt",
+		Params:  textPrompt(sessionID, "first"),
+	})
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first prompt never reached runFunc")
+	}
+
+	// The first request remains in flight while the second is dispatched.
+	ts.send(t, acpRequest{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage(`"second"`),
+		Method:  "session/prompt",
+		Params:  textPrompt(sessionID, "second"),
+	})
+
+	second := ts.recvResponse(t, 2*time.Second)
+	if string(second.ID) != `"second"` {
+		t.Fatalf("want second request's response, got id=%s", second.ID)
+	}
+	if second.Error == nil {
+		t.Fatal("expected session busy error for the overlapping prompt")
+	}
+	if second.Error.Code != -32000 ||
+		!strings.Contains(second.Error.Message, "session busy") {
+		t.Fatalf("expected session busy (-32000), got %+v", second.Error)
+	}
+	if got := runCount.Load(); got != 1 {
+		t.Fatalf("runFunc invoked %d times; rejected prompt must not execute", got)
+	}
+
+	releaseOnce.Do(func() { close(release) })
+
+	// The fixed non-streaming result produces one update before success.
+	notif := ts.recvNotification(t, 2*time.Second)
+	if notif.Method != "session/update" {
+		t.Fatalf("want session/update, got %q", notif.Method)
+	}
+	first := ts.recvResponse(t, 2*time.Second)
+	if string(first.ID) != `"first"` || first.Error != nil {
+		t.Fatalf("first prompt should succeed, got %+v", first)
+	}
+	if got := runCount.Load(); got != 1 {
+		t.Errorf("runFunc invoked %d times, want exactly 1", got)
+	}
+}
+
+// An oversized line that hits EOF before any newline must be reported as too
+// long (ErrUnexpectedEOF), then the next read is a clean EOF.
+func TestBoundedLineReader_OversizedLineAtEOF(t *testing.T) {
+	br := newBoundedLineReader(strings.NewReader(strings.Repeat("x", 100)), 10)
+	if _, err := br.readLine(); err != io.ErrUnexpectedEOF {
+		t.Fatalf("first read err = %v, want io.ErrUnexpectedEOF", err)
+	}
+	if _, err := br.readLine(); err != io.EOF {
+		t.Fatalf("second read err = %v, want io.EOF", err)
+	}
 }

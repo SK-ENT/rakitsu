@@ -469,10 +469,10 @@ func TestA2ATool_NumericResponseID_Decodes(t *testing.T) {
 	}
 }
 
-// ─── credential (issue #22 item 1) ─────────────────────────────────────────
+// ─── credential (api_key credential) ─────────────────────────────────────────
 
 // TestA2ATool_SendsAuthorizationHeaderWhenAPIKeyConfigured covers the
-// missing half of #22: the a2a tool had no way to authenticate against a
+// missing half of the a2a auth feature: the a2a tool had no way to authenticate against a
 // token-gated peer at all. An APIKey on the tool definition must become a
 // real "Authorization: Bearer <key>" header on every call.
 func TestA2ATool_SendsAuthorizationHeaderWhenAPIKeyConfigured(t *testing.T) {
@@ -526,5 +526,97 @@ func TestA2ATool_NoAuthorizationHeaderWhenAPIKeyEmpty(t *testing.T) {
 
 	if headerSet {
 		t.Error("expected no Authorization header when APIKey is empty")
+	}
+}
+
+// ─── Red-team / abuse tests ──────────────────────────────────────────────────
+
+// Test_A2ATool_RemoteServerReturnsOversizedResponse verifies that a remote
+// returning > 1 MB response is rejected without panic or data leakage.
+func Test_A2ATool_RemoteServerReturnsOversizedResponse(t *testing.T) {
+	srv := newMockA2AServer(t, mockHandlers{
+		sendMessage: func(_ string, _ a2aMessage) a2aTask {
+			return completedTask("oversized", strings.Repeat("x", 2<<20))
+		},
+	})
+	defer srv.Close()
+
+	tool := newTool(t, srv, "Researcher", "")
+	tool.httpClient = srv.Client()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// A panic fails the test naturally; the oversized response must instead
+	// produce an error without returning any remote output.
+	result, err := tool.Execute(ctx, map[string]interface{}{"query": "q"})
+	if err == nil {
+		t.Fatal("expected an error for a response exceeding the 1 MiB limit")
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("expected response-size rejection, not a timeout: %v", err)
+	}
+	if result != "" {
+		t.Errorf("expected no output, got %d bytes", len(result))
+	}
+}
+
+// Test_A2ATool_RemoteServerHangsRespectsCancelation verifies that a remote
+// that never responds respects the caller's context cancellation and doesn't hang.
+func Test_A2ATool_RemoteServerHangsRespectsCancelation(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req a2aRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		close(started)
+
+		// Never send headers or a response while the request is active.
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer srv.Close()
+	defer close(release) // Ensure server cleanup cannot hang on a regression.
+
+	tool := newTool(t, srv, "Researcher", "")
+	tool.httpClient = srv.Client()
+	tool.httpClient.Timeout = 0 // Only the caller's context may time out.
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	done := make(chan error, 1)
+	start := time.Now()
+	go func() {
+		_, err := tool.Execute(ctx, map[string]interface{}{"query": "q"})
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		select {
+		case <-started:
+		default:
+			t.Fatal("request never reached the remote server")
+		}
+		if err == nil {
+			t.Fatal("expected a timeout error, got nil")
+		}
+		if ctx.Err() != context.DeadlineExceeded {
+			t.Fatalf("expected context deadline exceeded, got %v (Execute: %v)", ctx.Err(), err)
+		}
+		if !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
+			t.Fatalf("expected deadline-exceeded error, got %v", err)
+		}
+		if elapsed := time.Since(start); elapsed >= 2*time.Second {
+			t.Fatalf("Execute returned too slowly: %v", elapsed)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Execute hung instead of respecting the 500ms context timeout")
 	}
 }

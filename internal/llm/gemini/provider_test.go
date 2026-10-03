@@ -1,12 +1,38 @@
 package gemini
 
 import (
+	"context"
 	"encoding/base64"
 	"testing"
 
 	"github.com/SK-ENT/rakitsu/internal/llm"
 	"google.golang.org/genai"
 )
+
+// Compile-time check that Gemini participates in the FallbackProvider audio
+// path even though it needs no transcription.
+var _ llm.InputPreparer = (*Provider)(nil)
+
+// TestPrepareInput_LeavesAudioIntact is a regression test: Gemini accepts
+// inline audio parts natively, so PrepareInput must return the history
+// unchanged rather than transcribing (which is the OpenAI-only fallback).
+func TestPrepareInput_LeavesAudioIntact(t *testing.T) {
+	p := &Provider{}
+	audio := llm.ContentBlock{
+		Type:     llm.ContentTypeAudio,
+		MIMEType: "audio/wav",
+		Source:   &llm.BlockSource{Kind: llm.SourceKindBase64, Base64: base64.StdEncoding.EncodeToString([]byte("data"))},
+	}
+	history := []llm.Message{{Role: "user", Content: []llm.ContentBlock{audio}}}
+
+	prepared, err := p.PrepareInput(context.Background(), history)
+	if err != nil {
+		t.Fatalf("PrepareInput: %v", err)
+	}
+	if len(prepared) != 1 || prepared[0].Content[0].Type != llm.ContentTypeAudio {
+		t.Errorf("PrepareInput altered the history: %+v", prepared)
+	}
+}
 
 // TestParseResponse_EmptyCandidatesReportsContentFilter is a regression
 // test: an empty Candidates slice (the response was blocked before
@@ -205,5 +231,44 @@ func TestBuildContentsUserWithImage(t *testing.T) {
 	}
 	if string(inline.Data) != string(imgBytes) {
 		t.Errorf("InlineData.Data = %v, want %v", inline.Data, imgBytes)
+	}
+}
+
+// TestBuildContentsUserWithAudio mirrors TestBuildContentsUserWithImage for
+// the --attach audio path.
+func TestBuildContentsUserWithAudio(t *testing.T) {
+	p := &Provider{}
+	audioBytes := []byte{0x52, 0x49, 0x46, 0x46} // arbitrary bytes, not a real WAV — buildContents doesn't validate content
+	history := []llm.Message{
+		{
+			Role: "user",
+			Content: []llm.ContentBlock{
+				{Type: llm.ContentTypeText, Text: "what is this?"},
+				{
+					Type:     llm.ContentTypeAudio,
+					MIMEType: "audio/wav",
+					Source:   &llm.BlockSource{Kind: llm.SourceKindBase64, Base64: base64.StdEncoding.EncodeToString(audioBytes)},
+				},
+			},
+		},
+	}
+
+	contents := p.buildContents(history)
+
+	if len(contents) != 1 || len(contents[0].Parts) != 2 {
+		t.Fatalf("buildContents() = %+v, want one content with two parts", contents)
+	}
+	if contents[0].Parts[0].Text != "what is this?" {
+		t.Errorf("Parts[0].Text = %q, want %q", contents[0].Parts[0].Text, "what is this?")
+	}
+	inline := contents[0].Parts[1].InlineData
+	if inline == nil {
+		t.Fatal("Parts[1].InlineData = nil, want an inline data part")
+	}
+	if inline.MIMEType != "audio/wav" {
+		t.Errorf("InlineData.MIMEType = %q, want audio/wav", inline.MIMEType)
+	}
+	if string(inline.Data) != string(audioBytes) {
+		t.Errorf("InlineData.Data = %v, want %v", inline.Data, audioBytes)
 	}
 }

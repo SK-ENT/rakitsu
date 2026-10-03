@@ -45,9 +45,20 @@ func TestOrchestrator_B49_EmptySupervisorFallsBackToWorker(t *testing.T) {
 	worker := agent.NewAgent(workerDef, workerProvider, tools.NewToolRegistry(), bus, nil)
 
 	// Supervisor provider: first iteration calls delegate_to_testworker;
-	// second iteration produces empty response with no tool calls (the
-	// failure mode this fallback patches against — supervisor ran, didn't synthesize,
-	// returned empty).
+	// every iteration after that produces an empty response with no tool
+	// calls (the failure mode this fallback patches against — supervisor
+	// ran, didn't synthesize, returned empty).
+	//
+	// The synthetic Hierarchical supervisor Agent (built inline in
+	// Orchestrator.runReAct, not exposed for test override) uses the
+	// package's default retry config, which now retries a genuinely empty,
+	// non-tool-call response up to its 5 attempts (see
+	// isEmptyNonToolResult) before this test's own fallback-to-worker
+	// logic ever sees it. Five identical empty entries let those retries
+	// resolve against real scenario data instead of falling through to
+	// recordingProvider's "done" past-exhaustion sentinel, which would
+	// silently defeat the fallback this test exists to pin.
+	empty := llm.GenerateResult{Response: "", FinishReason: "stop"}
 	supervisorProvider := &recordingProvider{
 		name:  "supervisor",
 		model: "test-model",
@@ -60,14 +71,7 @@ func TestOrchestrator_B49_EmptySupervisorFallsBackToWorker(t *testing.T) {
 					Arguments: map[string]interface{}{"task": "answer the user"},
 				}},
 			},
-			{
-				// Empty Response, no tool calls — supervisor "finished" but
-				// emitted nothing. This is exactly what nemotron does after
-				// a successful delegation when it spent its budget on
-				// reasoning tokens and ran out of room to synthesize.
-				Response:     "",
-				FinishReason: "stop",
-			},
+			empty, empty, empty, empty, empty,
 		},
 	}
 

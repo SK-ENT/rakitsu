@@ -208,6 +208,20 @@ settings:
 | `spawn` | SpawnConfig | `spawn_agent` tool: runtime subagent fan-out (see below) |
 | `agent_chat` | AgentChatConfig | Directed agent chat: talking to one agent in a multi-agent run (see below) |
 | `session_msg` | SessionMsgConfig | Cross-session messaging gate (see below) |
+| `sessions_dir` | string | Directory for session files (`<id>.jsonl`, `<id>.chat.json`, `sessions.json`). Default `~/.rakitsu/sessions`. Supports `~` and `${VAR}`; must be absolute after expansion. Overridden by `--sessions-dir` on `serve`, `run`, `sessions`. Two instances must not share a dir (see below). |
+
+### Running isolated instances
+
+Each `rakitsu serve` instance that should keep its own history needs its own session directory, and its own memory directory if memory is enabled:
+
+```yaml
+settings:
+  sessions_dir: ~/.rakitsu/instances/team-a/sessions
+  memory:
+    dir: ~/.rakitsu/instances/team-a/memory
+```
+
+or `rakitsu serve --config team-a.yaml --sessions-dir ~/.rakitsu/instances/team-a/sessions`. Precedence: `--sessions-dir` flag, then `settings.sessions_dir`, then `~/.rakitsu/sessions`. Everything under the directory moves together, including the `sessions.json` index. That index is not safe for concurrent writers from different processes, so **never point two running instances at the same `sessions_dir`**. Wake timer state (`~/.rakitsu/wake`) is separate and is not affected by this setting.
 
 ### RetrySettings
 
@@ -307,6 +321,7 @@ settings:
 | `response_format` | string | Optional adapter override: `standard_openai`, `reasoning_content_field`. Empty = auto-detect from model name |
 | `rate_limit` | int | Max requests per minute to this provider (0 = unlimited) |
 | `reasoning_effort` | string | OpenAI `reasoning_effort` sent on every request (`none`, `minimal`, `low`, `medium`, `high`); GPT-5.6 models require it with tools |
+| `client_version` | string | Codex only: client version sent on model-catalog requests (dotted numeric, default `1.0.0`); the backend lists newer models only for newer versions |
 
 ### Defaults
 
@@ -422,7 +437,7 @@ tools:
 | `type` | string | **Required.** Tool type: `cli`, `fs`, `mcp_server`, `a2a`, `jev` |
 | `description` | string | What the tool does (shown to LLM) |
 | `command` | string | Shell command (for `cli` type) |
-| `operation` | string | Operation name (for `fs` type): `read`, `read_image`, `write`, `search`, `list`. `read_image` loads a png/jpeg/gif/webp file (max 20 MB, same `allowed_paths` fence) and gives the image itself to a `vision: true` agent |
+| `operation` | string | Operation name (for `fs` type): `read`, `read_image`, `write`, `search`, `list`. `read_image` loads a png/jpeg/gif/webp file (max 20 MB, same `allowed_paths` fence) and gives the image itself to a `vision: true` agent. Images over 1 MiB (also `--attach` and MCP tool images) are first downscaled to 1568 px and re-sent as JPEG; set `RAKITSU_IMAGE_SHRINK_BYTES` to another byte threshold, or `0` to disable |
 | `method` | string | HTTP method (for future `http` type) |
 | `executable` | string | Path to executable |
 | `script` | string | Script content |
@@ -550,7 +565,7 @@ agents:
 | `tools` | []string | Tool names this agent can use |
 | `skills` | []string | Skill names this agent can use |
 | `tools_inline` | ToolDefinition[] | Agent-specific inline tool definitions |
-| `vision` | bool | Image input. Unset (default) = auto: images returned by tools (fs `read_image`, MCP tools such as screenshots) are sent to the model; if the model rejects image input, they are replaced by a one-line `[image omitted: ...]` note for the rest of the run. `true` = always send (and required for `--attach`). `false` = never send, note only |
+| `vision` | bool | Image input. Unset (default) = auto: images returned by tools (fs `read_image`, MCP tools such as screenshots) are sent to the model; if the model rejects image input, they are replaced by a one-line `[image omitted: ...]` note for the rest of the run. `true` = always send (and required for `--attach`). With `true`, `rakitsu run` also auto-attaches image/audio files named in the query text (e.g. `"explain shot.png"`) when they are regular files inside `--workdir` (else the current directory) and under the size cap; opt out with `--no-auto-attach`; paths with spaces or outside the workdir need `--attach`; `serve`/hub queries never auto-attach. `false` = never send, note only |
 | `settings` | AgentSettings | Agent behavior settings |
 
 ### ModelConfig

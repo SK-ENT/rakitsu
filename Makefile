@@ -4,7 +4,7 @@ BINARY_NAME=rakitsu
 BUILD_DIR=bin
 FRONTEND_DIR=web
 WEBUI_DIR=internal/webui
-VERSION_CORE?=v0.2.0-alpha.3
+VERSION_CORE?=v0.3.0-alpha.1-internal
 COMMIT?=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BRANCH:=$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
 COMMIT_COUNT:=$(shell git rev-list --count HEAD 2>/dev/null || echo "0")
@@ -149,7 +149,7 @@ check:
 	go mod verify
 	go vet ./...
 
-# Refresh remote dogfood deploy content (B55 hygiene). Mirrors local docs/ and
+# Refresh remote dogfood deploy content. Mirrors local docs/ and
 # examples/ onto $(DOGFOOD_HOST):$(DOGFOOD_DIR). Use refresh-dogfood-dry first to preview.
 refresh-dogfood:
 	@test -n "$(DOGFOOD_HOST)" || (echo "error: DOGFOOD_HOST not set, e.g. make refresh-dogfood DOGFOOD_HOST=user@host" && exit 1)

@@ -117,6 +117,11 @@ func (p *Provider) Generate(
 	return p.generate(ctx, systemPrompt, history, tools, llm.OverrideConfig{})
 }
 
+// PrepareInput leaves audio intact because Gemini accepts inline audio parts.
+func (p *Provider) PrepareInput(_ context.Context, history []llm.Message) ([]llm.Message, error) {
+	return history, nil
+}
+
 // GenerateWithOverride implements llm.OverrideAware so the debug controller
 // can experiment with sampling parameters mid-run.
 func (p *Provider) GenerateWithOverride(
@@ -228,6 +233,15 @@ func (p *Provider) buildContents(history []llm.Message) []*genai.Content {
 						continue
 					}
 					parts = append(parts, genai.NewPartFromBytes(decoded, b.MIMEType))
+				case llm.ContentTypeAudio:
+					decoded, err := base64.StdEncoding.DecodeString(b.Source.Base64)
+					if err != nil {
+						// llm.LoadAudioAttachment is the only encoder — this
+						// should never fire. Skip rather than send a
+						// corrupt/partial payload to the provider.
+						continue
+					}
+					parts = append(parts, genai.NewPartFromBytes(decoded, b.MIMEType))
 				}
 			}
 			contents = append(contents, &genai.Content{
@@ -293,11 +307,11 @@ func (p *Provider) buildContents(history []llm.Message) []*genai.Content {
 				}
 			}
 
-			// Tool-returned images ride in the same user turn as
+			// Tool-returned images and audio ride in the same user turn as
 			// inline data, after all of that turn's function responses.
 			var imageParts []*genai.Part
 			for _, b := range msg.Content {
-				if b.Type != llm.ContentTypeImage || b.Source == nil {
+				if b.Source == nil || (b.Type != llm.ContentTypeImage && b.Type != llm.ContentTypeAudio) {
 					continue
 				}
 				if decoded, err := base64.StdEncoding.DecodeString(b.Source.Base64); err == nil {

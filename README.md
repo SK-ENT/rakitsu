@@ -126,7 +126,7 @@ Recorded against a local model with the [Code Reviewer config](#example-config) 
 
 **Agent Engine**
 - ReAct loop with reflection and ground-checking
-- Orchestration strategies: Sequential, Parallel, Hierarchical, DAG, Plan-and-Execute
+- Orchestration strategies: ReAct, Pipeline (with Sequential/Parallel/DAG step shapes); Hierarchical and Plan-and-Execute currently route through ReAct, not distinct implementations
 - Pipeline checkpoint and resume
 - Token budget enforcement, cost tracking, context auto-compression
 
@@ -147,9 +147,22 @@ Recorded against a local model with the [Code Reviewer config](#example-config) 
 
 **Protocol interop**
 - `rakitsu acp` — run as an ACP (Agent Client Protocol) server so editors like Zed can talk to rakitsu agents directly
+- `rakitsu acp` reads one JSON-RPC message per line, capped at 16 MiB per line
+- `rakitsu acp` keeps at most `--max-sessions` sessions (default 256) and drops one unused for `--session-idle-timeout` (default 24h); a session with a running prompt is never dropped
 - `rakitsu serve` exposes an MCP server at `/mcp` (legacy era, ≤2025-11-25 revision) so external MCP clients can discover and call rakitsu's tools
 - `rakitsu serve` exposes an A2A endpoint at `/a2a` (real A2A v1.0.1) plus agent-card discovery, so a rakitsu agent can delegate to a named agent in a different rakitsu process
 - Tool types `mcp_server`, `a2a`, and `jev` let a rakitsu agent call *out* to other MCP servers, A2A agents, or TypeSafe AI's Jev model for typed yes/no, pick-one, or scored questions
+
+## Long-running monitors
+
+Experimental. A chat session can wake itself on a timer (`settings.wake`), check something, and stay quiet unless it matters. `rakitsu serve --config monitor.yaml` can start such sessions itself from a `monitors:` block, so a supervisor (Docker, systemd, launchd) only has to restart one process.
+
+- `GET /healthz` returns 200 when every monitor is healthy, 503 otherwise. `rakitsu healthcheck` wraps it for Docker.
+- Status and control: `GET /api/chat/{id}/wake/status`, `POST .../wake/stop`, `POST .../wake/resume`, the `/wake` slash command, and a status card in the web UI.
+- Alerts go out through server-side sinks (webhook, ntfy) with a host allow-list; the agent only queues a message with the `send_alert` tool.
+- Status: the timer logic is tested with a fake clock. A live multi-day run is in progress and not yet proven.
+
+Details: [docs/wake-timer.md](docs/wake-timer.md), [docs/monitor-autostart.md](docs/monitor-autostart.md), deployment files in [deploy/monitor/](deploy/monitor/).
 
 ## Wallpapers
 
@@ -187,6 +200,7 @@ rakitsu acp                           # Run as an ACP server (editor integration
 rakitsu scaffold code-review          # Generate config from template
 rakitsu sessions                      # Browse past runs
 rakitsu doctor config.yaml            # Diagnose config + provider health before running
+rakitsu healthcheck                   # Probe a running `serve` at /healthz (exit 0 = healthy)
 
 # Override provider/model at runtime (no config edits needed):
 rakitsu run config.yaml "query" --provider litellm --model gpt-4o
@@ -288,7 +302,9 @@ Requires: Go 1.25+, Node.js 20+
 cmd/rakitsu/        CLI entry points (Cobra)
 internal/agent/     ReAct loop, orchestrator, pipeline executor
 internal/llm/       LLM provider interface + implementations
-internal/tools/     Tool interface: cli/, fs/, mcp/, a2a/, memory/
+internal/tools/     Tool interface: cli/, fs/, mcp/, a2a/, memory/, alert/
+internal/wake/      Wake timer engine (checks, rules, tasks)
+internal/alert/     Alert sinks (webhook, ntfy) with redaction and rate cap
 internal/server/    SSE hub, agent runner, config store
 internal/debug/     Debug controller, replay, breakpoints
 internal/store/     Session persistence (JSONL, one file per session)
@@ -311,6 +327,8 @@ export OPENAI_API_KEY=sk-...
 ```bash
 rakitsu serve --port 8080
 ```
+
+**Running more than one instance** — Give each instance its own session directory and memory directory, via `--sessions-dir PATH` (on `serve`, `run`, `sessions`) or `settings.sessions_dir`, plus `settings.memory.dir`. Never share one directory between running instances: the `sessions.json` index is not safe for several writers. Default is `~/.rakitsu/sessions`. Details: [docs/configuration.md](docs/configuration.md#running-isolated-instances).
 
 **Agent runs but produces no output** — Check `--trace` for execution details:
 ```bash
@@ -343,7 +361,7 @@ license.
 
 ## License
 
-BSL 1.1 — See [LICENSE](LICENSE) for details. Each release converts to Apache 2.0 four years after *that version's* first publication, not on one fixed date for the whole project — see [RELEASE-NOTES.md](RELEASE-NOTES.md) for per-version dates.
+BSL 1.1 — See [LICENSE](LICENSE) for details. Converts to Apache 2.0 after 4 years.
 
 **AI tooling**: see [`AI_USE_NOTICE.md`](AI_USE_NOTICE.md). Reading and personal study with AI tools is fine; AI-accelerated competitive reimplementation is subject to the BSL non-compete clause.
 

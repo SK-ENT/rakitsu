@@ -5,6 +5,7 @@ import { useChatSession } from '../../composables/useChatSession';
 import type { ChatSessionMeta } from '../../types';
 import ChatPanel from './ChatPanel.vue';
 import BranchTreeView from './BranchTreeView.vue';
+import MonitorStatusCard from '../monitor/MonitorStatusCard.vue';
 
 // ChatView is the primary chat surface. It owns:
 //   - A left sidebar listing every active chat session (multi-session).
@@ -19,6 +20,9 @@ const workspace = useWorkspace();
 
 const starting = ref(false);
 const startError = ref<string | null>(null);
+
+// Monitor status display (for autostarted wake sessions)
+const monitors = ref<string[]>([]);
 
 const sessions = computed<ChatSessionMeta[]>(() => workspace.knownChatSessions.value);
 const activeId = computed<string | null>(() => workspace.activeChatSessionId.value);
@@ -249,6 +253,17 @@ function shortPath(p: string | undefined): string {
         </li>
       </ul>
 
+      <div v-if="monitors.length > 0" class="monitors-section">
+        <div class="section-label">Monitors</div>
+        <div class="monitors-grid">
+          <MonitorStatusCard
+            v-for="monitorId in monitors"
+            :key="monitorId"
+            :session-id="monitorId"
+          />
+        </div>
+      </div>
+
       <div v-if="startError" class="error">{{ startError }}</div>
       <div v-if="sendError" class="error">{{ sendError }}</div>
 
@@ -376,6 +391,24 @@ function shortPath(p: string | undefined): string {
   margin-top: 8px;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.monitors-section {
+  border-top: 1px solid var(--border-subtle);
+  padding: 10px 16px;
+}
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.monitors-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .session-list {

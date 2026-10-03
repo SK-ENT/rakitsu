@@ -7,15 +7,10 @@
 # existing A2A API (/a2a) — NOT a new rakitsu concept,
 # just an otherwise ordinary agent dispatched to via A2A.
 #
-# Usage (load secrets inline with the README's secret() helper rather than
-# typing them into an export line):
-#   RAKITSU_API_TOKEN=$(secret RAKITSU_API_TOKEN) \
-#   OPENAI_API_KEY=$(secret OPENAI_API_KEY) \
+# Usage:
+#   export RAKITSU_API_TOKEN=...   # server control-plane API token required for the bridge's /a2a auth; also enables settings.session_msg (unused here)
+#   export OPENAI_API_KEY=...              # this agent's own provider key
 #   rakitsu serve --config-dir examples/single/13-voice-orchestrator
-#
-# RAKITSU_API_TOKEN is the server control-plane token the bridge's /a2a auth
-# requires; it also enables settings.session_msg (unused here).
-# OPENAI_API_KEY is this agent's own provider key.
 
 name: Voice Orchestrator Worker
 version: "1.0"

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/SK-ENT/rakitsu/internal/acp"
 	"github.com/SK-ENT/rakitsu/internal/config"
@@ -43,12 +44,20 @@ Examples:
 	RunE: runACP,
 }
 
-var acpTimeoutSeconds int
+var (
+	acpTimeoutSeconds int
+	acpMaxSessions    int
+	acpSessionIdle    time.Duration
+)
 
 func init() {
 	rootCmd.AddCommand(acpCmd)
 	acpCmd.Flags().IntVar(&acpTimeoutSeconds, "timeout", 0,
 		"override settings.execution.timeout_seconds for every session/prompt turn (<=0 disables it); unset uses the pinned config, defaulting to 300s")
+	acpCmd.Flags().IntVar(&acpMaxSessions, "max-sessions", 256,
+		"max sessions retained in memory; the least recently used idle session is evicted past this (<=0 = unlimited; sessions with a running prompt are never evicted)")
+	acpCmd.Flags().DurationVar(&acpSessionIdle, "session-idle-timeout", 24*time.Hour,
+		"evict a session unused for this long (<=0 = never); a later prompt on it gets \"session not found\"")
 }
 
 func runACP(cmd *cobra.Command, args []string) error {
@@ -73,7 +82,8 @@ func runACP(cmd *cobra.Command, args []string) error {
 		cancel()
 	}()
 
-	srv := acp.NewServer(cfg, executeConfig)
+	srv := acp.NewServer(cfg, executeConfigConv)
+	srv.SetSessionRetention(acpMaxSessions, acpSessionIdle)
 	if cmd.Flags().Changed("timeout") {
 		srv.SetTimeoutOverride(acpTimeoutSeconds)
 	}

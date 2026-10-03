@@ -6,7 +6,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/SK-ENT/rakitsu/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -33,11 +32,12 @@ Examples:
 func init() {
 	sessionsCmd.Flags().IntVar(&sessionsLimit, "limit", 20, "max sessions to show")
 	sessionsCmd.Flags().BoolVar(&sessionsResumable, "resumable", false, "show only sessions with a resumable checkpoint")
+	sessionsCmd.Flags().StringVar(&sessionsDirFlag, "sessions-dir", "", sessionsDirFlagHelp)
 	rootCmd.AddCommand(sessionsCmd)
 }
 
 func runSessions(_ *cobra.Command, _ []string) error {
-	ss, err := store.NewSessionStore()
+	ss, err := openSessionStore(nil)
 	if err != nil {
 		return fmt.Errorf("cannot open session store: %w\n  hint: check disk space and permissions on ~/.rakitsu", err)
 	}

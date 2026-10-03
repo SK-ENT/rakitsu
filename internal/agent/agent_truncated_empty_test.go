@@ -13,10 +13,13 @@ package agent
 // and prints nothing (internal/chat/blocks.go).
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SK-ENT/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // TestAgent_TruncatedEmpty_LengthFinishNoToolCalls_FlagsUnproductiveAndSynthesizesMarker
@@ -53,9 +56,30 @@ func TestAgent_TruncatedEmpty_LengthFinishNoToolCalls_FlagsUnproductiveAndSynthe
 // (pre-existing contract) but must NOT get the new truncated-empty marker —
 // that diagnosis is specific to length-truncation and would be misleading
 // here.
+//
+// An empty, non-length "stop" response is also exactly the shape
+// generateWithRetry now retries (see isEmptyNonToolResult and the live
+// Gemini quirk it guards against), so this must program defaultRetryConfig's
+// full MaxAttempts worth of identical empty responses — otherwise
+// sequenceProvider panics on being called past what was programmed. This
+// still exercises the case under test: once retries are exhausted, the
+// last (still empty) result reaches the same unproductive-marking path.
 func TestAgent_EmptyAnswer_NonLengthFinish_DoesNotGetTruncatedMarker(t *testing.T) {
 	resp := stopResponse("")
-	out, err, unproductive := drive(t, "empty-stop", 3, 0, resp)
+	responses := make([]llm.GenerateResult, defaultRetryConfig.MaxAttempts)
+	for i := range responses {
+		responses[i] = resp
+	}
+	bus := telemetry.NewEventBus(64)
+	tool := newMockTool("noop", "ok")
+	ag := newE2EAgent("empty-stop", newSequenceProvider(responses...), bus, tool)
+	ag.maxIterations = 3
+	// Fast, deterministic retry timing: this test cares about the
+	// unproductive-marking outcome once retries are exhausted, not about
+	// exercising real backoff delays.
+	ag.SetRetryConfig(RetryConfig{MaxAttempts: defaultRetryConfig.MaxAttempts, BaseDelay: time.Millisecond, MaxDelay: 10 * time.Millisecond})
+	out, err := ag.Run(context.Background(), "test query")
+	unproductive := ag.LastRunUnproductive()
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

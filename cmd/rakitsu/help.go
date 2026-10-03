@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/SK-ENT/rakitsu/internal/brand"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
 

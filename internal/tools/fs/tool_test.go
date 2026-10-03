@@ -523,7 +523,7 @@ func TestStress_ConcurrentPathChecks(t *testing.T) {
 // working-dir resolution — SK-ENT/rakitsu#28
 // ============================================================
 
-// TestWrite_FencedAllowedPath_ResolvesAgainstCwd locks down the #28 fix:
+// TestWrite_FencedAllowedPath_ResolvesAgainstCwd locks down the fix:
 // with allowed_paths fencing a subdirectory and no explicit working_dir, a
 // relative path that already names the fenced directory resolves against the
 // process cwd — the old allowedPaths[0] default doubled it into

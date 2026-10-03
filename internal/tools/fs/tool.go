@@ -30,7 +30,7 @@ const DefaultMaxReadBytes = 10 * 1024 * 1024 // 10MB
 type Tool struct {
 	name         string
 	description  string
-	operation    string   // "read", "read_image", "write", "list", "search"
+	operation    string   // "read", "read_image", "read_audio", "read_media", "write", "list", "search"
 	allowedPaths []string // Security: restrict file access
 	workingDir   string   // resolve relative paths against this
 	parameters   map[string]config.Parameter
@@ -123,24 +123,47 @@ func (t *Tool) Execute(ctx context.Context, args map[string]interface{}) (string
 	return text, err
 }
 
-// ExecuteContent implements tools.ContentTool. Only read_image returns a
-// content block (the image); every other operation is text only.
+// ExecuteContent implements tools.ContentTool. read_image, read_audio, and
+// read_media return a content block (the media); every other operation is
+// text only. Whether the calling agent's provider can actually use an audio
+// block (native input, transcription, or neither) is decided later, when
+// the block reaches Generate — not here, since this tool has no visibility
+// into which provider its caller is wired to.
 func (t *Tool) ExecuteContent(ctx context.Context, args map[string]interface{}) (string, []llm.ContentBlock, error) {
 	path, err := t.resolvePath(args)
 	if err != nil {
 		return "", nil, err
 	}
-	if t.operation == "read_image" {
-		block, err := llm.LoadImageAttachment(path)
+	switch t.operation {
+	case "read_image":
+		return loadMediaBlock(path, llm.LoadImageAttachment, "image")
+	case "read_audio":
+		return loadMediaBlock(path, llm.LoadAudioAttachment, "audio")
+	case "read_media":
+		kind, err := llm.SniffAttachmentKind(path)
 		if err != nil {
 			return "", nil, err
 		}
-		block.Metadata["path"] = path
-		size, _ := block.Metadata["size_bytes"].(int64)
-		return fmt.Sprintf("Loaded image %s (%s, %d bytes).", path, block.MIMEType, size), []llm.ContentBlock{block}, nil
+		if kind == llm.ContentTypeAudio {
+			return loadMediaBlock(path, llm.LoadAudioAttachment, "audio")
+		}
+		return loadMediaBlock(path, llm.LoadImageAttachment, "image")
 	}
 	text, err := t.execute(ctx, path, args)
 	return text, nil, err
+}
+
+// loadMediaBlock runs a media loader (LoadImageAttachment/LoadAudioAttachment)
+// and formats the text summary that stands alongside the returned block in
+// tool output. kind labels the summary text ("image"/"audio").
+func loadMediaBlock(path string, load func(string) (llm.ContentBlock, error), kind string) (string, []llm.ContentBlock, error) {
+	block, err := load(path)
+	if err != nil {
+		return "", nil, err
+	}
+	block.Metadata["path"] = path
+	size, _ := block.Metadata["size_bytes"].(int64)
+	return fmt.Sprintf("Loaded %s %s (%s, %d bytes).", kind, path, block.MIMEType, size), []llm.ContentBlock{block}, nil
 }
 
 // resolvePath returns the call's path argument, resolved against the working

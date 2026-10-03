@@ -100,7 +100,10 @@ type SSEServer struct {
 	// sessionRegistry indexes live one-shot runs and chat sessions.
 	// Every /api/debug/* handler resolves session_id through this registry.
 	sessionRegistry *session.Registry
-	mu              sync.RWMutex
+	// Monitor autostart (Task B): lister for monitor state, healthz config
+	monitorLister monitorLister
+	healthzConfig config.HealthzConfig
+	mu            sync.RWMutex
 }
 
 // NewSSEServer creates a new SSE server
@@ -181,6 +184,7 @@ func (s *SSEServer) Mux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/events", s.handleSSE)
 	mux.HandleFunc("/health", s.handleHealth)
+	mux.HandleFunc("/healthz", s.handleHealthz)
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/session", s.handleSession)
 	mux.HandleFunc("/api/sessions", s.handleListSessions)
@@ -233,6 +237,10 @@ func (s *SSEServer) Mux() *http.ServeMux {
 	mux.HandleFunc("/api/chat/start", s.handleChatStart)
 	mux.HandleFunc("/api/chat/", s.handleChatByID)
 	mux.HandleFunc("/ws/chat/", s.handleChatWS)
+	// Wake control API — stop/resume wake loops
+	mux.HandleFunc("/api/chat/{id}/wake/stop", s.handleChatWakeStop)
+	mux.HandleFunc("/api/chat/{id}/wake/resume", s.handleChatWakeResume)
+	mux.HandleFunc("/api/chat/{id}/wake/status", s.handleChatWakeStatus)
 	// Serve embedded frontend (SPA with fallback to index.html)
 	if staticFS, err := webui.GetStaticFS(); err == nil {
 		mux.Handle("/", spaFallback(staticFS, http.FileServer(staticFS)))
@@ -1486,7 +1494,7 @@ func (s *SSEServer) handleConfigUploadZip(w http.ResponseWriter, r *http.Request
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<20+64<<10) // see handleConfigUpload
-	r.ParseMultipartForm(10 << 20) // 10MB max
+	r.ParseMultipartForm(10 << 20)                         // 10MB max
 	file, _, err := r.FormFile("config")
 	if err != nil {
 		http.Error(w, `{"error":"file upload required (field: config)"}`, http.StatusBadRequest)

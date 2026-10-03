@@ -42,6 +42,9 @@ agents:
 func newForkTestManager(t *testing.T) (*ChatManager, string) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir()) // isolate ~/.rakitsu/sessions
+	// ConfigStore uses a fixed $TMPDIR/rakitsu-configs; a private TMPDIR stops
+	// overlapping test processes from deleting it under each other.
+	t.Setenv("TMPDIR", t.TempDir())
 	ss, err := store.NewSessionStore()
 	if err != nil {
 		t.Fatalf("NewSessionStore: %v", err)

@@ -106,7 +106,7 @@ export interface TreeSnapshot {
 // Sent on `attached` (initial replay) and on `transcript_resync` (after a
 // branch op flips the active path).
 export interface TranscriptEntry {
-  kind: 'user' | 'assistant' | 'system' | 'user_input_request' | 'tool' | 'reasoning' | 'subagent';
+  kind: 'user' | 'assistant' | 'system' | 'user_input_request' | 'tool' | 'reasoning' | 'subagent' | 'wake';
   text?: string;
   interrupted?: boolean;
   error?: string; // assistant turn error text (kind === 'assistant', interrupted === true)
@@ -150,7 +150,7 @@ export interface ChatSessionMeta {
 }
 
 // UI-side message record for rendering.
-export type ChatBlockKind = 'user' | 'assistant' | 'system' | 'tool' | 'reasoning' | 'subagent';
+export type ChatBlockKind = 'user' | 'assistant' | 'system' | 'tool' | 'reasoning' | 'subagent' | 'wake';
 
 export interface ChatBlock {
   kind: ChatBlockKind;

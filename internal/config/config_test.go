@@ -237,7 +237,7 @@ func TestDiscoverAgents_NoDirectory(t *testing.T) {
 	}
 }
 
-// TestRedacted covers B33: resolved api_key values must not leak into
+// TestRedacted covers the redaction rule: resolved api_key values must not leak into
 // session snapshots persisted at ~/.rakitsu/sessions/<id>.jsonl.
 func TestRedacted(t *testing.T) {
 	cfg := &Config{
@@ -341,7 +341,7 @@ func TestRedacted(t *testing.T) {
 	}
 }
 
-// TestLoad_A2AToolAPIKeyExpandsEnvVar covers issue #22 item 1: the a2a tool
+// TestLoad_A2AToolAPIKeyExpandsEnvVar covers the api_key credential: the a2a tool
 // type had no credential field at all, so an a2a peer gated by
 // RAKITSU_API_TOKEN was unreachable from any config. api_key needs the same
 // ${VAR} expansion provider api_key values already get — both for a

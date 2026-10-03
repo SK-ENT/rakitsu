@@ -1,0 +1,36 @@
+[Unit]
+Description=rakitsu 24/7 monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+# Secrets: a root-owned 0600 file with KEY=value lines.
+EnvironmentFile=/etc/rakitsu/monitor.env
+Environment=HOME=/var/lib/rakitsu
+ExecStart=/usr/local/bin/rakitsu serve --config /etc/rakitsu/monitor.yaml
+Restart=always
+RestartSec=5
+# rakitsu sends WATCHDOG=1 only while /healthz-equivalent checks pass.
+WatchdogSec=120
+User=rakitsu
+Group=rakitsu
+StateDirectory=rakitsu
+WorkingDirectory=/var/lib/rakitsu
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/rakitsu
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

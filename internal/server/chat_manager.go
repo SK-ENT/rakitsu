@@ -3,9 +3,12 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -17,6 +20,7 @@ import (
 	"github.com/SK-ENT/rakitsu/internal/store"
 	"github.com/SK-ENT/rakitsu/internal/telemetry"
 	"github.com/SK-ENT/rakitsu/internal/turntree"
+	"github.com/SK-ENT/rakitsu/internal/wake"
 )
 
 // SlashLLMFactory builds a fresh LLM client for the `/model` slash command's
@@ -58,6 +62,8 @@ type ChatManager struct {
 	// sessionRegistry, when non-nil, receives a read-only adapter for each
 	// active chat session. Phase 1: observational only.
 	sessionRegistry *session.Registry
+	// wakeDir is the directory for wake-up timer state files.
+	wakeDir string
 }
 
 // SetSessionRegistry enables Phase-1 runtime session observability for chat.
@@ -101,6 +107,27 @@ func (m *ChatManager) SetSlashLLMFactory(f SlashLLMFactory) {
 	m.mu.Unlock()
 }
 
+// SetWakeDir sets the directory for wake-up timer state files.
+func (m *ChatManager) SetWakeDir(dir string) {
+	m.mu.Lock()
+	m.wakeDir = dir
+	m.mu.Unlock()
+}
+
+// wakeStateDir returns the wake-up timer state directory.
+func (m *ChatManager) wakeStateDir() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.wakeDir != "" {
+		return m.wakeDir
+	}
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		return ".rakitsu/wake"
+	}
+	return filepath.Join(home, ".rakitsu", "wake")
+}
+
 // Get returns an active session by id, or nil.
 func (m *ChatManager) Get(id string) *ChatSession {
 	m.mu.RLock()
@@ -141,10 +168,27 @@ func (m *ChatManager) List() []map[string]interface{} {
 // resume does not yet thread continuity into the JSONL audit log (deferred
 // to PR C).
 func (m *ChatManager) Start(ctx context.Context, configID, workdir string, envVars map[string]string, resumeID string) (*ChatSession, error) {
-	if m.configStore == nil {
-		return nil, fmt.Errorf("config store not configured")
-	}
+	return m.start(ctx, configID, workdir, envVars, resumeID, false)
+}
 
+// StartOrResume starts the session with the fixed id sessionID: it reattaches
+// to a live one, resumes a persisted one, or else creates a new one under
+// that id. Used by monitor autostart so the id is stable across restarts.
+func (m *ChatManager) StartOrResume(ctx context.Context, configID, workdir string, envVars map[string]string, sessionID string) (*ChatSession, error) {
+	fresh := false
+	if m.sessionStore != nil {
+		meta, _ := m.sessionStore.GetSession(sessionID)
+		_, lerr := m.sessionStore.LoadChatTree(sessionID)
+		fresh = meta == nil && lerr != nil
+	} else {
+		fresh = true
+	}
+	return m.start(ctx, configID, workdir, envVars, sessionID, fresh)
+}
+
+// start implements Start. fresh=true means resumeID is a fixed id for a new
+// session: skip loading persisted history.
+func (m *ChatManager) start(ctx context.Context, configID, workdir string, envVars map[string]string, resumeID string, fresh bool) (*ChatSession, error) {
 	// Resume path: load and validate the persisted tree before touching the
 	// config store so a corrupt blob fails fast and the JSONL recorder
 	// never starts a half-set-up session.
@@ -153,21 +197,20 @@ func (m *ChatManager) Start(ctx context.Context, configID, workdir string, envVa
 		resumeCreated time.Time
 	)
 	if resumeID != "" {
-		if m.sessionStore == nil {
-			return nil, fmt.Errorf("resume requested but session store is disabled")
-		}
-		// Collision: refuse to resume into a session id that is already
-		// active in memory, or currently being resumed by a concurrent
-		// call. Check-and-reserve atomically under one Lock — resolving and
+		// Collision: when resuming, reattach to a live session (idempotent).
+		// Refuse only a concurrent resume (already being resumed by another call).
+		// Check-and-reserve atomically under one Lock — resolving and
 		// building the session below is real I/O, so a second caller must
 		// see the reservation, not just a snapshot of sessions that's
 		// already stale by the time it acts on it.
 		m.mu.Lock()
-		_, active := m.sessions[resumeID]
-		_, reserved := m.resuming[resumeID]
-		if active || reserved {
+		if live, ok := m.sessions[resumeID]; ok {
 			m.mu.Unlock()
-			return nil, fmt.Errorf("session %s is already active", resumeID)
+			return live, nil // idempotent reattach; the wake ticker keeps running
+		}
+		if _, reserved := m.resuming[resumeID]; reserved {
+			m.mu.Unlock()
+			return nil, fmt.Errorf("session %s is already being resumed", resumeID)
 		}
 		m.resuming[resumeID] = struct{}{}
 		m.mu.Unlock()
@@ -177,11 +220,21 @@ func (m *ChatManager) Start(ctx context.Context, configID, workdir string, envVa
 			m.mu.Unlock()
 		}()
 
-		var rerr error
-		resumeTree, resumeCreated, configID, _, rerr = m.resolvePersistedSession(resumeID, configID, envVars)
-		if rerr != nil {
-			return nil, fmt.Errorf("resume %s: %w", resumeID, rerr)
+		if !fresh {
+			if m.sessionStore == nil {
+				return nil, fmt.Errorf("resume requested but session store is disabled")
+			}
+
+			var rerr error
+			resumeTree, resumeCreated, configID, _, rerr = m.resolvePersistedSession(resumeID, configID, envVars)
+			if rerr != nil {
+				return nil, fmt.Errorf("resume %s: %w", resumeID, rerr)
+			}
 		}
+	}
+
+	if m.configStore == nil {
+		return nil, fmt.Errorf("config store not configured")
 	}
 
 	cfg, configPath, err := m.configStore.GetWithEnv(configID, envVars)
@@ -209,7 +262,7 @@ func (m *ChatManager) Start(ctx context.Context, configID, workdir string, envVa
 	// other's jsonl file (SessionStore is single-session state).
 	var sessStore *store.SessionStore
 	if m.sessionStore != nil {
-		if ss, err := store.NewSessionStore(); err == nil {
+		if ss, err := store.NewSessionStoreAt(m.sessionStore.Dir()); err == nil {
 			sessStore = ss
 		}
 	}
@@ -259,10 +312,26 @@ func (m *ChatManager) Start(ctx context.Context, configID, workdir string, envVa
 		return nil, err
 	}
 
+	// Get wakeDir before locking to avoid nested lock acquisition
+	// which can deadlock if another goroutine is waiting for mu.Lock()
+	wakeDir := m.wakeStateDir()
+
 	m.mu.Lock()
 	m.sessions[sess.ID] = sess
 	reg := m.sessionRegistry
 	m.mu.Unlock()
+
+	// Start the wake ticker if enabled.
+	if cfg.Settings.Wake.Enabled {
+		if err := sess.StartWake(WakeOptions{Dir: wakeDir, Workdir: workdir, TaskRun: m.wakeTaskRunner(workdir, sess.ID)}); err != nil {
+			// On error, remove the session and return the error.
+			m.mu.Lock()
+			delete(m.sessions, sess.ID)
+			m.mu.Unlock()
+			sess.Close()
+			return nil, err
+		}
+	}
 
 	// Phase 1: project this chat session into the read-only registry.
 	if reg != nil {
@@ -475,7 +544,11 @@ func (s *SSEServer) handleChatStart(w http.ResponseWriter, r *http.Request) {
 	}
 	sess, err := s.chatManager.Start(r.Context(), req.ConfigID, req.Workdir, req.EnvVars, req.ResumeID)
 	if err != nil {
-		jsonErrorResponse(w, err.Error(), http.StatusBadRequest)
+		status := http.StatusBadRequest
+		if errors.Is(err, wake.ErrLocked) {
+			status = http.StatusConflict
+		}
+		jsonErrorResponse(w, err.Error(), status)
 		return
 	}
 	json.NewEncoder(w).Encode(sess.Meta())
@@ -577,6 +650,58 @@ func (s *SSEServer) handleChatByID(w http.ResponseWriter, r *http.Request) {
 			}
 			json.NewEncoder(w).Encode(map[string]string{"status": "stopped"})
 			return
+		case "wake":
+			if len(parts) < 3 {
+				http.Error(w, `{"error":"unknown wake endpoint"}`, http.StatusNotFound)
+				return
+			}
+			// POST-only guard for every wake endpoint, including tasks/{id}/cancel.
+			if r.Method != http.MethodPost {
+				http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+				return
+			}
+			sess := s.chatManager.Get(id)
+			if sess == nil {
+				http.Error(w, `{"error":"session not found"}`, http.StatusNotFound)
+				return
+			}
+			if strings.HasPrefix(parts[2], "tasks/") {
+				// POST /api/chat/{id}/wake/tasks/{task-id}/cancel
+				rest := strings.Split(strings.Trim(parts[2], "/"), "/")
+				if len(rest) != 3 || rest[2] != "cancel" || rest[1] == "" {
+					http.Error(w, `{"error":"unknown wake endpoint"}`, http.StatusNotFound)
+					return
+				}
+				if err := sess.CancelWakeTask(rest[1]); err != nil {
+					jsonErrorResponse(w, err.Error(), http.StatusNotFound)
+					return
+				}
+				json.NewEncoder(w).Encode(map[string]string{"status": "cancelled"})
+				return
+			}
+			switch parts[2] {
+			case "stop":
+				if err := sess.StopWake(); err != nil {
+					jsonErrorResponse(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				json.NewEncoder(w).Encode(map[string]string{"status": "stopped"})
+				return
+			case "resume":
+				if err := sess.ResumeWake(); err != nil {
+					status := http.StatusInternalServerError
+					if strings.Contains(err.Error(), "kill file") {
+						status = http.StatusConflict
+					}
+					jsonErrorResponse(w, err.Error(), status)
+					return
+				}
+				json.NewEncoder(w).Encode(map[string]string{"status": "resumed"})
+				return
+			default:
+				http.Error(w, `{"error":"unknown wake endpoint"}`, http.StatusNotFound)
+				return
+			}
 		case "fork":
 			s.handleChatFork(w, r, id)
 			return
@@ -652,4 +777,79 @@ func (s *SSEServer) handleChatTree(w http.ResponseWriter, r *http.Request, id st
 		return
 	}
 	json.NewEncoder(w).Encode(snapshotTreeFromTree(rebuilt))
+}
+
+// handleChatWakeStop: POST /api/chat/{id}/wake/stop — stop the wake loop for a chat session.
+func (s *SSEServer) handleChatWakeStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/chat/")
+	id = strings.TrimSuffix(id, "/wake/stop")
+
+	s.chatManager.mu.RLock()
+	sess, ok := s.chatManager.sessions[id]
+	s.chatManager.mu.RUnlock()
+	if !ok {
+		http.Error(w, `{"error":"session not found"}`, http.StatusNotFound)
+		return
+	}
+
+	if err := sess.StopWake(); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "stopped"})
+}
+
+// handleChatWakeResume: POST /api/chat/{id}/wake/resume — resume a previously stopped wake loop.
+func (s *SSEServer) handleChatWakeResume(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/chat/")
+	id = strings.TrimSuffix(id, "/wake/resume")
+
+	s.chatManager.mu.RLock()
+	sess, ok := s.chatManager.sessions[id]
+	s.chatManager.mu.RUnlock()
+	if !ok {
+		http.Error(w, `{"error":"session not found"}`, http.StatusNotFound)
+		return
+	}
+
+	if err := sess.ResumeWake(); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "resumed"})
+}
+
+// wakeTaskRunner returns the TaskRunFunc for one wake session. A started task is an
+// independent run: its config is loaded fresh from disk (process environment only, never
+// the wake session's per-request env), it has no user_input and no session messaging, and
+// its context carries the task marker so start_task is not offered or honored inside it.
+func (m *ChatManager) wakeTaskRunner(workdir, sessionID string) wake.TaskRunFunc {
+	return func(ctx context.Context, spec wake.TaskSpec) (string, error) {
+		cfg, err := config.Load(spec.ConfigPath)
+		if err != nil {
+			return "", fmt.Errorf("load task config: %w", err)
+		}
+		applyWorkdirToTools(cfg, workdir)
+		bus := telemetry.NewEventBus(256)
+		runner, _, cleanup, _, _, err := m.buildFunc(ctx, cfg, bus, nil, nil, "wake-task-"+spec.ID, "")
+		if err != nil {
+			return "", fmt.Errorf("build task runner: %w", err)
+		}
+		if cleanup != nil {
+			defer cleanup()
+		}
+		return runner.Run(ctx, spec.Prompt)
+	}
 }

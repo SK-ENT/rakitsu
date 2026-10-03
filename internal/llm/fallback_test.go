@@ -377,3 +377,128 @@ func (p *conditionalProvider) Generate(_ context.Context, _ string, _ []Message,
 }
 func (p *conditionalProvider) GetName() string  { return p.name }
 func (p *conditionalProvider) GetModel() string { return p.model }
+
+// ============================================================
+// Audio-aware (InputPreparer) tests
+// ============================================================
+
+func audioHistory() []Message {
+	return []Message{{Role: "user", Content: []ContentBlock{{Type: ContentTypeAudio, MIMEType: "audio/wav"}}}}
+}
+
+// preparingProvider implements InputPreparer and records the history it
+// actually received in Generate, so tests can assert the prepared (not
+// original) history was passed through.
+type preparingProvider struct {
+	name         string
+	model        string
+	result       *GenerateResult
+	prepareErr   error
+	generateErr  error
+	receivedText string // Content[0].Text of the history Generate() was called with
+}
+
+func (p *preparingProvider) PrepareInput(_ context.Context, history []Message) ([]Message, error) {
+	if p.prepareErr != nil {
+		return nil, p.prepareErr
+	}
+	out := make([]Message, len(history))
+	for i := range history {
+		out[i] = Message{Role: history[i].Role, Content: []ContentBlock{{Type: ContentTypeText, Text: "prepared:" + p.name}}}
+	}
+	return out, nil
+}
+
+func (p *preparingProvider) Generate(_ context.Context, _ string, history []Message, _ []ToolDefinition) (*GenerateResult, error) {
+	if len(history) > 0 && len(history[0].Content) > 0 {
+		p.receivedText = history[0].Content[0].Text
+	}
+	if p.generateErr != nil {
+		return nil, p.generateErr
+	}
+	return p.result, nil
+}
+func (p *preparingProvider) GetName() string  { return p.name }
+func (p *preparingProvider) GetModel() string { return p.model }
+
+func TestFallback_AudioInput_PassesPreparedHistoryToGenerate(t *testing.T) {
+	p0 := &preparingProvider{name: "p0", model: "m0", result: okResult("ok")}
+	fp := NewFallbackProvider([]LLMProvider{p0})
+
+	if _, err := fp.Generate(context.Background(), "", audioHistory(), nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p0.receivedText != "prepared:p0" {
+		t.Errorf("Generate received %q, want the prepared history", p0.receivedText)
+	}
+}
+
+func TestFallback_AudioInput_ProviderWithoutInputPreparerIsSkipped(t *testing.T) {
+	p0 := &okProvider{name: "p0", model: "m0", result: okResult("should not be used")}
+	p1 := &preparingProvider{name: "p1", model: "m1", result: okResult("from p1")}
+	fp := NewFallbackProvider([]LLMProvider{p0, p1})
+
+	res, err := fp.Generate(context.Background(), "", audioHistory(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Response != "from p1" {
+		t.Errorf("Response = %q, want %q", res.Response, "from p1")
+	}
+	if p0.calls.Load() != 0 {
+		t.Errorf("p0 (no InputPreparer) should never be called for audio input, got %d calls", p0.calls.Load())
+	}
+}
+
+func TestFallback_AudioInput_AllProvidersLackInputPreparer_ReturnsActionableError(t *testing.T) {
+	p0 := &okProvider{name: "p0", model: "m0", result: okResult("")}
+	fp := NewFallbackProvider([]LLMProvider{p0})
+
+	_, err := fp.Generate(context.Background(), "", audioHistory(), nil)
+	if err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "cannot accept or prepare audio input") {
+		t.Errorf("error = %v, want it to name the audio-input gap", err)
+	}
+}
+
+func TestFallback_AudioInput_PrepareInputErrorFallsThroughToNextProvider(t *testing.T) {
+	p0 := &preparingProvider{name: "p0", model: "m0", prepareErr: errors.New("transcription failed")}
+	p1 := &preparingProvider{name: "p1", model: "m1", result: okResult("from p1")}
+	fp := NewFallbackProvider([]LLMProvider{p0, p1})
+
+	res, err := fp.Generate(context.Background(), "", audioHistory(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Response != "from p1" {
+		t.Errorf("Response = %q, want %q", res.Response, "from p1")
+	}
+}
+
+func TestFallback_AudioInput_PrepareInputContextCanceledStopsImmediately(t *testing.T) {
+	p0 := &preparingProvider{name: "p0", model: "m0", prepareErr: context.Canceled}
+	p1 := &preparingProvider{name: "p1", model: "m1", result: okResult("should not run")}
+	fp := NewFallbackProvider([]LLMProvider{p0, p1})
+
+	_, err := fp.Generate(context.Background(), "", audioHistory(), nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
+	}
+}
+
+func TestFallback_NoAudioInput_InputPreparerNeverCalled(t *testing.T) {
+	// preparingProvider.Generate would echo "prepared:p0" if PrepareInput ran;
+	// with no audio blocks it must see the original text history untouched.
+	p0 := &preparingProvider{name: "p0", model: "m0", result: okResult("ok")}
+	fp := NewFallbackProvider([]LLMProvider{p0})
+
+	history := []Message{{Role: "user", Content: []ContentBlock{{Type: ContentTypeText, Text: "hello"}}}}
+	if _, err := fp.Generate(context.Background(), "", history, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p0.receivedText != "hello" {
+		t.Errorf("Generate received %q, want the original text unchanged", p0.receivedText)
+	}
+}

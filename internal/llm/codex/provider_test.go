@@ -265,7 +265,7 @@ func TestListModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/models?client_version=0.0.0" || gotAuth != "Bearer "+access {
+	if gotPath != "/models?client_version=1.0.0" || gotAuth != "Bearer "+access {
 		t.Fatalf("path=%q auth set=%v", gotPath, gotAuth != "")
 	}
 	slugs := ListedSlugs(models)

@@ -1,0 +1,85 @@
+name: btc-watcher-trigger
+version: "1.0"
+description: Like btc-watcher, but on a bearish flip the woken session may start one allowlisted report task (start_task).
+project_id: btc-watcher-trigger
+
+settings:
+  default_provider: litellm
+  providers:
+    litellm:
+      type: openai
+      api_key: ${LITELLM_API_KEY}
+      base_url: http://localhost:4000
+
+  memory:
+    enabled: true
+    conversation:
+      enabled: true
+      summary_max_chars: 1500
+
+  session_msg:
+    enabled: false
+
+  wake:
+    enabled: true
+    interval_seconds: 60
+    backoff_factor: 1.5
+    min_interval_seconds: 30
+    max_interval_seconds: 600
+    jitter_percent: 10
+    max_turns_per_hour: 6
+    turn_timeout_seconds: 180
+    kill_switch_file: ~/.rakitsu/wake/STOP
+    heartbeat_stale_seconds: 180
+    max_tasks_per_hour: 2       # rolling hour, kept in the wake state file
+    max_concurrent_tasks: 1
+    task_timeout_seconds: 300   # never unbounded
+    allow:
+      url_hosts:
+        - api.coingecko.com
+      configs:                  # the ONLY things start_task can launch
+        - name: bearish-report
+          path: tasks/bearish-report.yaml   # relative to the chat workdir
+          task: Write a short report on what a bearish BTC flip means for a long-term holder.
+          params:               # the ONLY values the model may pass
+            trend: { type: enum, enum: [down] }
+    secret_env: []
+    checks:
+      - name: btc-price
+        type: http_json
+        url: https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true
+        field: bitcoin.usd
+        alarm_if:
+          below: 55000
+        timeout_seconds: 10
+      - name: btc-label
+        type: http_json
+        url: https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true
+        field: bitcoin.usd_24h_change
+        label_band:
+          upper: 1.0
+          lower: -1.0
+          exit: 0.5
+        timeout_seconds: 10
+
+agents:
+  - name: watcher
+    role: worker
+    model: gpt-4o-mini
+    system_prompt: |
+      You are a market-watch reporter. You are woken by a timer, never by a person.
+      A message starting with [TIMER-SOURCED TURN] lists check results. Explain in
+      three short lines what changed (price alarm or bullish/bearish label flip).
+      End every reply with the line: Powered by CoinGecko
+      Do not give financial advice. You cannot clear or lower an alarm.
+      If the btc-label check flipped to "down" (bearish), also call start_task with
+      config_name "bearish-report" and arguments {"trend": "down"}, then tell the user
+      the task_id. You may call get_task_status to read its short status. Never call
+      start_task for any other reason.
+    tools: []
+    max_iterations: 4
+
+orchestrator:
+  strategy: ReAct
+  agents:
+    - watcher

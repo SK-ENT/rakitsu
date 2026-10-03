@@ -64,6 +64,14 @@ func (t ToolCallTagInline) Finalize(state *FormatState) Result {
 	}
 
 	parsed, cleaned := parseInlineToolCalls(r.Content)
+	// Qwen3-Coder <function=NAME><parameter=K>V</parameter></function>
+	// run on what is left after the JSON form so mixed output
+	// is fully converted. Only for tool names registered on this request.
+	xmlCalls, cleaned := parseXMLFunctionCalls(cleaned, state.allowedTools)
+	for i := range xmlCalls {
+		xmlCalls[i].ID = fmt.Sprintf("content_tc_%d", len(parsed)+i)
+	}
+	parsed = append(parsed, xmlCalls...)
 	if len(parsed) > 0 {
 		r.ToolCalls = parsed
 		r.Content = cleaned

@@ -14,6 +14,7 @@ import (
 	"github.com/SK-ENT/rakitsu/internal/config"
 	"github.com/SK-ENT/rakitsu/internal/debug"
 	"github.com/SK-ENT/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/llm/format"
 	"github.com/SK-ENT/rakitsu/internal/telemetry"
 	"github.com/SK-ENT/rakitsu/internal/tools"
 )
@@ -959,6 +960,23 @@ func (a *Agent) RunWithAttachments(ctx context.Context, query string, history []
 		}
 		if err := a.debugCheck(ctx, "post_thought", i, postThoughtCtx); err != nil {
 			return "", err
+		}
+
+		// A tool-call block the format adapters could not turn
+		// into a structured call (unknown tool name, malformed XML),
+		// even alongside other structured calls, must not
+		// be reported as a successful final answer. Fail the turn so the
+		// pipeline, session and UI show it.
+		if !result.Salvaged && len(effectiveToolDefs) > 0 && format.ContainsUnparsedToolCall(result.Response) {
+			a.eventBus.Emit(a.name, telemetry.EventError, telemetry.ErrorPayload{
+				ErrorType:   "unparsed_tool_call",
+				Message:     "model output contains a tool-call block that was not parsed into a registered tool call",
+				Recoverable: false,
+			})
+			a.lastRunUnproductive.Store(true)
+			a.emitLifecycle(telemetry.EventAgentEnd, a.endPayload("unparsed_tool_call", result.Response, i+1, totalTokens))
+			endEmitted = true
+			return result.Response, fmt.Errorf("unparsed tool call in model output")
 		}
 
 		// Decision branch: no tool calls means final answer
@@ -2007,6 +2025,18 @@ func (a *Agent) generateWithRetry(
 		}
 
 		if err == nil {
+			// A "successful" call with no tool calls and no text is never a
+			// usable answer — it's the provider handing back nothing, most
+			// often seen from Gemini right after a turn whose tool result
+			// carried inline binary content (audio/image). Retry it like a
+			// transient error rather than accepting empty as the final
+			// answer. FinishReason "length" is excluded: that's a genuine
+			// token-budget exhaustion a same-request retry can't fix, and
+			// has its own truncated_empty handling downstream.
+			if isEmptyNonToolResult(result) && attempt < cfg.MaxAttempts-1 {
+				lastErr = fmt.Errorf("provider returned an empty response with no tool calls (finish_reason=%s)", result.FinishReason)
+				continue
+			}
 			return result, nil
 		}
 		lastErr = err

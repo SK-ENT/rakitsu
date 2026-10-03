@@ -9,12 +9,14 @@ import (
 
 	"github.com/SK-ENT/rakitsu/internal/agent"
 	"github.com/SK-ENT/rakitsu/internal/agentchat"
+	"github.com/SK-ENT/rakitsu/internal/alert"
 	"github.com/SK-ENT/rakitsu/internal/config"
 	"github.com/SK-ENT/rakitsu/internal/debug"
 	"github.com/SK-ENT/rakitsu/internal/llm"
 	"github.com/SK-ENT/rakitsu/internal/memory"
 	"github.com/SK-ENT/rakitsu/internal/telemetry"
 	"github.com/SK-ENT/rakitsu/internal/tools"
+	alerttool "github.com/SK-ENT/rakitsu/internal/tools/alert"
 	memtool "github.com/SK-ENT/rakitsu/internal/tools/memory"
 	"github.com/SK-ENT/rakitsu/internal/tools/sessionmsg"
 	"github.com/SK-ENT/rakitsu/internal/tools/spawn"
@@ -54,6 +56,15 @@ type BuildOptions struct {
 	// target).
 	SessionID string
 	HubURL    string
+
+	// AlertNotifier, when non-nil, enables the send_alert tool for wake
+	// sessions. Set by chatbuild when wake.alerts is configured.
+	// Type is *alert.Notifier.
+	AlertNotifier interface{}
+
+	// ExtraTools are registered on every top-level agent (depth 0). Wake sessions
+	// use it for start_task / get_task_status; started tasks never get them.
+	ExtraTools []tools.Tool
 }
 
 // BuildResult is returned from BuildRunner.
@@ -315,6 +326,12 @@ func (b *runtimeBuilder) buildAgentToolRegistryDepth(def *config.AgentDefinition
 	// memory_* tools — only when settings.memory.enabled
 	registerMemoryTools(reg, b.cfg, b.memStore, b.opts.MemorySessionScope, def.Name, b.eventBus)
 
+	if depth == 0 {
+		for _, t := range b.opts.ExtraTools {
+			reg.RegisterTool(t)
+		}
+	}
+
 	// spawn_agent — only when settings.spawn.enabled and below max_depth
 	b.registerSpawnTool(reg, def.Name, depth)
 
@@ -329,6 +346,14 @@ func (b *runtimeBuilder) buildAgentToolRegistryDepth(def *config.AgentDefinition
 			AgentName: def.Name,
 		}) {
 			reg.RegisterTool(t)
+		}
+	}
+
+	// send_alert — top-level only (depth 0), when wake.alerts is configured.
+	// Chat sessions with wake sessions get this tool when AlertNotifier is provided.
+	if depth == 0 && b.opts.AlertNotifier != nil {
+		if notifier, ok := b.opts.AlertNotifier.(*alert.Notifier); ok {
+			reg.RegisterTool(alerttool.NewTool(notifier))
 		}
 	}
 

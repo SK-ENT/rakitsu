@@ -85,7 +85,7 @@ func TestThinkTagInline_OnlyThinkBlock(t *testing.T) {
 	}
 }
 
-// ---------- ThinkTagInline streaming-parser tests (B54) ----------
+// ---------- ThinkTagInline streaming-parser tests (inline think tags) ----------
 //
 // These exercise the per-delta <think>-stripping path: reasoning must be
 // extracted live (visible to state.OnReasoningDelta) and the inner adapter

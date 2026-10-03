@@ -443,11 +443,11 @@ func TestValidate_ConditionAgentReference(t *testing.T) {
 	}
 }
 
-// TestValidate_B31_HierarchicalSupervisorWarning covers B31: user-declared
+// TestValidate_HierarchicalSupervisorWarning covers: user-declared
 // role:supervisor agents alongside a Hierarchical orchestrator are ignored
 // at runtime (the orchestrator synthesizes its own supervisor). Emit a
 // warning severity so existing configs still load.
-func TestValidate_B31_HierarchicalSupervisorWarning(t *testing.T) {
+func TestValidate_HierarchicalSupervisorWarning(t *testing.T) {
 	cfg := Config{
 		Agents: []AgentDefinition{
 			{Name: "Boss", Role: "supervisor"},
@@ -462,7 +462,7 @@ func TestValidate_B31_HierarchicalSupervisorWarning(t *testing.T) {
 	}
 	errs := cfg.Validate()
 	if len(errs) == 0 {
-		t.Fatal("expected B31 warning for supervisor-role agent under Hierarchical")
+		t.Fatal("expected hierarchical-supervisor warning for supervisor-role agent under Hierarchical")
 	}
 	var got *ValidationError
 	for _, e := range errs {
@@ -472,23 +472,23 @@ func TestValidate_B31_HierarchicalSupervisorWarning(t *testing.T) {
 		}
 	}
 	if got == nil {
-		t.Fatalf("missing B31 warning; errs=%v", errs)
+		t.Fatalf("missing hierarchical-supervisor warning; errs=%v", errs)
 	}
 	if !got.IsWarning() {
-		t.Errorf("B31 should be Severity=warning, got %q", got.Severity)
+		t.Errorf("the warning should be Severity=warning, got %q", got.Severity)
 	}
 	if got.IsError() {
-		t.Error("B31 must not block config load")
+		t.Error("the warning must not block config load")
 	}
 	if !strings.Contains(got.Message, "Boss") {
 		t.Errorf("warning should name the offending agent, got %q", got.Message)
 	}
 }
 
-// TestValidate_B31_NoWarningForNonHierarchical confirms the check is strategy-
+// TestValidate_NoWarningForNonHierarchical confirms the check is strategy-
 // scoped: supervisor-role agents under Pipeline (or no orchestrator) do not
 // trigger B31.
-func TestValidate_B31_NoWarningForNonHierarchical(t *testing.T) {
+func TestValidate_NoWarningForNonHierarchical(t *testing.T) {
 	cfg := Config{
 		Agents: []AgentDefinition{
 			{Name: "Boss", Role: "supervisor"},
@@ -502,14 +502,14 @@ func TestValidate_B31_NoWarningForNonHierarchical(t *testing.T) {
 	}
 	for _, e := range cfg.Validate() {
 		if strings.Contains(e.Message, "role=supervisor") {
-			t.Errorf("unexpected B31 warning under Pipeline strategy: %q", e.Message)
+			t.Errorf("unexpected hierarchical-supervisor warning under Pipeline strategy: %q", e.Message)
 		}
 	}
 }
 
-// TestValidate_B31_SubOrchestratorHierarchical confirms the check picks up
+// TestValidate_SubOrchestratorHierarchical confirms the check picks up
 // Hierarchical strategy on sub-orchestrators too, not just the root.
-func TestValidate_B31_SubOrchestratorHierarchical(t *testing.T) {
+func TestValidate_SubOrchestratorHierarchical(t *testing.T) {
 	cfg := Config{
 		Agents: []AgentDefinition{
 			{Name: "Boss", Role: "supervisor"},
@@ -531,7 +531,7 @@ func TestValidate_B31_SubOrchestratorHierarchical(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("expected B31 warning when a sub-orchestrator uses Hierarchical strategy")
+		t.Error("expected hierarchical-supervisor warning when a sub-orchestrator uses Hierarchical strategy")
 	}
 }
 

@@ -1,0 +1,46 @@
+# rakitsu 24/7 monitor. Secrets come from ./monitor.env (env var NAMES and values
+# live there, never in this file or on the command line).
+#
+# Image tags published to ghcr.io/sk-ent/rakitsu:
+#   - v0.x.y-alpha.N (specific release version, recommended for production)
+#   - alpha (moving tag for latest alpha release)
+#   - beta (moving tag for latest beta release)
+# Note: 'latest' tag is intentionally not published per the release workflow
+# (.github/source-only/release-public.yml). Use 'alpha' for pre-release or a
+# specific version tag for production.
+services:
+  rakitsu:
+    image: ghcr.io/sk-ent/rakitsu:alpha
+    command: ["serve", "--config", "/config/monitor.yaml", "--host", "0.0.0.0", "--port", "9100"]
+    restart: unless-stopped
+    env_file:
+      - ./monitor.env
+    environment:
+      HOME: /data
+    volumes:
+      - rakitsu-data:/data/.rakitsu
+      - ./monitor.example.yaml:/config/monitor.yaml:ro
+      - ./monitors:/config/monitors:ro
+    # Publish on loopback only; /healthz is loopback-only by default.
+    ports:
+      - "127.0.0.1:9100:9100"
+    healthcheck:
+      test: ["CMD", "rakitsu", "healthcheck", "--url", "http://localhost:9100/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+volumes:
+  rakitsu-data:

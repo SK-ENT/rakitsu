@@ -1,0 +1,13 @@
+# Serve config for a 24/7 monitor. Run: rakitsu serve --config monitor.yaml
+# Only env var NAMES appear here; values come from the process environment.
+name: monitor
+settings:
+  default_provider: openai
+monitors:
+  - id: btc-price                      # session id becomes monitor-btc-price
+    config: ./monitors/btc-price.yaml  # must set settings.wake.enabled: true
+    workdir: ./monitors/btc-price
+    env_refs: [OPENAI_API_KEY, ALERT_WEBHOOK_URL]
+healthz:
+  monitors_start_grace_seconds: 120
+  healthz_fail_on_stopped: true

@@ -125,6 +125,18 @@ const (
 	// accepts a cross-session message into its turn queue (web chat) or
 	// consumes it from the hub command poll (interactive TUI).
 	EventSessionMsgReceived EventType = "SESSION_MSG_RECEIVED"
+	// EventWakeTick is emitted for a non-quiet (or killed/degraded) wake-up
+	// timer tick. Quiet ticks go to the wake audit log only.
+	EventWakeTick EventType = "WAKE_TICK"
+	// EventWakeEscalate is emitted when a wake tick escalates to an L2 agent
+	// turn, or when that escalation is suppressed or finishes.
+	EventWakeEscalate EventType = "WAKE_ESCALATE"
+	// EventWakeTaskStart is emitted for every start_task attempt from a woken
+	// session: status "started" or "refused" (allowlist, args, caps, stop).
+	EventWakeTaskStart EventType = "WAKE_TASK_START"
+	// EventWakeTaskEnd is emitted when a started task ends: done, error,
+	// timeout or cancelled.
+	EventWakeTaskEnd EventType = "WAKE_TASK_END"
 	// EventMediaAttached is emitted once per file loaded via --attach or
 	// returned by a tool to a vision agent (Via tells which). The
 	// audit trail for "what non-text content actually entered this run" —
@@ -145,6 +157,48 @@ const (
 	SessionEndTimeout SessionEndStatus = "timeout"
 	SessionEndStale   SessionEndStatus = "stale"
 )
+
+// WakeCheckResult is one deterministic check result inside a wake tick.
+type WakeCheckResult struct {
+	Name   string `json:"name"`
+	Status string `json:"status"` // ok | alarm | unknown
+	Detail string `json:"detail,omitempty"`
+	Label  string `json:"label,omitempty"`
+}
+
+// WakeTickPayload is the payload of EventWakeTick.
+type WakeTickPayload struct {
+	Tick            int               `json:"tick"`
+	IntervalSeconds int               `json:"interval_seconds"`
+	Results         []WakeCheckResult `json:"results,omitempty"`
+	Outcome         string            `json:"outcome"`          // quiet | changed | alarm | unknown
+	Result          string            `json:"result,omitempty"` // killed | degraded | ""
+	Note            string            `json:"note,omitempty"`
+	SummaryChars    int               `json:"summary_chars"`
+	SummaryCap      int               `json:"summary_cap"`
+}
+
+// WakeEscalatePayload is the payload of EventWakeEscalate.
+type WakeEscalatePayload struct {
+	Tick         int    `json:"tick"`
+	Reason       string `json:"reason"`
+	Deferred     bool   `json:"deferred,omitempty"`
+	Suppressed   string `json:"suppressed,omitempty"` // hourly_cap | single_flight | degraded
+	Result       string `json:"result,omitempty"`     // timeout | done | error
+	Level        string `json:"level"`                // L2
+	SummaryChars int    `json:"summary_chars"`
+	SummaryCap   int    `json:"summary_cap"`
+}
+
+// WakeTaskPayload is the payload of EventWakeTaskStart / EventWakeTaskEnd.
+type WakeTaskPayload struct {
+	TaskID  string            `json:"task_id,omitempty"`
+	Config  string            `json:"config"`
+	Status  string            `json:"status"` // started | refused | done | error | timeout | cancelled
+	Reason  string            `json:"reason,omitempty"`
+	Args    map[string]string `json:"args,omitempty"`
+	Summary string            `json:"summary,omitempty"` // bounded; the full result is in a separate run log
+}
 
 // AgentEvent is the base event structure
 type AgentEvent struct {
