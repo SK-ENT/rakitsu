@@ -180,9 +180,11 @@ func TestChangeInjectsOneWakeTurnWithWakeKind(t *testing.T) {
 	dir := t.TempDir()
 	var gotQuery atomic.Value
 	var runs atomic.Int32
+	ran := make(chan struct{}, 4)
 	bf := makeFakeChatBuildFunc("a1", func(_ context.Context, q string, _ *telemetry.EventBus) (string, error) {
 		gotQuery.Store(q)
 		runs.Add(1)
+		ran <- struct{}{}
 		return "seen", nil
 	}, nil)
 	sess := startWakeSession(t, wakeTestCfg(dir, true), bf)
@@ -202,7 +204,12 @@ func TestChangeInjectsOneWakeTurnWithWakeKind(t *testing.T) {
 	// Second tick: alarm detected
 	fire()
 	ts.wait(1)
-	// Check runs
+	// The tick only queues the turn; the session goroutine runs it later.
+	select {
+	case <-ran:
+	case <-time.After(5 * time.Second):
+		t.Fatal("alarm did not inject a turn in time")
+	}
 	if runs.Load() != 1 {
 		t.Fatalf("alarm must inject exactly one turn, got %d", runs.Load())
 	}
