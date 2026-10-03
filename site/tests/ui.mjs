@@ -2,6 +2,7 @@
 // Link UI, hashchange, language/hash rewriting, auto Simple->Detail, state keep across EN/JA, real screenshots.
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -126,6 +127,39 @@ for (const mode of ['reject', 'missing']) {
   ok(await p.evaluate(() => document.fonts.check('500 14px "IBM Plex Mono"')), 'IBM Plex Mono 500 loaded');
   ok(await p.evaluate(() => [...document.fonts].filter(f => f.status === 'loaded').length) >= 2, 'font faces report loaded');
   await ctx.close();
+}
+// 8. brand logo + favicon
+{
+  const sha = { 'rakitsu-logo.svg': 'ebc4c9d44ce7a011aab84790ee64302668bb68f3220c6c777934fc57ea79a4c4', 'rakitsu-mark.svg': '337d2752eb860d4d84e842c031bb03301ff8baad9a212e0624c60a345b7109a4' };
+  for (const [f, h] of Object.entries(sha)) {
+    const fp = path.join(here, '../assets/brand', f);
+    ok(fs.existsSync(fp) && crypto.createHash('sha256').update(fs.readFileSync(fp)).digest('hex') === h, 'brand file unchanged: ' + f);
+  }
+  for (const [w, scheme] of [[1280, 'light'], [1280, 'dark'], [400, 'light'], [400, 'dark']]) {
+    const p = await open({ viewport: { width: w, height: 800 }, colorScheme: scheme });
+    const r = await p.evaluate(() => { const i = document.querySelector('header.top .brand img'); const b = i.getBoundingClientRect(); const l = document.querySelector('link[rel=icon]'); return { nw: i.naturalWidth, vis: b.width > 0 && b.height > 0 && getComputedStyle(i).visibility !== 'hidden', alt: i.alt, wa: i.getAttribute('width'), ha: i.getAttribute('height'), icon: l && l.getAttribute('href'), type: l && l.type, bg: getComputedStyle(i).backgroundColor }; });
+    ok(r.nw > 0, `header logo loads (${w}/${scheme})`, r);
+    ok(r.vis && r.alt === '' && r.wa && r.ha, `header mark visible, decorative alt and size attrs (${w}/${scheme})`, r);
+    ok(r.icon === 'assets/brand/rakitsu-mark.svg' && r.type === 'image/svg+xml', `favicon link relative (${w}/${scheme})`, r);
+    ok(r.bg === 'rgb(255, 255, 255)', `logo chip is light so the dark artwork stays legible (${w}/${scheme})`, r);
+    const ovf = await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    ok(ovf <= 1, `logo adds no overflow (${w}/${scheme})`, ovf);
+    ok((await p.evaluate(() => fetch('assets/brand/rakitsu-mark.svg').then(x => x.status))) === 200, `favicon URL 200 (${w}/${scheme})`);
+    await p.__ctx.close();
+  }
+}
+// 6b. hero logo + single alt
+for (const scheme of ['light', 'dark']) for (const w of [1280, 400]) {
+  const p = await open({ viewport: { width: w, height: 800 }, colorScheme: scheme });
+  const L = p.locator('.hero img.herologo');
+  ok(await L.evaluate(e => e.complete && e.naturalWidth > 0), `hero logo loads (${w}/${scheme})`);
+  ok(await L.isVisible(), `hero logo visible (${w}/${scheme})`);
+  const bb = await L.boundingBox(); ok(bb && bb.x >= 0 && bb.x + bb.width <= w, `hero logo inside viewport (${w}/${scheme})`, bb);
+  ok(await L.evaluate(e => getComputedStyle(e).backgroundColor) === 'rgb(255, 255, 255)', `hero logo on white chip (${w}/${scheme})`);
+  const ovf = await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  ok(ovf <= 1, `no overflow with hero logo (${w}/${scheme})`, ovf);
+  ok(await p.evaluate(() => document.querySelectorAll('header img[alt="Rakitsu logo"], .hero img[alt="Rakitsu logo"]').length) === 1, `exactly one Rakitsu logo alt (${w}/${scheme})`);
+  await p.__ctx.close();
 }
 // 7. screenshots
 fs.mkdirSync(path.join(here, 'shots'), { recursive: true });

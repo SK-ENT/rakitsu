@@ -26,6 +26,7 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size
 header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding-block:10px;margin-inline:-16px;padding-inline:16px}
 .bar{max-width:1080px;margin-inline:auto;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
 .brand{font-weight:600;font-size:17px;letter-spacing:.01em;margin-right:auto}
+.brand .logo{width:32px;height:32px;margin-right:10px;padding:3px;background:#fff;border:1px solid var(--line);border-radius:6px;vertical-align:middle}
 .brand small{font-family:var(--font-mono);font-weight:400;color:var(--muted);font-size:12px;margin-left:8px}
 .ctl{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}
@@ -40,6 +41,9 @@ nav.side a{color:var(--muted);text-decoration:none;padding:3px 10px;border-left:
 nav.side a:hover{color:var(--fg);border-left-color:var(--accent)}
 nav.side .grp{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:8px 10px 2px;font-weight:600}
 main{min-width:0}
+.hero{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}
+.hero .herologo{width:120px;height:132px;flex:none;padding:8px;box-sizing:content-box;background:#fff;border:1px solid var(--line);border-radius:6px}
+.hero .herotxt{flex:1 1 280px;min-width:0}
 .hero h1{font-size:28px;line-height:1.2;margin:0 0 6px;text-wrap:balance}
 .hero p{margin:0 0 14px;color:var(--muted);max-width:65ch}
 .meta{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--font-mono);font-size:12px;margin-bottom:16px}
