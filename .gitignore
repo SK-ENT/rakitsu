@@ -75,6 +75,11 @@ pyproject.toml
 uv.lock
 .venv/
 tests/
+# site/ keeps its own test scripts; generated artifacts stay ignored
+!site/tests/
+site/tests/shots/
+site/tests/results-*.json
+site/tests/semantic-*.md
 test/workspace/
 
 # Stray frontend files (not part of project)

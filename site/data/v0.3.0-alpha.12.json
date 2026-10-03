@@ -1,0 +1,1435 @@
+{
+ "tag": "v0.3.0-alpha.12",
+ "commit": "2279afe22190c90b6430c87a46fd318f76599a58",
+ "version": "v0.3.0-alpha.12",
+ "status": "generated",
+ "placeholder": false,
+ "meta": {
+  "license": "BSL 1.1",
+  "go": "Go 1.25",
+  "status": {
+   "en": "alpha",
+   "ja": "アルファ"
+  }
+ },
+ "features": [
+  {
+   "id": "cli",
+   "name": {
+    "en": "CLI commands",
+    "ja": "CLI コマンド"
+   },
+   "simple": {
+    "en": "One binary with run, serve, doctor, healthcheck, acp, export, scaffold, quickstart and sessions.",
+    "ja": "1 つのバイナリで run、serve、doctor、healthcheck、acp、export、scaffold、quickstart、sessions を提供します。"
+   },
+   "detail": [
+    {
+     "t": "kv",
+     "head": [
+      "Command",
+      "Description"
+     ],
+     "rows": [
+      [
+       "rakitsu run <config.yaml> <query>",
+       {
+        "en": "Execute agents once from the CLI.",
+        "ja": "CLI からエージェントを一度実行します。"
+       }
+      ],
+      [
+       "rakitsu serve",
+       {
+        "en": "Start the SSE hub, web UI, runner and debugger. Also serves MCP at /mcp and A2A at /a2a.",
+        "ja": "SSE ハブ、Web UI、ランナー、デバッガを起動します。/mcp で MCP、/a2a で A2A も提供します。"
+       }
+      ],
+      [
+       "rakitsu doctor [config]",
+       {
+        "en": "Diagnose config and provider reachability, using the same load path as run.",
+        "ja": "run と同じ読み込み経路で、設定とプロバイダへの到達性を診断します。"
+       }
+      ],
+      [
+       "rakitsu healthcheck",
+       {
+        "en": "Probe a running serve at /healthz. Exit 0 if all monitors are healthy, otherwise 1.",
+        "ja": "稼働中の serve の /healthz を確認します。全モニターが正常なら終了コード 0、それ以外は 1 です。"
+       }
+      ],
+      [
+       "rakitsu acp",
+       {
+        "en": "Run as an ACP (Agent Client Protocol) server for editors such as Zed.",
+        "ja": "Zed などのエディタ向けに ACP (Agent Client Protocol) サーバーとして動作します。"
+       }
+      ],
+      [
+       "rakitsu export <config> --format openclaw|nemoclaw",
+       {
+        "en": "Export a config to another runtime format.",
+        "ja": "設定を別のランタイム形式にエクスポートします。"
+       }
+      ],
+      [
+       "rakitsu scaffold / quickstart",
+       {
+        "en": "Generate a project or config from a template, or through an interactive wizard.",
+        "ja": "テンプレートまたは対話ウィザードでプロジェクトや設定を生成します。"
+       }
+      ],
+      [
+       "rakitsu sessions",
+       {
+        "en": "List and inspect persisted sessions.",
+        "ja": "保存されたセッションを一覧・確認します。"
+       }
+      ],
+      [
+       "rakitsu version",
+       {
+        "en": "Print the version string.",
+        "ja": "バージョン文字列を表示します。"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "h",
+     "en": "run flags",
+     "ja": "run のフラグ"
+    },
+    {
+     "t": "kv",
+     "head": [
+      "Flag",
+      "Description"
+     ],
+     "rows": [
+      [
+       "--provider NAME",
+       {
+        "en": "Override the default provider for all agents. Reads <NAME>_API_KEY and <NAME>_BASE_URL from the environment.",
+        "ja": "全エージェントの既定プロバイダを上書きします。環境変数 <NAME>_API_KEY と <NAME>_BASE_URL を読み取ります。"
+       }
+      ],
+      [
+       "--model NAME",
+       {
+        "en": "Override the default model for all agents.",
+        "ja": "全エージェントの既定モデルを上書きします。"
+       }
+      ],
+      [
+       "--hub URL / --no-hub",
+       {
+        "en": "Hub URL (default http://localhost:9100), auto-connects if a hub is running; or disable the hub connection.",
+        "ja": "ハブの URL (既定 http://localhost:9100)。ハブが動いていれば自動接続します。--no-hub で接続を無効にします。"
+       }
+      ],
+      [
+       "--debug-port N",
+       {
+        "en": "Standalone debug SSE server on port N.",
+        "ja": "ポート N で単独のデバッグ SSE サーバーを起動します。"
+       }
+      ],
+      [
+       "--trace",
+       {
+        "en": "Color-coded execution trace on stderr.",
+        "ja": "実行トレースを色付きで stderr に出力します。"
+       }
+      ],
+      [
+       "--timeout N",
+       {
+        "en": "Execution timeout in seconds, per turn with --interactive. Off by default (unset or <=0 means no limit).",
+        "ja": "実行タイムアウト (秒)。--interactive ではターンごと。既定は無効 (未指定または 0 以下は無制限)。"
+       }
+      ],
+      [
+       "--idle-timeout N",
+       {
+        "en": "End the run after N seconds with no events.",
+        "ja": "N 秒間イベントがなければ実行を終了します。"
+       }
+      ],
+      [
+       "--interactive, -i",
+       {
+        "en": "Run as a chat TUI instead of one-shot.",
+        "ja": "ワンショットではなくチャット TUI として実行します。"
+       }
+      ],
+      [
+       "--resume <session-id>",
+       {
+        "en": "Resume or fork a prior session.",
+        "ja": "過去のセッションを再開、またはフォークします。"
+       }
+      ],
+      [
+       "--workdir PATH",
+       {
+        "en": "Working directory for fs and cli tools.",
+        "ja": "fs / cli ツールの作業ディレクトリ。"
+       }
+      ],
+      [
+       "--embedding-provider NAME",
+       {
+        "en": "Override the embedding provider for retrieval.",
+        "ja": "検索用の埋め込みプロバイダを上書きします。"
+       }
+      ],
+      [
+       "--dry-run",
+       {
+        "en": "Estimate cost and tokens without calling the LLM.",
+        "ja": "LLM を呼ばずにコストとトークン数を見積もります。"
+       }
+      ],
+      [
+       "-v, --verbose",
+       {
+        "en": "Verbose output (root persistent flag).",
+        "ja": "詳細出力 (ルートの永続フラグ)。"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "h",
+     "en": "serve flags",
+     "ja": "serve のフラグ"
+    },
+    {
+     "t": "kv",
+     "head": [
+      "Flag",
+      "Description"
+     ],
+     "rows": [
+      [
+       "--port N",
+       {
+        "en": "Hub and UI port. Default 9100.",
+        "ja": "ハブと UI のポート。既定 9100。"
+       }
+      ],
+      [
+       "--mcp-port N",
+       {
+        "en": "Separate port for the MCP endpoint (optional).",
+        "ja": "MCP エンドポイント用の別ポート (任意)。"
+       }
+      ],
+      [
+       "--host",
+       {
+        "en": "Bind host. Default localhost. Binding 0.0.0.0 requires an API token.",
+        "ja": "バインドするホスト。既定は localhost。0.0.0.0 にバインドする場合は API トークンが必要です。"
+       }
+      ],
+      [
+       "--config / --config-dir",
+       {
+        "en": "Config file, or an extra config search path.",
+        "ja": "設定ファイル、または追加の設定検索パス。"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "p",
+     "en": "healthcheck takes --url (default http://localhost:9100/healthz) and --timeout (default 5s). The ui command is a deprecated alias for serve. The license command exists in pro builds only.",
+     "ja": "healthcheck は --url (既定 http://localhost:9100/healthz) と --timeout (既定 5s) を取ります。ui コマンドは serve の非推奨エイリアスです。license コマンドは pro ビルドのみにあります。"
+    }
+   ]
+  },
+  {
+   "id": "config",
+   "name": {
+    "en": "YAML config schema",
+    "ja": "YAML 設定スキーマ"
+   },
+   "simple": {
+    "en": "One declarative YAML file defines settings, tools, agents and an orchestrator.",
+    "ja": "1 つの宣言的な YAML ファイルで設定、ツール、エージェント、オーケストレーターを定義します。"
+   },
+   "detail": [
+    {
+     "t": "kv",
+     "head": [
+      "Root key",
+      "Description"
+     ],
+     "rows": [
+      [
+       "name / project_id / version / description",
+       {
+        "en": "Identity and metadata of the system.",
+        "ja": "システムの識別情報とメタデータ。"
+       }
+      ],
+      [
+       "interactive",
+       {
+        "en": "Run as a chat TUI instead of a one-shot run.",
+        "ja": "ワンショットではなくチャット TUI として実行します。"
+       }
+      ],
+      [
+       "interactive_overlay",
+       {
+        "en": "Wrap the root runner in a chat-host meta-agent. Defaults to true for non-conversational configs.",
+        "ja": "ルートのランナーをチャットホスト用メタエージェントで包みます。会話型でない設定では既定で true。"
+       }
+      ],
+      [
+       "force_delegation",
+       {
+        "en": "ChatHost must call invoke_config every turn. For weak models that would otherwise skip delegation.",
+        "ja": "ChatHost が毎ターン invoke_config を呼ぶ必要があります。委譲を飛ばしがちな弱いモデル向けです。"
+       }
+      ],
+      [
+       "settings",
+       {
+        "en": "Global settings: providers, defaults, execution, retry, memory, spawn, wake, and more.",
+        "ja": "グローバル設定。プロバイダ、既定値、実行、リトライ、memory、spawn、wake など。"
+       }
+      ],
+      [
+       "tools / skills / agents",
+       {
+        "en": "Definitions of tools, skills and agents.",
+        "ja": "ツール、スキル、エージェントの定義。"
+       }
+      ],
+      [
+       "orchestrator / orchestrators",
+       {
+        "en": "One orchestrator, or several named ones.",
+        "ja": "オーケストレーター 1 つ、または名前付きの複数。"
+       }
+      ],
+      [
+       "workflows / monitors / healthz",
+       {
+        "en": "Pre-configured workflows, autostarted monitors, health endpoint tuning.",
+        "ja": "事前定義ワークフロー、自動起動モニター、ヘルスエンドポイントの調整。"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "h",
+     "en": "Rules",
+     "ja": "規則"
+    },
+    {
+     "t": "ul",
+     "items": [
+      {
+       "en": "API keys come from environment variables, written as ${OPENAI_API_KEY}.",
+       "ja": "API キーは ${OPENAI_API_KEY} の形で環境変数から読み込みます。"
+      },
+      {
+       "en": "Agent roles: worker, supervisor.",
+       "ja": "エージェントのロール: worker、supervisor。"
+      },
+      {
+       "en": "Long prompts can be loaded from files with a file: prefix or by auto-detected path, and a directory layout (agents/, tools/, skills/, prompts/) is auto-discovered.",
+       "ja": "長いプロンプトは file: プレフィックスまたは自動判定されたパスでファイルから読み込めます。agents/、tools/、skills/、prompts/ のディレクトリ構成は自動検出されます。"
+      },
+      {
+       "en": "Execution defaults: with no timeout set, and agents without max_iterations, a run ends on its answer, a budget (max_cost / max_total_tokens), --idle-timeout, or Ctrl+C.",
+       "ja": "実行の既定: タイムアウト未設定で max_iterations のないエージェントは、回答、予算 (max_cost / max_total_tokens)、--idle-timeout、Ctrl+C のいずれかで終了します。"
+      }
+     ]
+    },
+    {
+     "t": "code",
+     "text": "name: Code Reviewer\nsettings:\n  default_provider: openai\n  providers:\n    openai:\n      type: openai\n      api_key: ${OPENAI_API_KEY}\n  defaults:\n    model: gpt-4o-mini\ntools:\n  - name: read_file\n    type: fs\n    operation: read\nagents:\n  - name: Reviewer\n    role: worker\n    provider: openai\n    model: gpt-4o\n    system_prompt: Review code for bugs, security issues, and best practices.\n    tools: [read_file]\norchestrator:\n  name: Lead\n  strategy: Pipeline\n  agents: [Reviewer]"
+    },
+    {
+     "t": "h",
+     "en": "settings.spawn",
+     "ja": "settings.spawn"
+    },
+    {
+     "t": "kv",
+     "head": [
+      "Key",
+      "Description"
+     ],
+     "rows": [
+      [
+       "enabled",
+       {
+        "en": "Give every agent a spawn_agent tool for runtime subagent fan-out. Default false.",
+        "ja": "全エージェントに、実行時にサブエージェントを並列起動する spawn_agent ツールを付与します。既定 false。"
+       }
+      ],
+      [
+       "max_concurrent",
+       {
+        "en": "Run-global cap on concurrent children. Default 4.",
+        "ja": "同時に動く子エージェント数の実行全体での上限。既定 4。"
+       }
+      ],
+      [
+       "max_depth",
+       {
+        "en": "Children cannot spawn further by default (1).",
+        "ja": "既定 (1) では子エージェントはさらに起動できません。"
+       }
+      ],
+      [
+       "timeout_seconds",
+       {
+        "en": "Per-child timeout.",
+        "ja": "子エージェントごとのタイムアウト。"
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "providers",
+   "name": {
+    "en": "LLM providers",
+    "ja": "LLM プロバイダ"
+   },
+   "simple": {
+    "en": "OpenAI, Anthropic, Gemini, Codex, Ollama and LiteLLM, mixable per agent.",
+    "ja": "OpenAI、Anthropic、Gemini、Codex、Ollama、LiteLLM をエージェントごとに混在できます。"
+   },
+   "detail": [
+    {
+     "t": "p",
+     "en": "Provider resolution: agent.provider, then settings.default_provider, then openai. Model resolution: agent.model, then provider default_model, then settings.defaults.model, then gpt-4o-mini. Ollama, LiteLLM and NVIDIA use the OpenAI-compatible provider through base_url. The codex provider reuses an existing Codex CLI login.",
+     "ja": "プロバイダの解決順は agent.provider、settings.default_provider、openai。モデルの解決順は agent.model、プロバイダの default_model、settings.defaults.model、gpt-4o-mini です。Ollama、LiteLLM、NVIDIA は base_url 経由で OpenAI 互換プロバイダを使います。codex プロバイダは既存の Codex CLI のログインを再利用します。"
+    },
+    {
+     "t": "kv",
+     "head": [
+      "Key (settings.providers.<name>)",
+      "Description"
+     ],
+     "rows": [
+      [
+       "type",
+       {
+        "en": "openai, anthropic, gemini, codex, ollama.",
+        "ja": "openai、anthropic、gemini、codex、ollama。"
+       }
+      ],
+      [
+       "api_key",
+       {
+        "en": "Supports ${ENV_VAR}. Not used by codex.",
+        "ja": "${ENV_VAR} を使えます。codex では使いません。"
+       }
+      ],
+      [
+       "base_url",
+       {
+        "en": "Custom endpoint URL.",
+        "ja": "カスタムエンドポイントの URL。"
+       }
+      ],
+      [
+       "credentials_file",
+       {
+        "en": "Service account JSON (Gemini) or auth.json path (codex, default ~/.codex/auth.json).",
+        "ja": "サービスアカウント JSON (Gemini)、または auth.json のパス (codex、既定 ~/.codex/auth.json)。"
+       }
+      ],
+      [
+       "location / project",
+       {
+        "en": "Cloud region and project ID for Vertex AI.",
+        "ja": "Vertex AI のリージョンとプロジェクト ID。"
+       }
+      ],
+      [
+       "default_model",
+       {
+        "en": "Default model for this provider.",
+        "ja": "このプロバイダの既定モデル。"
+       }
+      ],
+      [
+       "response_format",
+       {
+        "en": "Adapter override: standard_openai or reasoning_content_field. Empty means auto-detect from the model name.",
+        "ja": "アダプタの上書き: standard_openai または reasoning_content_field。空ならモデル名から自動判定します。"
+       }
+      ],
+      [
+       "rate_limit",
+       {
+        "en": "Max requests per minute. 0 is unlimited.",
+        "ja": "1 分あたりの最大リクエスト数。0 は無制限。"
+       }
+      ],
+      [
+       "reasoning_effort",
+       {
+        "en": "none, minimal, low, medium, high. Sent on every OpenAI request; GPT-5.6 models require it with tools.",
+        "ja": "none、minimal、low、medium、high。OpenAI へのすべてのリクエストで送信します。GPT-5.6 系はツール使用時に必須です。"
+       }
+      ],
+      [
+       "client_version",
+       {
+        "en": "Codex only. Dotted numeric, default 1.0.0.",
+        "ja": "Codex のみ。ドット区切りの数値。既定 1.0.0。"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "p",
+     "en": "retry: max_attempts (3), base_delay (1s), max_delay (16s). Models that spend their max_tokens on reasoning can return output starting with [REASONING-ONLY OUTPUT; see the reasoning-models guide for alternatives.",
+     "ja": "retry は max_attempts (3)、base_delay (1s)、max_delay (16s)。max_tokens を推論に使い切るモデルは、出力が [REASONING-ONLY OUTPUT で始まることがあります。対処法は reasoning-models ガイドを参照してください。"
+    }
+   ]
+  },
+  {
+   "id": "tools",
+   "name": {
+    "en": "Tools and sandboxing",
+    "ja": "ツールとサンドボックス"
+   },
+   "simple": {
+    "en": "Tool types cli, fs, mcp_server, a2a and jev, with a command sandbox and path limits.",
+    "ja": "ツール種別 cli、fs、mcp_server、a2a、jev。コマンドのサンドボックスとパス制限があります。"
+   },
+   "detail": [
+    {
+     "t": "kv",
+     "head": [
+      "Type",
+      "Description"
+     ],
+     "rows": [
+      [
+       "cli",
+       {
+        "en": "Run a shell command. Whitelist-based sandbox; settings.allowed_commands extends the built-in allowlist.",
+        "ja": "シェルコマンドを実行します。ホワイトリスト方式のサンドボックスで、settings.allowed_commands が組み込みの許可リストを拡張します。"
+       }
+      ],
+      [
+       "fs",
+       {
+        "en": "File access. operation: read, read_image, write, search, list. read_image loads png/jpeg/gif/webp up to 20 MB for a vision: true agent.",
+        "ja": "ファイル操作。operation は read、read_image、write、search、list。read_image は vision: true のエージェント向けに最大 20 MB の png/jpeg/gif/webp を読み込みます。"
+       }
+      ],
+      [
+       "mcp_server",
+       {
+        "en": "Tools from an MCP server. transport: stdio or http. max_response_bytes default 1 MiB.",
+        "ja": "MCP サーバーのツール。transport は stdio または http。max_response_bytes の既定は 1 MiB。"
+       }
+      ],
+      [
+       "a2a",
+       {
+        "en": "Delegate to a named agent on another rakitsu process via url and agent.",
+        "ja": "url と agent を指定して、別の rakitsu プロセス上の名前付きエージェントに委譲します。"
+       }
+      ],
+      [
+       "jev",
+       {
+        "en": "Ask TypeSafe AI's Jev model typed yes/no, pick-one or scored questions. api_key, or TYPESAFE_API_KEY from the environment.",
+        "ja": "TypeSafe AI の Jev モデルに、はい/いいえ、択一、スコア形式の質問をします。api_key、または環境変数 TYPESAFE_API_KEY を使います。"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "h",
+     "en": "Common fields",
+     "ja": "共通フィールド"
+    },
+    {
+     "t": "kv",
+     "head": [
+      "Key",
+      "Description"
+     ],
+     "rows": [
+      [
+       "name, type",
+       {
+        "en": "Required. Unique tool name and tool type.",
+        "ja": "必須。一意のツール名とツール種別。"
+       }
+      ],
+      [
+       "description, parameters",
+       {
+        "en": "Shown to the LLM. Parameter types: string, number, boolean, array; with required, default, enum.",
+        "ja": "LLM に提示されます。パラメータ型は string、number、boolean、array で、required、default、enum を指定できます。"
+       }
+      ],
+      [
+       "allowed_paths",
+       {
+        "en": "Allowed filesystem paths. Set it explicitly for fs tools; the default is the whole launch directory.",
+        "ja": "許可するファイルシステムのパス。fs ツールでは明示してください。既定は起動ディレクトリ全体です。"
+       }
+      ],
+      [
+       "timeout_seconds, working_dir, env, allowed_exit_codes",
+       {
+        "en": "Execution controls.",
+        "ja": "実行の制御項目。"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "h",
+     "en": "sandbox",
+     "ja": "sandbox"
+    },
+    {
+     "t": "kv",
+     "head": [
+      "Key",
+      "Description"
+     ],
+     "rows": [
+      [
+       "type",
+       {
+        "en": "local_restricted (default) or docker. Any other value is rejected at load.",
+        "ja": "local_restricted (既定) または docker。それ以外は読み込み時に拒否されます。"
+       }
+      ],
+      [
+       "image, mount_workdir, mount_workdir_writable",
+       {
+        "en": "docker only. Default image alpine:latest. The workdir mounts at /workspace, read-only unless writable is set.",
+        "ja": "docker のみ。既定イメージは alpine:latest。作業ディレクトリは /workspace にマウントされ、writable 指定がない限り読み取り専用です。"
+       }
+      ],
+      [
+       "allow_network",
+       {
+        "en": "docker only. Default is no network.",
+        "ja": "docker のみ。既定ではネットワークなし。"
+       }
+      ],
+      [
+       "user",
+       {
+        "en": "docker only. Default 65534:65534 (nobody).",
+        "ja": "docker のみ。既定 65534:65534 (nobody)。"
+       }
+      ],
+      [
+       "resource_limits",
+       {
+        "en": "cpu_limit, memory_limit, timeout_sec, max_output_bytes (default 8KB for cli, 10MB for fs), pids_limit (default 128).",
+        "ja": "cpu_limit、memory_limit、timeout_sec、max_output_bytes (既定は cli 8KB、fs 10MB)、pids_limit (既定 128)。"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "p",
+     "en": "Limit: the local_restricted allowlist is a guard rail, not a security boundary. Allowed interpreters such as python3 or bash can run arbitrary code. Use docker for untrusted work, and never expose serve to a network without RAKITSU_API_TOKEN.",
+     "ja": "制限: local_restricted の許可リストは誤操作を防ぐガードレールであり、セキュリティ境界ではありません。python3 や bash などの許可済みインタープリタは任意のコードを実行できます。信頼できない処理には docker を使い、RAKITSU_API_TOKEN なしで serve をネットワークに公開しないでください。"
+    }
+   ]
+  },
+  {
+   "id": "orchestrator",
+   "name": {
+    "en": "Orchestrator strategies",
+    "ja": "オーケストレーターの戦略"
+   },
+   "simple": {
+    "en": "ReAct delegation or a deterministic Pipeline with sequential, parallel and loop steps.",
+    "ja": "ReAct による委譲、または sequential・parallel・loop ステップを持つ決定的な Pipeline。"
+   },
+   "detail": [
+    {
+     "t": "p",
+     "en": "strategy accepts ReAct, PlanAndExecute, Hierarchical and Pipeline. Only Pipeline has a distinct implementation today. PlanAndExecute and Hierarchical currently route through the ReAct loop.",
+     "ja": "strategy には ReAct、PlanAndExecute、Hierarchical、Pipeline を指定できます。現時点で独自の実装があるのは Pipeline のみです。PlanAndExecute と Hierarchical は現在 ReAct ループを通ります。"
+    },
+    {
+     "t": "kv",
+     "head": [
+      "Key",
+      "Description"
+     ],
+     "rows": [
+      [
+       "name",
+       {
+        "en": "Required.",
+        "ja": "必須。"
+       }
+      ],
+      [
+       "agents",
+       {
+        "en": "Worker agents to coordinate.",
+        "ja": "調整対象のワーカーエージェント。"
+       }
+      ],
+      [
+       "routing.auto_delegate_tools / routing.rules",
+       {
+        "en": "Auto-create a delegation tool per agent; conditional rules with condition and delegate_to.",
+        "ja": "エージェントごとに委譲ツールを自動作成。condition と delegate_to による条件付きルール。"
+       }
+      ],
+      [
+       "handoff",
+       {
+        "en": "include_context (false), max_context_length (4000 chars), allow_cross_agent_calls (false).",
+        "ja": "include_context (false)、max_context_length (4000 文字)、allow_cross_agent_calls (false)。"
+       }
+      ],
+      [
+       "pipeline.steps",
+       {
+        "en": "Required for Pipeline. Each step's output feeds the next as context.",
+        "ja": "Pipeline では必須。各ステップの出力が次のステップへ文脈として渡されます。"
+       }
+      ],
+      [
+       "pipeline.synthesis / synthesis_prompt",
+       {
+        "en": "Optional final LLM call that summarizes all step results.",
+        "ja": "全ステップの結果を要約する最終 LLM 呼び出し (任意)。"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "h",
+     "en": "Pipeline step",
+     "ja": "Pipeline のステップ"
+    },
+    {
+     "t": "kv",
+     "head": [
+      "Key",
+      "Description"
+     ],
+     "rows": [
+      [
+       "name",
+       {
+        "en": "Required. Used in events and logs.",
+        "ja": "必須。イベントとログで使われます。"
+       }
+      ],
+      [
+       "type",
+       {
+        "en": "sequential (default), parallel, or loop.",
+        "ja": "sequential (既定)、parallel、loop。"
+       }
+      ],
+      [
+       "agent / task",
+       {
+        "en": "Agent for a leaf step; optional task override.",
+        "ja": "末端ステップの実行エージェント。task は任意の上書き。"
+       }
+      ],
+      [
+       "steps",
+       {
+        "en": "Nested sub-steps for parallel and loop.",
+        "ja": "parallel と loop の入れ子ステップ。"
+       }
+      ],
+      [
+       "max_iterations, condition_agent, condition_prompt",
+       {
+        "en": "loop only. Repeats until condition_agent returns done or the limit is hit.",
+        "ja": "loop のみ。condition_agent が done を返すか上限に達するまで繰り返します。"
+       }
+      ],
+      [
+       "timeout_sec, depends_on",
+       {
+        "en": "Per-step timeout; steps that must finish first (DAG shape).",
+        "ja": "ステップごとのタイムアウト。先に完了すべきステップ (DAG 形状)。"
+       }
+      ],
+      [
+       "require_tool_call",
+       {
+        "en": "Fails the step if its agent never invoked tool (optionally with command_contains, arg_key), whatever the agent claims.",
+        "ja": "エージェントの自己申告に関わらず、tool を一度も呼んでいなければそのステップを失敗にします (command_contains、arg_key を併用可)。"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "code",
+     "text": "orchestrator:\n  strategy: Pipeline\n  agents: [Planner, Developer, Reviewer, Security]\n  pipeline:\n    steps:\n      - name: plan\n        agent: Planner\n      - name: implement\n        agent: Developer\n      - name: review\n        type: parallel\n        steps:\n          - { name: code_review, agent: Reviewer }\n          - { name: security_check, agent: Security }\n    synthesis: true"
+    }
+   ]
+  },
+  {
+   "id": "memory",
+   "name": {
+    "en": "Memory and knowledge graph",
+    "ja": "メモリとナレッジグラフ"
+   },
+   "simple": {
+    "en": "A native, file-based memory store with rolling-summary chat and automatic recall.",
+    "ja": "ファイルベースの組み込みメモリストア。ローリング要約チャットと自動リコールを備えます。"
+   },
+   "detail": [
+    {
+     "t": "p",
+     "en": "With settings.memory.enabled, the memory_add, memory_query, memory_get, memory_list and memory_link tools are registered on every agent. Nodes are stored as JSON per scope and ranked with BM25. Node types: rule, pattern, fact, procedure, gotcha, note.",
+     "ja": "settings.memory.enabled を有効にすると、memory_add、memory_query、memory_get、memory_list、memory_link の各ツールが全エージェントに登録されます。ノードはスコープごとに JSON で保存され、BM25 で順位付けされます。ノード種別は rule、pattern、fact、procedure、gotcha、note です。"
+    },
+    {
+     "t": "kv",
+     "head": [
+      "Key",
+      "Default",
+      "Description"
+     ],
+     "rows": [
+      [
+       "memory.enabled",
+       "false",
+       {
+        "en": "Enable native memory.",
+        "ja": "組み込みメモリを有効にします。"
+       }
+      ],
+      [
+       "memory.dir",
+       "~/.rakitsu/memory",
+       {
+        "en": "Storage directory.",
+        "ja": "保存先ディレクトリ。"
+       }
+      ],
+      [
+       "conversation.enabled",
+       "false",
+       {
+        "en": "Rolling summary plus recent verbatim turns instead of full history.",
+        "ja": "全履歴ではなく、ローリング要約と直近のターン原文を使います。"
+       }
+      ],
+      [
+       "conversation.keep_recent_turns",
+       "2",
+       {
+        "en": "Verbatim turns kept per inference.",
+        "ja": "推論ごとに残す原文のターン数。"
+       }
+      ],
+      [
+       "conversation.summary_max_chars",
+       "2000",
+       {
+        "en": "Rolling summary size cap.",
+        "ja": "ローリング要約の文字数上限。"
+       }
+      ],
+      [
+       "conversation.disable_summary",
+       "false",
+       {
+        "en": "Pure-memory mode. Older turns are dropped without a summarizer call and are recoverable only through the memory tools.",
+        "ja": "純メモリモード。古いターンは要約なしで破棄され、memory ツール経由でのみ復元できます。"
+       }
+      ],
+      [
+       "auto_recall.enabled",
+       "false",
+       {
+        "en": "Inject top-k relevant memories as a fenced <recalled_memory> block at Run start. Needs memory.enabled.",
+        "ja": "Run 開始時に関連性の高い上位 k 件を <recalled_memory> ブロックとして注入します。memory.enabled が必要です。"
+       }
+      ],
+      [
+       "auto_recall.top_k",
+       "5",
+       {
+        "en": "Number of memories injected.",
+        "ja": "注入するメモリの件数。"
+       }
+      ],
+      [
+       "auto_recall.scopes",
+       "session, project, global",
+       {
+        "en": "Override the cascade. Shorthands or literals such as project:foo.",
+        "ja": "カスケードの上書き。省略形、または project:foo のようなリテラル。"
+       }
+      ],
+      [
+       "auto_recall.node_type",
+       "all",
+       {
+        "en": "Restrict recall to one node type.",
+        "ja": "リコールを 1 つのノード種別に限定します。"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "p",
+     "en": "Safety: the summary is updated after each turn. If the summarizer fails, the model sees full history again, so no data is lost, except in disable_summary mode.",
+     "ja": "安全性: 要約は各ターンの後に更新されます。要約に失敗した場合はモデルが再び全履歴を見るため、データは失われません。ただし disable_summary モードでは別です。"
+    }
+   ]
+  },
+  {
+   "id": "wake",
+   "name": {
+    "en": "Wake timer",
+    "ja": "ウェイクタイマー"
+   },
+   "simple": {
+    "en": "A server clock runs cheap checks on a schedule and wakes the agent only when something changes. Experimental.",
+    "ja": "サーバー側のタイマーが軽量なチェックを定期実行し、変化があったときだけエージェントを起こします。実験的機能です。"
+   },
+   "detail": [
+    {
+     "t": "p",
+     "en": "Lives in a long-running rakitsu serve chat session. Checks use zero model calls. A normal agent turn starts in the same session only when a check reports a change or alarm. The rolling summary, per-session JSONL and resume_id survive restarts.",
+     "ja": "長時間稼働する rakitsu serve のチャットセッション内で動作します。チェックはモデル呼び出しを使いません。チェックが変化またはアラームを報告したときだけ、同じセッションで通常のエージェントターンが始まります。ローリング要約、セッションごとの JSONL、resume_id は再起動後も保持されます。"
+    },
+    {
+     "t": "h",
+     "en": "Tiers",
+     "ja": "階層"
+    },
+    {
+     "t": "ul",
+     "items": [
+      {
+       "en": "L0, free tick: runs checks, outcome quiet, changed, alarm or unknown.",
+       "ja": "L0 (無料ティック): チェックを実行し、結果は quiet、changed、alarm、unknown。"
+      },
+      {
+       "en": "L1, optional judge: config-only in v1; no judge call is made.",
+       "ja": "L1 (任意の judge): v1 では設定のみで、judge の呼び出しは行われません。"
+      },
+      {
+       "en": "L2, agent turn: a full ReAct loop in the same session, with a [TIMER-SOURCED TURN] message.",
+       "ja": "L2 (エージェントターン): [TIMER-SOURCED TURN] メッセージとともに、同じセッションで完全な ReAct ループを実行します。"
+      }
+     ]
+    },
+    {
+     "t": "kv",
+     "head": [
+      "Key (settings.wake)",
+      "Default",
+      "Description"
+     ],
+     "rows": [
+      [
+       "enabled",
+       "false",
+       {
+        "en": "Opt-in. Refused with cli, fs, mcp_server or a2a tools, or if any agent lacks a system_prompt.",
+        "ja": "オプトイン。cli、fs、mcp_server、a2a ツールがある場合、またはシステムプロンプトのないエージェントがある場合は拒否されます。"
+       }
+      ],
+      [
+       "interval_seconds",
+       "60",
+       {
+        "en": "Base tick interval.",
+        "ja": "基本のティック間隔。"
+       }
+      ],
+      [
+       "backoff_factor",
+       "1.5",
+       {
+        "en": "Multiplier after each quiet tick.",
+        "ja": "静かなティックのたびに掛ける倍率。"
+       }
+      ],
+      [
+       "min_interval_seconds",
+       "30",
+       {
+        "en": "Floor, must be at least 10.",
+        "ja": "下限。10 以上が必要。"
+       }
+      ],
+      [
+       "max_interval_seconds",
+       "600",
+       {
+        "en": "Cap after backoff.",
+        "ja": "バックオフ後の上限。"
+       }
+      ],
+      [
+       "jitter_percent",
+       "10",
+       {
+        "en": "Random variance per tick, 0 to 50.",
+        "ja": "ティックごとのランダムなばらつき。0 から 50。"
+       }
+      ],
+      [
+       "max_turns_per_hour",
+       "6",
+       {
+        "en": "Hard cap on L2 turns; excess is suppressed as hourly_cap.",
+        "ja": "L2 ターンの厳格な上限。超過分は hourly_cap として抑止されます。"
+       }
+      ],
+      [
+       "turn_timeout_seconds",
+       "180",
+       {
+        "en": "Timeout for an L2 turn.",
+        "ja": "L2 ターンのタイムアウト。"
+       }
+      ],
+      [
+       "kill_switch_file",
+       "~/.rakitsu/wake/STOP",
+       {
+        "en": "If present, the loop stops.",
+        "ja": "存在するとループが停止します。"
+       }
+      ],
+      [
+       "heartbeat_stale_seconds",
+       "180",
+       {
+        "en": "Supervisor contract: older heartbeat means stale.",
+        "ja": "監視側との取り決め。これより古いハートビートは stale とみなします。"
+       }
+      ],
+      [
+       "allow.paths / allow.url_hosts",
+       "[]",
+       {
+        "en": "Confinement for checks. Paths stay inside the workdir; hosts are validated at load.",
+        "ja": "チェックの閉じ込め設定。パスは作業ディレクトリ内、ホストは読み込み時に検証されます。"
+       }
+      ],
+      [
+       "secret_env",
+       "[]",
+       {
+        "en": "Env var names only; resolved at session start. A missing name fails Start.",
+        "ja": "環境変数名のみ。セッション開始時に解決され、存在しない名前があると Start が失敗します。"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "h",
+     "en": "Check types",
+     "ja": "チェックの種類"
+    },
+    {
+     "t": "kv",
+     "head": [
+      "Type",
+      "Description"
+     ],
+     "rows": [
+      [
+       "file_mtime",
+       {
+        "en": "Alarm if the file was not modified within max_age_seconds.",
+        "ja": "max_age_seconds 以内に更新されていなければアラーム。"
+       }
+      ],
+      [
+       "file_contains",
+       {
+        "en": "Alarm when the file contains the given text.",
+        "ja": "ファイルに指定の文字列が含まれていればアラーム。"
+       }
+      ],
+      [
+       "http_status",
+       {
+        "en": "GET a url and compare with expect.",
+        "ja": "url に GET し、expect と比較します。"
+       }
+      ],
+      [
+       "http_json",
+       {
+        "en": "GET, read a number at a dotted field, apply alarm_if (for example below).",
+        "ja": "GET して、ドット区切りの field にある数値を読み、alarm_if (例: below) を適用します。"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "p",
+     "en": "Limits: file checks are read-only, 64 KiB max. HTTP checks are GET-only, 64 KiB max response, validated hosts only. Consecutive alarms without a state change are suppressed (single_flight). rakitsu acp cannot run wake timers; use serve.",
+     "ja": "制限: ファイルチェックは読み取り専用で最大 64 KiB。HTTP チェックは GET のみ、レスポンス最大 64 KiB、検証済みホストのみ。状態が変わらない連続アラームは抑止されます (single_flight)。rakitsu acp ではウェイクタイマーは使えません。serve を使ってください。"
+    },
+    {
+     "t": "h",
+     "en": "start_task",
+     "ja": "start_task"
+    },
+    {
+     "t": "p",
+     "en": "With settings.wake.allow.configs, a woken session gets start_task and get_task_status to launch independent task runs from an allowlist. The prompt is a fixed task text plus declared params (enum, path, bounded int). Caps: max_tasks_per_hour 10, max_concurrent_tasks 3, task_timeout_seconds 300, cancel_on_stop true. Full results go to a 0600 log; the session sees a status and at most 300 characters.",
+     "ja": "settings.wake.allow.configs を設定すると、起こされたセッションは start_task と get_task_status を使い、許可リストにある独立したタスクを起動できます。プロンプトは固定のタスク文と、宣言済みのパラメータ (enum、path、上限付き int) だけで構成されます。上限: max_tasks_per_hour 10、max_concurrent_tasks 3、task_timeout_seconds 300、cancel_on_stop true。完全な結果は権限 0600 のログに書かれ、セッションには状態と最大 300 文字だけが見えます。"
+    },
+    {
+     "t": "h",
+     "en": "Control and events",
+     "ja": "制御とイベント"
+    },
+    {
+     "t": "ul",
+     "items": [
+      {
+       "en": "GET /api/chat/{id}/wake/status; POST .../wake/stop, .../wake/resume. Resume returns 409 while the kill-switch file exists. Stop is idempotent and keeps the session open.",
+       "ja": "GET /api/chat/{id}/wake/status、POST .../wake/stop、.../wake/resume。キルスイッチファイルが残っている間、resume は 409 を返します。stop は冪等で、セッションは開いたままです。"
+      },
+      {
+       "en": "Events: WAKE_TICK, WAKE_ESCALATE, WAKE_TASK_START, WAKE_TASK_END. Quiet ticks emit nothing.",
+       "ja": "イベント: WAKE_TICK、WAKE_ESCALATE、WAKE_TASK_START、WAKE_TASK_END。静かなティックは何も出力しません。"
+      },
+      {
+       "en": "Files under ~/.rakitsu/wake/: audit.jsonl, state.json, heartbeat per session, plus the STOP file.",
+       "ja": "~/.rakitsu/wake/ 配下のファイル: セッションごとの audit.jsonl、state.json、heartbeat と、STOP ファイル。"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "monitors",
+   "name": {
+    "en": "Monitors, healthz and alerts",
+    "ja": "モニター、healthz、アラート"
+   },
+   "simple": {
+    "en": "serve can autostart wake sessions from a monitors block, report health at /healthz, and send alerts. Experimental.",
+    "ja": "serve は monitors ブロックからウェイクセッションを自動起動し、/healthz で状態を返し、アラートを送れます。実験的機能です。"
+   },
+   "detail": [
+    {
+     "t": "p",
+     "en": "rakitsu serve --config monitor.yaml starts every entry in monitors: as a session named monitor-<id>. The id is stable, so a restart resumes the same session. A supervisor such as Docker, systemd or launchd only needs to restart one process.",
+     "ja": "rakitsu serve --config monitor.yaml は monitors: の各項目を monitor-<id> という名前のセッションとして起動します。id は固定なので、再起動すると同じセッションが再開されます。Docker、systemd、launchd などの監視役は、1 つのプロセスを再起動するだけで済みます。"
+    },
+    {
+     "t": "code",
+     "text": "monitors:\n  - id: btc-price\n    config: ./monitors/btc-price.yaml   # must set settings.wake.enabled: true\n    workdir: ./monitors/btc-price\n    env_refs: [OPENAI_API_KEY, ALERT_WEBHOOK_URL]\nhealthz:\n  monitors_start_grace_seconds: 120\n  healthz_fail_on_stopped: true\n  healthz_allow_remote: false"
+    },
+    {
+     "t": "kv",
+     "head": [
+      "Key",
+      "Default",
+      "Description"
+     ],
+     "rows": [
+      [
+       "monitors[].id / config / workdir",
+       "",
+       {
+        "en": "Session id suffix, monitor config path, working directory.",
+        "ja": "セッション id の接尾辞、モニター設定のパス、作業ディレクトリ。"
+       }
+      ],
+      [
+       "monitors[].env_refs",
+       "",
+       {
+        "en": "Env var names only. Values never go in YAML.",
+        "ja": "環境変数名のみ。値は YAML に書きません。"
+       }
+      ],
+      [
+       "healthz.monitors_start_grace_seconds",
+       "120",
+       {
+        "en": "Grace period while monitors start.",
+        "ja": "モニター起動中の猶予時間。"
+       }
+      ],
+      [
+       "healthz.healthz_fail_on_stopped",
+       "true",
+       {
+        "en": "Report stopped monitors as unhealthy.",
+        "ja": "停止中のモニターを異常として報告します。"
+       }
+      ],
+      [
+       "healthz.healthz_allow_remote",
+       "false",
+       {
+        "en": "Default allows loopback callers only.",
+        "ja": "既定ではループバックからの呼び出しのみ許可します。"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "h",
+     "en": "Health",
+     "ja": "ヘルス"
+    },
+    {
+     "t": "p",
+     "en": "GET /healthz returns 200 when every monitor is ok, otherwise 503. States: ok, stale, stopped, failed, starting. Docker uses rakitsu healthcheck. systemd uses WatchdogSec with sd_notify (NOTIFY_SOCKET).",
+     "ja": "GET /healthz は全モニターが ok なら 200、それ以外は 503 を返します。状態は ok、stale、stopped、failed、starting。Docker では rakitsu healthcheck を使い、systemd では sd_notify (NOTIFY_SOCKET) を用いた WatchdogSec を使います。"
+    },
+    {
+     "t": "h",
+     "en": "Alerts (settings.wake.alerts)",
+     "ja": "アラート (settings.wake.alerts)"
+    },
+    {
+     "t": "p",
+     "en": "The agent calls the send_alert tool, which only queues a message. The server delivers it to allow-listed hosts, with redaction and a rate cap.",
+     "ja": "エージェントは send_alert ツールを呼びますが、これはメッセージをキューに入れるだけです。サーバーが、マスキングとレート制限を適用したうえで、許可リストにあるホストへ配信します。"
+    },
+    {
+     "t": "kv",
+     "head": [
+      "Key",
+      "Default",
+      "Description"
+     ],
+     "rows": [
+      [
+       "rate_per_hour",
+       "20",
+       {
+        "en": "Per sink.",
+        "ja": "シンクごと。"
+       }
+      ],
+      [
+       "retry.max_attempts / backoff_seconds",
+       "3 / 5",
+       {
+        "en": "Maximum 5 and 60.",
+        "ja": "上限はそれぞれ 5 と 60。"
+       }
+      ],
+      [
+       "sinks[].type",
+       "",
+       {
+        "en": "webhook or ntfy.",
+        "ja": "webhook または ntfy。"
+       }
+      ],
+      [
+       "sinks[].url_env",
+       "",
+       {
+        "en": "Name of the env var holding the URL.",
+        "ja": "URL を保持する環境変数の名前。"
+       }
+      ],
+      [
+       "sinks[].allow_hosts",
+       "",
+       {
+        "en": "Host allow-list.",
+        "ja": "ホストの許可リスト。"
+       }
+      ],
+      [
+       "sinks[].min_severity",
+       "warn",
+       {
+        "en": "info, warn or critical.",
+        "ja": "info、warn、critical。"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "p",
+     "en": "Status: timer logic is tested with a fake clock. A live multi-day run is in progress and not yet proven.",
+     "ja": "状況: タイマーのロジックは偽の時計でテスト済みです。数日間の実運用での検証は進行中で、まだ実証されていません。"
+    }
+   ]
+  },
+  {
+   "id": "hub",
+   "name": {
+    "en": "Hub, web UI and debugger",
+    "ja": "ハブ、Web UI、デバッガ"
+   },
+   "simple": {
+    "en": "A visual builder, live run inspector and breakpoint debugger, served by rakitsu serve.",
+    "ja": "rakitsu serve が提供する、ビジュアルビルダー、ライブ実行インスペクタ、ブレークポイント付きデバッガ。"
+   },
+   "detail": [
+    {
+     "t": "p",
+     "en": "rakitsu serve starts a standalone SSE hub with the embedded web UI at http://localhost:9100. Several rakitsu run processes register automatically and push events. The UI shows active runs as cards; click one to inspect its live tree and graph. Click Run in the browser and the run happens inside the serve process.",
+     "ja": "rakitsu serve は、埋め込みの Web UI を http://localhost:9100 で提供する単独の SSE ハブを起動します。複数の rakitsu run プロセスが自動登録してイベントを送ります。UI は実行中の run をカードで表示し、クリックするとライブのツリーとグラフを確認できます。ブラウザで Run を押すと、実行は serve プロセスの中で行われます。"
+    },
+    {
+     "t": "h",
+     "en": "Visual builder",
+     "ja": "ビジュアルビルダー"
+    },
+    {
+     "t": "ul",
+     "items": [
+      {
+       "en": "Drag-and-drop canvas: agents, tools, skills and orchestrator nodes.",
+       "ja": "ドラッグ&ドロップのキャンバス。エージェント、ツール、スキル、オーケストレーターのノード。"
+      },
+      {
+       "en": "Pipeline, parallel and team groups; a group sets defaults and agents override them, shown with badges.",
+       "ja": "pipeline、parallel、team のグループ。グループが既定値を定め、エージェントが上書きします (バッジで表示)。"
+      },
+      {
+       "en": "Canvas search, auto-arrange and a hierarchy panel.",
+       "ja": "キャンバス検索、自動配置、階層パネル。"
+      }
+     ]
+    },
+    {
+     "t": "h",
+     "en": "Debugger",
+     "ja": "デバッガ"
+    },
+    {
+     "t": "ul",
+     "items": [
+      {
+       "en": "Attach to a live run, set breakpoints on any agent or tool node, pause, inspect reasoning, override parameters and resume. Detach returns to normal execution.",
+       "ja": "実行中の run にアタッチし、任意のエージェントまたはツールノードにブレークポイントを置き、一時停止、推論の確認、パラメータの上書き、再開ができます。デタッチで通常の実行に戻ります。"
+      },
+      {
+       "en": "Four visualization modes: Tree, Block Diagram, Timeline, Mind Map.",
+       "ja": "4 つの可視化モード: Tree、Block Diagram、Timeline、Mind Map。"
+      },
+      {
+       "en": "Playback scrubbing on completed runs.",
+       "ja": "完了した run のプレイバックスクラビング。"
+      }
+     ]
+    },
+    {
+     "t": "h",
+     "en": "Protocol endpoints on serve",
+     "ja": "serve のプロトコルエンドポイント"
+    },
+    {
+     "t": "kv",
+     "head": [
+      "Endpoint",
+      "Description"
+     ],
+     "rows": [
+      [
+       "/mcp",
+       {
+        "en": "MCP server so external clients can discover and call rakitsu tools (legacy era, up to the 2025-11-25 revision).",
+        "ja": "外部クライアントが rakitsu のツールを検出・呼び出せる MCP サーバー (レガシー世代、2025-11-25 リビジョンまで)。"
+       }
+      ],
+      [
+       "/a2a",
+       {
+        "en": "A2A v1.0.1 endpoint plus agent-card discovery, for delegating to a named agent in another rakitsu process.",
+        "ja": "A2A v1.0.1 エンドポイントとエージェントカードによる検出。別の rakitsu プロセスの名前付きエージェントへ委譲できます。"
+       }
+      ],
+      [
+       "/healthz",
+       {
+        "en": "Monitor health, see Monitors.",
+        "ja": "モニターの状態。「モニター」を参照。"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "p",
+     "en": "Network: serve binds localhost by default; binding any other host requires RAKITSU_API_TOKEN.",
+     "ja": "ネットワーク: serve は既定で localhost にバインドします。それ以外のホストにバインドするには RAKITSU_API_TOKEN が必要です。"
+    }
+   ]
+  },
+  {
+   "id": "sessions",
+   "name": {
+    "en": "Sessions and export",
+    "ja": "セッションとエクスポート"
+   },
+   "simple": {
+    "en": "Runs persist as JSONL files you can list, replay, resume or fork, and configs can export to other runtimes.",
+    "ja": "実行は JSONL ファイルとして保存され、一覧、リプレイ、再開、フォークができます。設定は他のランタイムへエクスポートできます。"
+   },
+   "detail": [
+    {
+     "t": "ul",
+     "items": [
+      {
+       "en": "Each session is stored as one <uuid>.jsonl file under ~/.rakitsu/sessions/.",
+       "ja": "各セッションは ~/.rakitsu/sessions/ 配下に <uuid>.jsonl という 1 ファイルで保存されます。"
+      },
+      {
+       "en": "rakitsu sessions lists and inspects them; rakitsu run --resume <session-id> resumes or forks a prior session.",
+       "ja": "rakitsu sessions で一覧・確認でき、rakitsu run --resume <session-id> で過去のセッションを再開またはフォークできます。"
+      },
+      {
+       "en": "The web UI offers session history with replay and rerun. In serve chat, POST /api/chat/{session-id}/fork starts a fork.",
+       "ja": "Web UI にはリプレイと再実行ができるセッション履歴があります。serve のチャットでは POST /api/chat/{session-id}/fork でフォークを開始します。"
+      },
+      {
+       "en": "Token budget enforcement, cost tracking and context auto-compression apply during runs. Pipelines support checkpoint and resume.",
+       "ja": "実行中はトークン予算の強制、コスト追跡、コンテキストの自動圧縮が働きます。Pipeline はチェックポイントと再開に対応します。"
+      }
+     ]
+    },
+    {
+     "t": "h",
+     "en": "Export",
+     "ja": "エクスポート"
+    },
+    {
+     "t": "p",
+     "en": "rakitsu export <config> --format openclaw|nemoclaw writes the config in another runtime's format through the RuntimeTarget interface. The export is verified end to end against real infrastructure by a manual test; unit tests guard the export schema on every CI build.",
+     "ja": "rakitsu export <config> --format openclaw|nemoclaw は、RuntimeTarget インターフェース経由で設定を別のランタイムの形式で書き出します。エクスポートは手動テストで実際のインフラに対してエンドツーエンドの検証が行われており、ユニットテストが CI のビルドごとにエクスポートのスキーマを守ります。"
+    }
+   ]
+  }
+ ],
+ "docsGenerated": true
+}
