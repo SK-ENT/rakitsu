@@ -115,6 +115,18 @@ for (const mode of ['reject', 'missing']) {
   ok(/読み込めませんでした/.test(await p2.locator('#loaderr').textContent()), 'error message is localized (JA)');
   await ctx2.close();
 }
+// 6b. no third-party requests; self-hosted fonts load
+{
+  const ctx = await browser.newContext(); const p = await ctx.newPage(); const hosts = new Set();
+  p.on('request', r => { const u = new URL(r.url()); if (/^https?:$/.test(u.protocol)) hosts.add(u.hostname); });
+  await p.goto(URL_); await p.waitForSelector('footer, #license', { state: 'attached' }); await sleep(800);
+  ok([...hosts].every(h => h === '127.0.0.1' || h === 'localhost'), 'page load only contacts localhost', [...hosts]);
+  await p.evaluate(() => Promise.all(['400 14px "IBM Plex Sans"', '500 14px "IBM Plex Sans"', '600 14px "IBM Plex Sans"', '400 14px "IBM Plex Mono"', '500 14px "IBM Plex Mono"'].map(f => document.fonts.load(f))));
+  ok(await p.evaluate(() => document.fonts.check('500 14px "IBM Plex Sans"')), 'IBM Plex Sans 500 loaded');
+  ok(await p.evaluate(() => document.fonts.check('500 14px "IBM Plex Mono"')), 'IBM Plex Mono 500 loaded');
+  ok(await p.evaluate(() => [...document.fonts].filter(f => f.status === 'loaded').length) >= 2, 'font faces report loaded');
+  await ctx.close();
+}
 // 7. screenshots
 fs.mkdirSync(path.join(here, 'shots'), { recursive: true });
 const shots = [['1280-en-light', 1280, 900, 'en', 'light'], ['1280-ja-dark', 1280, 900, 'ja', 'dark'], ['400-en-light', 400, 800, 'en', 'light'], ['400-ja-dark', 400, 800, 'ja', 'dark']];

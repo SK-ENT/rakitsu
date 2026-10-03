@@ -20,6 +20,7 @@ PY
 find "$out" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 mkdir -p "$out/assets" "$out/data" "$out/latest"
 cp "$site"/assets/{app.css,app.js,viz.css,viz.js} "$out/assets/"
+cp -R "$site/assets/fonts" "$out/assets/fonts"
 cp "$site"/data/*.json "$out/data/"
 touch "$out/.nojekyll"
 default="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["default"])' "$site/data/versions.json")"
