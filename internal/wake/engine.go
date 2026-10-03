@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/SK-ENT/rakitsu/internal/config"
@@ -110,7 +109,7 @@ func New(d Deps) (*Engine, error) {
 		return nil, fmt.Errorf("open lock: %w", err)
 	}
 
-	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := tryLock(lockFile); err != nil {
 		lockFile.Close()
 		return nil, ErrLocked
 	}
@@ -473,7 +472,7 @@ func (e *Engine) LastAlarm(now time.Time) *time.Time {
 // Close releases the lock file.
 func (e *Engine) Close() error {
 	if e.lock != nil {
-		_ = syscall.Flock(int(e.lock.Fd()), syscall.LOCK_UN)
+		unlock(e.lock)
 		e.lock.Close()
 	}
 	return nil
