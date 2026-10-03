@@ -1,0 +1,188 @@
+  .mrow .bar2{grid-column:1 / -1;order:3}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+/* Keep the page's layout, controls, captions, info panels and color tokens. */
+.fig {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.figbox {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+}
+
+.figbox svg.rk-viz {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
+}
+
+.rk-viz text {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  fill: var(--fg);
+  pointer-events: none;
+}
+
+.rk-viz .sub {
+  font-size: 10.5px;
+  fill: var(--muted);
+}
+
+.rk-viz .nb {
+  fill: var(--surface);
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+
+.rk-viz .on .nb {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.rk-viz .bad .nb {
+  fill: var(--bad-soft);
+  stroke: var(--bad);
+  stroke-width: 2;
+}
+
+.rk-viz .rk-ring {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 7;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.rk-viz .on .rk-ring {
+  opacity: .22;
+}
+
+.rk-viz .bad .rk-ring {
+  stroke: var(--bad);
+  opacity: .22;
+}
+
+.rk-viz .rk-track {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  opacity: .7;
+}
+
+.rk-viz .rk-dashes {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+  stroke-linecap: butt;
+  stroke-linejoin: round;
+  stroke-dasharray: 8 6;
+  opacity: .4;
+  animation: rk-march 4s linear infinite;
+  animation-play-state: paused;
+}
+
+.rk-viz .rk-edge.on .rk-dashes {
+  stroke: var(--accent);
+  stroke-width: 2.8;
+  opacity: 1;
+  animation-duration: .55s;
+}
+
+.rk-viz .rk-edge.on .rk-track {
+  stroke: var(--accent);
+  opacity: .18;
+}
+
+/* Markers are separate from the dashed stroke: arrowheads never blink. */
+.rk-viz .rk-arrow-muted {
+  fill: var(--muted);
+}
+
+.rk-viz .rk-arrow-active {
+  fill: var(--accent);
+}
+
+.rk-viz .rk-edge-label {
+  font-size: 10.5px;
+  fill: var(--muted);
+  stroke: var(--bg);
+  stroke-width: 5;
+  stroke-linejoin: round;
+  paint-order: stroke fill;
+}
+
+.rk-viz .rk-edge.on .rk-edge-label {
+  fill: var(--accent);
+}
+
+.rk-viz .rk-tick {
+  fill: var(--surface);
+  stroke: var(--muted);
+  stroke-width: 1.5;
+}
+
+.rk-viz .rk-tick.done {
+  fill: var(--muted);
+}
+
+.rk-viz .rk-tick.escalated {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+}
+
+.rk-viz .rk-tick.suppressed {
+  fill: var(--bad-soft);
+  stroke: var(--bad);
+}
+
+.rk-viz [role="button"] {
+  cursor: pointer;
+}
+
+.rk-viz [role="button"]:focus-visible {
+  outline: none;
+}
+
+.rk-viz [role="button"]:focus-visible .nb {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.rk-viz [role="button"]:focus-visible .rk-ring {
+  opacity: .3;
+}
+
+.rk-running .rk-viz .rk-dashes {
+  animation-play-state: running;
+}
+
+.rk-viz .rk-hidden {
+  visibility: hidden;
+}
+
+@keyframes rk-march {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -14; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rk-viz .rk-dashes,
+  .rk-running .rk-viz .rk-dashes {
+    animation: none !important;
+    stroke-dashoffset: 0;
+  }
+}

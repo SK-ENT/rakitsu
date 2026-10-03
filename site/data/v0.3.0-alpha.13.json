@@ -1,0 +1,16 @@
+{
+ "tag": "v0.3.0-alpha.13",
+ "commit": "7a9f1799964490405f784ba6e2db8aebeff62fdd",
+ "version": "v0.3.0-alpha.13",
+ "status": "docs not generated",
+ "docsGenerated": false,
+ "placeholder": true,
+ "meta": {
+  "license": "BSL 1.1",
+  "status": {
+   "en": "alpha",
+   "ja": "アルファ"
+  }
+ },
+ "features": []
+}
