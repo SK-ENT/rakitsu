@@ -440,7 +440,7 @@ function mediaBlock(m){
  if(v&&v.src){var vi=document.createElement("video");vi.src=v.src;if(v.poster)vi.poster=v.poster;vi.controls=true;vi.preload="none";box.appendChild(vi);}
  return box;}
 var ctx={feat:null,tbl:0,name:null};
-var ROWSCOPE={cli:["","run-","serve-"]};
+var ROWSCOPE={cli:["","run-","serve-","","acp-","healthcheck-"]};
 var ROUGH_NEEDS={"wake-monitors":"wake"};
 var WORKS_IDS=["react-loop","pipeline","providers","web-ui","sessions","protocols"],ROUGH_IDS=["alpha","hierarchical","allowlist","wake-monitors","mcp-a2a-limits","model-dependent","docs-coverage"];
 function renderBlock(b){

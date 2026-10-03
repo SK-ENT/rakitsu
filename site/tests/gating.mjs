@@ -27,6 +27,7 @@ const srv = http.createServer((q, r) => {
 await new Promise(r => srv.on('listening', r));
 const base = `http://127.0.0.1:${srv.address().port}/`;
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM || (process.env.HOME + '/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell') });
+const WAKE_TAG = vj.versions.find(v => JSON.parse(fs.readFileSync(path.join(site, 'data/' + v + '.json'), 'utf8')).features.some(f => f.id === 'wake'));
 const WITH = FIX, WITHOUT = ['v0.3.0-alpha.14', 'v0.3.0-alpha.13', 'v0.3.0-alpha.12'];
 const GATED = ['wake', 'wake-summary', 'wake-tick-1', 'ref-wake', 'ref-monitors', 'card-long-running-monitor', 'rough-wake-monitors'];
 async function open(ver, lang, hash) {
@@ -72,8 +73,8 @@ for (const h of ['#en.wake', '#ja.wake', '#wake-ref', '#en.ref-monitors', '#en.w
   const p = await open(WITHOUT[0], h.startsWith('#ja') ? 'ja' : 'en', h), s = await snap(p);
   ok(p.__errs.length === 0, h + ' dead link: no page error', p.__errs);
   ok(s.note && s.note.includes(WITHOUT[0]), h + ' dead link: notice names the tag', s.note);
-  ok(!(await p.evaluate(() => !!document.querySelector('#gatenote a'))), h + ' dead link: no offer link when no tag has it');
-  ok(/not in any documented release yet|まだありません/.test(s.note || ''), h + ' dead link: says no release has it yet', s.note);
+  // a documented release that has wake + monitors (alpha.18) now exists, so the notice offers it
+  ok(await p.evaluate(t => { const a = document.querySelector('#gatenote a'); return !!a && a.textContent.includes(t); }, WAKE_TAG), h + ' dead link: offer link names the first tag that has it', s.note);
   ok(s.dom.includes('guides') && s.ids.length > 150, h + ' dead link: page still rendered');
 }
 { // a normal id on a gated-out tag shows no notice; unknown ids show none either
