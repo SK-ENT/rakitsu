@@ -55,8 +55,8 @@ const def = vj.default;
 
 for (const start of ['/', '/latest/']) {
   const p = await page();
-  await p.goto(B + start + '#ja.wake'); await p.waitForURL(u => u.pathname === `${PFX}/${def}/`);
-  ok(new URL(p.url()).hash === '#ja.wake', 'redirect from ' + start + ' keeps hash', p.url());
+  await p.goto(B + start + '#ja.memory'); await p.waitForURL(u => u.pathname === `${PFX}/${def}/`);
+  ok(new URL(p.url()).hash === '#ja.memory', 'redirect from ' + start + ' keeps hash', p.url());
   await loaded(p); ok(await p.evaluate(() => document.documentElement.lang) !== undefined, 'redirect target loads');
   await p.context().close();
 }
@@ -86,15 +86,15 @@ for (const t of vj.versions) {
 }
 { // deep link
   const p = await page();
-  await p.goto(`${B}/${def}/#ja.wake`); await loaded(p);
+  await p.goto(`${B}/${def}/#ja.memory`); await loaded(p);
   await p.waitForTimeout(600);
   ok(await p.evaluate(() => /[ぁ-ん]/.test(document.querySelector('.hero h1').textContent)), 'deep link opens in Japanese');
-  ok(await p.evaluate(() => { const e = document.getElementById('wake') || document.querySelector('[id$="wake"]'); if (!e) return false; const r = e.getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0; }), 'deep link scrolled to wake section');
+  ok(await p.evaluate(() => { const e = document.getElementById('memory'); if (!e) return false; const r = e.getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0; }), 'deep link scrolled to memory section');
   // selector switch
   const other = vj.versions.find(v => v !== def);
   await p.selectOption('#verSel', other);
   await p.waitForURL(u => u.pathname === `${PFX}/${other}/`);
-  ok(new URL(p.url()).hash === '#ja.wake', 'selector keeps token', p.url());
+  ok(new URL(p.url()).hash === '#ja.memory', 'selector keeps token', p.url());
   await loaded(p); ok(await p.evaluate(() => document.getElementById('verSel').value) === other, 'selector switched page to ' + other);
   await p.context().close();
 }

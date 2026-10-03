@@ -8,7 +8,7 @@ var UI={
   learn:"Learn",refhead:"Spec reference for this release",refs:"References",
   notice:"Docs not generated for this release. The per-feature reference below exists only for releases marked (docs generated) in the version list. The teaching sections describe the repository as prepared on 2026-10-03 and were not re-checked against this tag.",
   noref:"No per-feature reference for this release.",
-  gate:"Not in this release: this link points to a feature that %TAG% does not have.",gateGo:"Open it in %TAG%",
+  gate:"Not in this release: this link points to a feature that %TAG% does not have.",gateGo:"Open it in %TAG%",gateNone:"It is not in any generated release yet.",
   head:{Command:"Command",Description:"Description"}},
  ja:{ref:"仕様リファレンス",version:"バージョン",view:"表示",simple:"簡易",detail:"詳細",
   h1:"Rakitsu のしくみと、現時点でできること",
@@ -16,7 +16,7 @@ var UI={
   learn:"学ぶ",refhead:"このリリースの仕様リファレンス",refs:"参考文献",
   notice:"このリリースのドキュメントは生成していません。機能ごとのリファレンスは、バージョン一覧で「docs generated」と表示されたリリースのみです。解説セクションは 2026-10-03 時点のリポジトリに基づいており、このタグに対しては再確認していません。",
   noref:"このリリースには機能ごとのリファレンスがありません。",
-  gate:"このリリースにはありません: このリンクの機能は %TAG% には含まれていません。",gateGo:"%TAG% で開く",
+  gate:"このリリースにはありません: このリンクの機能は %TAG% には含まれていません。",gateGo:"%TAG% で開く",gateNone:"生成済みのどのリリースにもまだありません。",
   head:{}}
 };
 var HEADJA={"Command":"コマンド","Description":"説明","Flag":"フラグ","Root key":"ルートキー","Key":"キー","Type":"種別","Default":"既定値","Endpoint":"エンドポイント","Key (settings.providers.<name>)":"キー (settings.providers.<名前>)","Key (settings.wake)":"キー (settings.wake)","Strategy":"戦略","Status":"状況","Protocol":"プロトコル","Where it lives":"実装箇所"};
@@ -30,8 +30,10 @@ function L(o){return o&&typeof o==="object"?(o[st.lang]||o.en):o;}
 function T(a,b){return st.lang==="ja"?b:a;}
 function data(v){return DATA[v]||{features:[],meta:{},docsGenerated:false};}
 /* Version gating: an item with a needs key is shown only when the selected release has that feature id.
-   Releases without generated docs have no feature list, so nothing can be verified and nothing is hidden there (the page already says so). */
-function has(need){var d=data(st.ver);return !need||!d.docsGenerated||d.features.some(function(f){return f.id===need;});}
+   Releases without generated docs have no feature list, so other items stay visible there (the page already says so); wake and monitors are always hidden there. */
+function has(need){var d=data(st.ver);if(!need)return true;
+ if(!d.docsGenerated)return !/^(wake|monitors)$/.test(need); /* wake and monitors are newer than every release without generated docs */
+ return d.features.some(function(f){return f.id===need;});}
 /* Which feature would a (possibly aliased) link id need? Used only to explain a dead deep link; ids are never renamed. */
 function needOf(raw){var id=Object.prototype.hasOwnProperty.call(ALIAS,raw)?ALIAS[raw]:raw;
  if(id==="card-long-running-monitor"||id==="rough-wake-monitors")return "wake";
@@ -481,6 +483,7 @@ function checkGate(){
   a.href=window.RK_TAG?"../"+encodeURIComponent(tag)+"/"+location.hash:location.hash;
   a.addEventListener("click",function(e){if(window.RK_TAG)return;e.preventDefault();st.ver=tag;save();sel.value=tag;pendingScroll=p.raw;render();});
   n.appendChild(a);}
+ else n.appendChild(document.createTextNode(" "+u.gateNone));
  var nt=$("notice");nt.parentNode.insertBefore(n,nt);
 }
 function render(){
@@ -492,7 +495,7 @@ function render(){
  $("viewSimple").textContent=u.simple;$("viewDetail").textContent=u.detail;
  $("viewSimple").setAttribute("aria-pressed",st.view==="simple");$("viewDetail").setAttribute("aria-pressed",st.view==="detail");
  $("langEn").setAttribute("aria-pressed",st.lang==="en");$("langJa").setAttribute("aria-pressed",st.lang==="ja");
- $("verlabel").textContent=st.ver;
+ $("verlabel").textContent=st.ver;syncSel();
  var m=$("meta");m.textContent="";
  [st.ver,(d.meta.license||""),(d.meta.go||""),L(d.meta.status)||""].forEach(function(x){if(x)m.appendChild(el("span",null,x));});
  var n=$("notice");n.hidden=!!d.docsGenerated;n.textContent=d.docsGenerated?"":u.notice;
@@ -527,6 +530,9 @@ function render(){
 }
 var sel=$("verSel");
 function fillSel(){sel.textContent="";VERSIONS.forEach(function(v){var o=document.createElement("option");o.value=v;o.textContent=v+(data(v).docsGenerated?" (docs generated)":" (docs not generated)");sel.appendChild(o);});sel.value=st.ver;}
+sel.setAttribute("autocomplete","off");
+function syncSel(){if(st.ver&&sel.value!==st.ver)sel.value=st.ver;}
+window.addEventListener("pageshow",syncSel);
 sel.addEventListener("change",function(){if(window.RK_TAG){location.href="../"+encodeURIComponent(sel.value)+"/"+location.hash;return;}st.ver=sel.value;save();render();});
 $("viewSimple").addEventListener("click",function(){st.view="simple";save();render();});
 $("viewDetail").addEventListener("click",function(){st.view="detail";save();render();});

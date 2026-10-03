@@ -96,9 +96,9 @@ try {
   const c = await browser.newContext(); const p = await c.newPage(); await p.goto(base); await p.waitForFunction(() => window.__rkLoaded === true);
   const cases = [
     ['#en.agent-loop', { lang: 'en', raw: 'agent-loop', id: 'agent-loop' }],
-    ['#ja.wake', { lang: 'ja', raw: 'wake', id: 'wake' }],
-    ['#wake', { lang: null, raw: 'wake', id: 'wake' }],
-    ['wake', { lang: null, raw: 'wake', id: 'wake' }],
+    ['#ja.memory', { lang: 'ja', raw: 'memory', id: 'memory' }],
+    ['#memory', { lang: null, raw: 'memory', id: 'memory' }],
+    ['memory', { lang: null, raw: 'memory', id: 'memory' }],
     ['#react', { lang: null, raw: 'react', id: 'agent-loop' }],       // alias
     ['#en.f-react', { lang: 'en', raw: 'f-react', id: 'agent-loop' }], // old id alias
     ['#fr.wake', { lang: null, raw: 'fr.wake', id: null }],            // unsupported language
@@ -115,7 +115,7 @@ try {
     const got = await p.evaluate(t => window.RakitsuLinks.parseToken(t), tok);
     ok(JSON.stringify(got) === JSON.stringify(want), `parseToken(${JSON.stringify(tok)}) = ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
   }
-  ok(await p.evaluate(() => window.RakitsuLinks.mkLink('ja', 'wake')) === '#ja.wake', 'mkLink');
+  ok(await p.evaluate(() => window.RakitsuLinks.mkLink('ja', 'memory')) === '#ja.memory', 'mkLink');
   await c.close();
 } finally { await browser.close(); srv.close(); }
 { // no Google Fonts references anywhere in site/

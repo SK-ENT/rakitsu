@@ -26,10 +26,10 @@ const hash = p => p.evaluate(() => location.hash);
 // 1. copy-link button (clipboard works)
 {
   const p = await open({ permissions: ['clipboard-read', 'clipboard-write'] });
-  await p.locator('#wake h2 .lnk').first().click(); await sleep(200);
+  await p.locator('#memory h2 .lnk').first().click(); await sleep(200);
   const clip = await p.evaluate(() => navigator.clipboard.readText());
-  ok(clip === URL_ + '#en.wake', 'copy-link puts absolute URL with #en.<id> on clipboard', clip);
-  ok(await hash(p) === '#en.wake', 'copy-link sets location.hash');
+  ok(clip === URL_ + '#en.memory', 'copy-link puts absolute URL with #en.<id> on clipboard', clip);
+  ok(await hash(p) === '#en.memory', 'copy-link sets location.hash');
   const msg = await p.locator('#linkmsg').textContent();
   ok(!(await p.locator('#linkmsg').isHidden()) && /Copied/.test(msg), 'copy-link shows Copied message', msg);
   ok((await p.locator('#linkmsg input').count()) === 0, 'no fallback input when clipboard works');
@@ -51,15 +51,15 @@ for (const mode of ['reject', 'missing']) {
 // 2. hashchange after load; 3. language toggle rewrites hash
 {
   const p = await open();
-  await p.evaluate(() => { location.hash = '#en.wake'; }); await sleep(400);
-  ok(await inView(p, 'wake'), 'hashchange after load scrolls to #en.wake');
-  ok(await p.evaluate(() => document.querySelector('#wake').classList.contains('hl')), 'target highlighted');
+  await p.evaluate(() => { location.hash = '#en.memory'; }); await sleep(400);
+  ok(await inView(p, 'memory'), 'hashchange after load scrolls to #en.memory');
+  ok(await p.evaluate(() => document.querySelector('#memory').classList.contains('hl')), 'target highlighted');
   await p.click('#langJa'); await sleep(400);
-  ok(await hash(p) === '#ja.wake', 'language toggle rewrites hash to #ja.wake', await hash(p));
+  ok(await hash(p) === '#ja.memory', 'language toggle rewrites hash to #ja.memory', await hash(p));
   ok(await p.evaluate(() => document.documentElement.lang) === 'ja', 'html lang = ja');
-  ok(await inView(p, 'wake'), 'still scrolled to wake after toggle');
+  ok(await inView(p, 'memory'), 'still scrolled to memory after toggle');
   await p.click('#langEn'); await sleep(300);
-  ok(await hash(p) === '#en.wake', 'toggle back rewrites hash to #en.wake');
+  ok(await hash(p) === '#en.memory', 'toggle back rewrites hash to #en.memory');
   // hash with other language switches the UI language
   await p.evaluate(() => { location.hash = '#ja.memory'; }); await sleep(500);
   ok(await p.evaluate(() => document.documentElement.lang) === 'ja' && await inView(p, 'memory'), 'hashchange to #ja.memory switches language and scrolls');

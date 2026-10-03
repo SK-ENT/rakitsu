@@ -53,7 +53,12 @@ const INIT = (SIDMAP) => {
   };
 };
 const SID = { react: 'agent-loop', flow: 'data-flow', orch: 'orchestration', wake: 'wake', memory: 'memory', protocols: 'protocols' };
-const WIDS = ['react', 'flow', 'orch', 'wake', 'memory', 'protocols'];
+// The wake widget exists only in releases that have the wake feature; skip its checks when the served default tag lacks it (gating.mjs covers wake with a fixture tag).
+const vj0 = await (await fetch(URL_ + 'data/versions.json')).json();
+const HAS_WAKE = (await (await fetch(URL_ + 'data/' + vj0.default + '.json')).json()).features.some(f => f.id === 'wake');
+if (!HAS_WAKE) console.log('functional: wake widget not in default tag ' + vj0.default + ', wake checks skipped');
+const WAKEIDS = a => a.filter(w => HAS_WAKE || w !== 'wake');
+const WIDS = ['react', 'flow', 'orch', 'wake', 'memory', 'protocols'].filter(w => HAS_WAKE || w !== 'wake');
 // step counts (fixed page: react 6, protocols 8; set REACT_N / PROTO_N)
 const N = { react: +(process.env.REACT_N || 6), flow: 10, orch: 5, wake: 12, memory: 4, protocols: +(process.env.PROTO_N || 8) };
 const btns = (p, id) => ({ play: p.locator(`#${SID[id]} .ctrls button`).nth(0), step: p.locator(`#${SID[id]} .ctrls button`).nth(1) });
@@ -66,7 +71,7 @@ async function fresh(opts = {}) {
   const p = await ctx.newPage();
   await p.addInitScript(INIT, SID);
   const errs = []; p.on('pageerror', e => errs.push(String(e)));
-  await p.goto(URL_); await p.waitForFunction(() => window.__anims && window.__anims.length >= 6);
+  await p.goto(URL_); await p.waitForFunction(n => window.__anims && window.__anims.length >= n, WIDS.length);
   p.__errs = errs; p.__ctx = ctx; return p;
 }
 const semRows = [];
@@ -114,13 +119,13 @@ for (const id of WIDS) {
 }
 // rate: 1x vs after cycles (uses react: dur 1500, and wake dur 900)
 async function rate(id, ms) { const s = await S(p, id); if (!s.playing) await btns(p, id).play.click(); return p.evaluate(([i, m]) => window.__count(i, m), [id, ms]); }
-const base = {}; for (const id of ['react', 'wake']) { await p.locator('#' + SID[id]).scrollIntoViewIfNeeded(); base[id] = await rate(id, 6000); }
-for (const id of ['react', 'wake']) { const { play, step } = btns(p, id); for (let k = 0; k < 25; k++) { await play.click(); await step.click(); await play.click(); } }
+const base = {}; for (const id of WAKEIDS(['react', 'wake'])) { await p.locator('#' + SID[id]).scrollIntoViewIfNeeded(); base[id] = await rate(id, 6000); }
+for (const id of WAKEIDS(['react', 'wake'])) { const { play, step } = btns(p, id); for (let k = 0; k < 25; k++) { await play.click(); await step.click(); await play.click(); } }
 for (const id of ['orch']) { for (let k = 0; k < 6; k++) await p.locator('#orchestration .tabs button').nth(k % 4).click(); }
 for (let k = 0; k < 3; k++) { await p.click('#langJa'); await p.click('#langEn'); }
-const aft = {}; for (const id of ['react', 'wake']) { await p.locator('#' + SID[id]).scrollIntoViewIfNeeded(); aft[id] = await rate(id, 6000); }
-for (const id of ['react', 'wake']) rec(id, 'no duplicate loops: steps per 6s before vs after 25 cycles+renders', Math.abs(base[id] - aft[id]) <= 1, { base: base[id], after: aft[id] });
-rec('all', 'anims array size stable (6) after cycles', (await S(p, 'react')).n === 6, (await S(p, 'react')).n);
+const aft = {}; for (const id of WAKEIDS(['react', 'wake'])) { await p.locator('#' + SID[id]).scrollIntoViewIfNeeded(); aft[id] = await rate(id, 6000); }
+for (const id of WAKEIDS(['react', 'wake'])) rec(id, 'no duplicate loops: steps per 6s before vs after 25 cycles+renders', Math.abs(base[id] - aft[id]) <= 1, { base: base[id], after: aft[id] });
+rec('all', 'anims array size stable (' + WIDS.length + ') after cycles', (await S(p, 'react')).n === WIDS.length, (await S(p, 'react')).n);
 // off-screen
 await p.locator('#agent-loop').scrollIntoViewIfNeeded(); let o = await S(p, 'react'); if (!o.playing) await btns(p, 'react').play.click();
 await p.evaluate(() => window.scrollTo(0, document.body.scrollHeight)); const c1 = await p.evaluate(() => window.__count('react', 3500));
@@ -130,7 +135,7 @@ await p.__ctx.close();
 
 // ---------- lang / view / tab switching ----------
 p = await fresh();
-for (const id of ['react', 'flow', 'wake', 'memory', 'protocols']) {
+for (const id of WAKEIDS(['react', 'flow', 'wake', 'memory', 'protocols'])) {
   await p.locator('#' + SID[id]).scrollIntoViewIfNeeded(); const { play, step } = btns(p, id);
   const s = await S(p, id); if (!s.playing) await play.click(); await step.click(); await step.click(); await play.click(); await sleep(200);
   const before = await S(p, id); await p.click('#langJa'); await sleep(100); const after = await S(p, id);
@@ -145,9 +150,9 @@ await p.locator('#orchestration').scrollIntoViewIfNeeded();
 for (let m = 0; m < 4; m++) {
   const tabs = p.locator('#orchestration .tabs button'); await tabs.nth(m).click(); const { play, step } = btns(p, 'orch');
   const s = await S(p, 'orch'); const pr = await tabs.nth(m).getAttribute('aria-pressed'); const others = await p.locator('#orchestration .tabs button[aria-pressed="true"]').count();
-  rec('orch', `tab ${m}: state reset, one tab pressed, anims==6`, pr === 'true' && others === 1 && s.n === 6, { s, others });
+  rec('orch', `tab ${m}: state reset, one tab pressed, anims==${WIDS.length}`, pr === 'true' && others === 1 && s.n === WIDS.length, { s, others });
   await step.click(); await step.click(); await tabs.nth((m + 1) % 4).click(); const s2 = await S(p, 'orch');
-  rec('orch', `tab ${m}->${(m + 1) % 4} after Step: new widget playing, counters from rest`, s2.playing && s2.n === 6, s2);
+  rec('orch', `tab ${m}->${(m + 1) % 4} after Step: new widget playing, counters from rest`, s2.playing && s2.n === WIDS.length, s2);
 }
 await p.__ctx.close();
 
@@ -202,6 +207,7 @@ rec('orch', 'ReAct/Hier: supervisor->worker hop highlights the receiving worker 
 const loopRows = orchRows[3];
 await p.locator('#orchestration .tabs button').nth(3).click();
 rec('orch', 'loop: Worker node subtitle should not say "type: loop" (loop is the step type)', !(await p.locator('#orchestration svg').first().textContent()).includes('type: loop'), '');
+if (HAS_WAKE) {
 // wake
 const wk = await walk('wake', 'wake');
 const OUT = ['q', 'q', 'q', 'q', 'chg', 'q', 'q', 'alarm', 'sup', 'q', 'q', 'q'];
@@ -209,6 +215,7 @@ rec('wake', 'counters at every step: ticks=i+1, model calls=escalations so far',
 rec('wake', 'final: 12 ticks / 2 model calls / quiet cost 0', /ticks 12model calls 2quiet ticks cost 0 calls/.test(wk[11].cnt), wk[11].cnt);
 rec('wake', 'escalation steps light tick->LLM edge', [4, 7].every(k => wk[k].edges.some(e => /-> LLM/.test(e) || /LLM/.test(e)) || wk[k].nodes.includes('LLM')), [wk[4].edges, wk[7].edges]);
 rec('wake', 'suppressed (repeat) step lights no model edge, 0 calls', !wk[8].nodes.includes('LLM'), wk[8].nodes);
+}
 // memory BM25
 const MEM = [["procedure", "Failed deploy checklist", "Check the logs, confirm which step failed, run the rollback, then notify the channel."], ["procedure", "Rollback procedure", "To roll back a deploy, redeploy the previous release tag and check health."], ["gotcha", "Cache after deploy", "After a deploy, clear the cache or users see stale pages."], ["fact", "Staging host", "Staging runs on a separate host behind the VPN."], ["rule", "Commit messages", "Use conventional commits: feat, fix, chore, docs."], ["pattern", "Retry with backoff", "Retry failed requests with exponential backoff and jitter."]];
 const tok = s => s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
