@@ -27,7 +27,7 @@ const srv = http.createServer((q, r) => {
 await new Promise(r => srv.on('listening', r));
 const base = `http://127.0.0.1:${srv.address().port}/`;
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM || (process.env.HOME + '/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell') });
-const WITH = FIX, WITHOUT = ['v0.3.0-alpha.14', 'v0.3.0-alpha.13', 'v0.3.0-alpha.12'], PLACEHOLDER = ['v0.3.0-alpha.11', 'v0.3.0-alpha.10', 'v0.3.0-alpha.9'];
+const WITH = FIX, WITHOUT = ['v0.3.0-alpha.14', 'v0.3.0-alpha.13', 'v0.3.0-alpha.12'];
 const GATED = ['wake', 'wake-summary', 'wake-tick-1', 'ref-wake', 'ref-monitors', 'card-long-running-monitor', 'rough-wake-monitors'];
 async function open(ver, lang, hash) {
   const ctx = await browser.newContext(); const p = await ctx.newPage(); p.__errs = []; p.on('pageerror', e => p.__errs.push(String(e)));
@@ -54,15 +54,6 @@ withFixture = true;
   ok(s.dom.includes('wake') && s.note === null && p.__errs.length === 0, 'offer link switches to a tag that has wake', p.__errs); }
 withFixture = false;
 
-// placeholder tags (docs not generated): wake/monitors are older than them, so gated off, and the "not generated" notice stays
-for (const v of PLACEHOLDER) for (const lang of ['en', 'ja']) {
-  const p = await open(v, lang), s = await snap(p), t = `${v}/${lang}`;
-  ok(p.__errs.length === 0, t + ' no page errors', p.__errs);
-  for (const id of GATED) ok(!s.ids.includes(id) && !s.dom.includes(id), t + ' has no ' + id);
-  ok(!s.text.includes('wake timer') && !s.text.includes('/healthz'), t + ' text does not teach wake/healthz');
-  ok(await p.evaluate(() => !document.getElementById('notice').hidden), t + ' keeps docs-not-generated notice');
-}
-
 for (const v of WITHOUT) for (const lang of ['en', 'ja']) {
   const p = await open(v, lang), s = await snap(p), t = `${v}/${lang}`;
   ok(p.__errs.length === 0, t + ' no page errors', p.__errs);
@@ -76,13 +67,13 @@ for (const v of WITHOUT) for (const lang of ['en', 'ja']) {
   ok(s.note === null, t + ' no gate note without a dead link');
 }
 
-// deep links to gated ids: notice, no blank page, no error, and no broken link while no generated release has the feature
+// deep links to gated ids: notice, no blank page, no error, and no broken link while no documented release has the feature
 for (const h of ['#en.wake', '#ja.wake', '#wake-ref', '#en.ref-monitors', '#en.wake-tick-3', '#en.card-long-running-monitor', '#en.rough-wake-monitors', '#f-wake']) {
   const p = await open(WITHOUT[0], h.startsWith('#ja') ? 'ja' : 'en', h), s = await snap(p);
   ok(p.__errs.length === 0, h + ' dead link: no page error', p.__errs);
   ok(s.note && s.note.includes(WITHOUT[0]), h + ' dead link: notice names the tag', s.note);
   ok(!(await p.evaluate(() => !!document.querySelector('#gatenote a'))), h + ' dead link: no offer link when no tag has it');
-  ok(/not in any generated release yet|まだありません/.test(s.note || ''), h + ' dead link: says no release has it yet', s.note);
+  ok(/not in any documented release yet|まだありません/.test(s.note || ''), h + ' dead link: says no release has it yet', s.note);
   ok(s.dom.includes('guides') && s.ids.length > 150, h + ' dead link: page still rendered');
 }
 { // a normal id on a gated-out tag shows no notice; unknown ids show none either

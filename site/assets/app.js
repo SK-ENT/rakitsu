@@ -1,22 +1,22 @@
 (function(){
-var VERSIONS=[],DEFAULT_VER="",DATA={};
+var VERSIONS=[],DEFAULT_VER="",DATA={},COVERS={},TAGS=[];
 var REPO="https://github.com/SK-ENT/rakitsu";
 var UI={
  en:{ref:"Spec Reference",version:"Version",view:"View",simple:"Simple",detail:"Detail",
   h1:"How Rakitsu works, and what it does today",
   lead:"A teaching reference for Rakitsu, a YAML-configured multi-agent system written in Go. Each section explains the idea in plain words, the research behind it, how Rakitsu implements it, and where it stops. Diagrams are live: use Pause or Step on any of them. Simple shows the idea and the picture. Detail adds the full explanation.",
   learn:"Learn",refhead:"Spec reference for this release",refs:"References",
-  notice:"Docs not generated for this release. The per-feature reference below exists only for releases marked (docs generated) in the version list. The teaching sections describe the repository as prepared on 2026-10-03 and were not re-checked against this tag.",
+  notice:"This release has no doc changes. Showing the docs for %DOC%.",
   noref:"No per-feature reference for this release.",
-  gate:"Not in this release: this link points to a feature that %TAG% does not have.",gateGo:"Open it in %TAG%",gateNone:"It is not in any generated release yet.",
+  gate:"Not in this release: this link points to a feature that %TAG% does not have.",gateGo:"Open it in %TAG%",gateNone:"It is not in any documented release yet.",
   head:{Command:"Command",Description:"Description"}},
  ja:{ref:"仕様リファレンス",version:"バージョン",view:"表示",simple:"簡易",detail:"詳細",
   h1:"Rakitsu のしくみと、現時点でできること",
   lead:"Go で書かれた、YAML で設定するマルチエージェントシステム Rakitsu の学習用リファレンスです。各セクションで、考え方、背景にある研究、Rakitsu での実装、そして限界を説明します。図は動きます。どの図でも一時停止と 1 ステップ実行を使えます。「簡易」は考え方と図、「詳細」は完全な説明を表示します。",
   learn:"学ぶ",refhead:"このリリースの仕様リファレンス",refs:"参考文献",
-  notice:"このリリースのドキュメントは生成していません。機能ごとのリファレンスは、バージョン一覧で「docs generated」と表示されたリリースのみです。解説セクションは 2026-10-03 時点のリポジトリに基づいており、このタグに対しては再確認していません。",
+  notice:"このリリースにはドキュメントの変更がありません。%DOC% のドキュメントを表示しています。",
   noref:"このリリースには機能ごとのリファレンスがありません。",
-  gate:"このリリースにはありません: このリンクの機能は %TAG% には含まれていません。",gateGo:"%TAG% で開く",gateNone:"生成済みのどのリリースにもまだありません。",
+  gate:"このリリースにはありません: このリンクの機能は %TAG% には含まれていません。",gateGo:"%TAG% で開く",gateNone:"ドキュメントのあるどのリリースにもまだありません。",
   head:{}}
 };
 var HEADJA={"Command":"コマンド","Description":"説明","Flag":"フラグ","Root key":"ルートキー","Key":"キー","Type":"種別","Default":"既定値","Endpoint":"エンドポイント","Key (settings.providers.<name>)":"キー (settings.providers.<名前>)","Key (settings.wake)":"キー (settings.wake)","Strategy":"戦略","Status":"状況","Protocol":"プロトコル","Where it lives":"実装箇所"};
@@ -28,11 +28,12 @@ var FOOT=$("foot"); /* regDom renames this element id to "license", so keep the 
 function el(tag,cls,txt){var e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e;}
 function L(o){return o&&typeof o==="object"?(o[st.lang]||o.en):o;}
 function T(a,b){return st.lang==="ja"?b:a;}
-function data(v){return DATA[v]||{features:[],meta:{},docsGenerated:false};}
-/* Version gating: an item with a needs key is shown only when the selected release has that feature id.
-   Releases without generated docs have no feature list, so other items stay visible there (the page already says so); wake and monitors are always hidden there. */
+function docOf(v){return Object.prototype.hasOwnProperty.call(COVERS,v)?COVERS[v]:v;}
+function data(v){return DATA[docOf(v)]||{features:[],meta:{}};}
+function tagKey(t){var m=t.match(/\d+/g)||[];return m.map(Number);}
+function tagCmp(a,b){var x=tagKey(a),y=tagKey(b);for(var i=0;i<Math.max(x.length,y.length);i++){var d=(y[i]||0)-(x[i]||0);if(d)return d;}return 0;}
+/* Version gating: an item with a needs key is shown only when the docs for the selected release have that feature id. */
 function has(need){var d=data(st.ver);if(!need)return true;
- if(!d.docsGenerated)return !/^(wake|monitors)$/.test(need); /* wake and monitors are newer than every release without generated docs */
  return d.features.some(function(f){return f.id===need;});}
 /* Which feature would a (possibly aliased) link id need? Used only to explain a dead deep link; ids are never renamed. */
 function needOf(raw){var id=Object.prototype.hasOwnProperty.call(ALIAS,raw)?ALIAS[raw]:raw;
@@ -429,7 +430,7 @@ var ROUGH=[
  {en:"Wake timer and monitors are experimental. A multi-day live run is still in progress.",ja:"ウェイクタイマーとモニターは実験的機能です。数日間の実運用での検証は進行中です。"},
  {en:"The MCP server covers revisions through 2025-11-25 only. The A2A server has no streaming and keeps tasks in memory.",ja:"MCP サーバーは 2025-11-25 までのリビジョンのみです。A2A サーバーはストリーミングがなく、タスクをメモリ上に置きます。"},
  {en:"Results depend on the model. Weak models can skip tools or delegation.",ja:"結果はモデルに左右されます。弱いモデルはツールや委譲を飛ばすことがあります。"},
- {en:"Per-feature docs are generated only for some releases. The version list marks which.",ja:"機能ごとのドキュメントを生成しているのは一部のリリースだけです。どれかはバージョン一覧に表示されます。"}];
+ {en:"Docs exist only for releases whose docs changed. A release with no doc changes shows the docs of the nearest earlier release, and the version list says which.",ja:"ドキュメントがあるのは、内容が変わったリリースだけです。ドキュメントの変更がないリリースは、直前の古いリリースのドキュメントを表示し、バージョン一覧にその旨を表示します。"}];
 
 /* ---------- rendering ---------- */
 function mediaBlock(m){
@@ -476,7 +477,7 @@ function checkGate(){
  var old=$("gatenote");if(old)old.parentNode.removeChild(old);
  var p=parseToken(location.hash);if(p.id||!p.raw)return;
  var need=needOf(p.raw);if(!need||has(need))return;
- var tag=null;VERSIONS.forEach(function(v){if(!tag&&DATA[v].docsGenerated&&DATA[v].features.some(function(f){return f.id===need;}))tag=v;});
+ var tag=null;VERSIONS.forEach(function(v){if(!tag&&DATA[v].features.some(function(f){return f.id===need;}))tag=v;});
  if(DEFAULT_VER&&DATA[DEFAULT_VER]&&DATA[DEFAULT_VER].features.some(function(f){return f.id===need;}))tag=DEFAULT_VER;
  var u=UI[st.lang],n=el("div","notice",u.gate.replace("%TAG%",st.ver));n.id="gatenote";n.setAttribute("role","status");
  if(tag){n.appendChild(document.createTextNode(" "));var a=el("a",null,u.gateGo.replace("%TAG%",tag));
@@ -495,10 +496,10 @@ function render(){
  $("viewSimple").textContent=u.simple;$("viewDetail").textContent=u.detail;
  $("viewSimple").setAttribute("aria-pressed",st.view==="simple");$("viewDetail").setAttribute("aria-pressed",st.view==="detail");
  $("langEn").setAttribute("aria-pressed",st.lang==="en");$("langJa").setAttribute("aria-pressed",st.lang==="ja");
- $("verlabel").textContent=st.ver;syncSel();
+ $("verlabel").textContent=verText(st.ver);fillSel();
  var m=$("meta");m.textContent="";
- [st.ver,(d.meta.license||""),(d.meta.go||""),L(d.meta.status)||""].forEach(function(x){if(x)m.appendChild(el("span",null,x));});
- var n=$("notice");n.hidden=!!d.docsGenerated;n.textContent=d.docsGenerated?"":u.notice;
+ [verText(st.ver),(d.meta.license||""),(d.meta.go||""),L(d.meta.status)||""].forEach(function(x){if(x)m.appendChild(el("span",null,x));});
+ var n=$("notice");var cov=Object.prototype.hasOwnProperty.call(COVERS,st.ver);n.hidden=!cov;n.textContent=cov?u.notice.replace("%DOC%",docOf(st.ver)):"";
  var nav=$("nav");nav.textContent="";var g=$("guides");g.textContent="";var f=$("feats");f.textContent="";
  function link(id,txt){var a=el("a",null,txt);a.href=mkLink(st.lang,id);a.addEventListener("click",function(e){e.preventDefault();goTo(id);});nav.appendChild(a);}
  nav.appendChild(el("div","grp",u.learn));
@@ -529,7 +530,8 @@ function render(){
  if(pendingScroll!=null){var praw=pendingScroll;pendingScroll=null;window.setTimeout(function(){var c=canon(praw);if(c)reveal(c);},0);}
 }
 var sel=$("verSel");
-function fillSel(){sel.textContent="";VERSIONS.forEach(function(v){var o=document.createElement("option");o.value=v;o.textContent=v+(data(v).docsGenerated?" (docs generated)":" (docs not generated)");sel.appendChild(o);});sel.value=st.ver;}
+function verText(v){if(!Object.prototype.hasOwnProperty.call(COVERS,v))return v;return v+" ("+T("docs from ","ドキュメント: ")+docOf(v)+")";}
+function fillSel(){sel.textContent="";TAGS.forEach(function(v){var o=document.createElement("option");o.value=v;o.textContent=verText(v);sel.appendChild(o);});sel.value=st.ver;}
 sel.setAttribute("autocomplete","off");
 function syncSel(){if(st.ver&&sel.value!==st.ver)sel.value=st.ver;}
 window.addEventListener("pageshow",syncSel);
@@ -548,10 +550,10 @@ function showLoadError(e){var n=$("loaderr");n.hidden=false;n.textContent=UIERR[
 var BASE=window.RK_TAG?"../":"";
 function getJSON(u){return fetch(u,{cache:"no-cache"}).then(function(r){if(!r.ok)throw new Error(u+" "+r.status);return r.json();});}
 getJSON(BASE+"data/versions.json").then(function(vj){
- VERSIONS=vj.versions.slice();DEFAULT_VER=vj.default;
+ VERSIONS=vj.versions.slice();DEFAULT_VER=vj.default;COVERS=vj.covers||{};TAGS=VERSIONS.concat(Object.keys(COVERS)).sort(tagCmp);
  return Promise.all(VERSIONS.map(function(v){return getJSON(BASE+"data/"+v+".json").then(function(d){DATA[v]=d;});}));
 }).then(function(){
- st.ver=window.RK_TAG&&VERSIONS.indexOf(window.RK_TAG)>-1?window.RK_TAG:(saved0&&VERSIONS.indexOf(saved0)>-1?saved0:DEFAULT_VER);
+ st.ver=window.RK_TAG&&TAGS.indexOf(window.RK_TAG)>-1?window.RK_TAG:(saved0&&TAGS.indexOf(saved0)>-1?saved0:DEFAULT_VER);
  fillSel();
  render();window.requestAnimationFrame(frame);
  if(typeof window.__rkReady==="function")window.__rkReady();

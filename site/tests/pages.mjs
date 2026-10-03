@@ -45,6 +45,7 @@ for (const f of walk(out).filter(f => /\.(html|js|css)$/.test(f))) {
   const s = fs.readFileSync(f, 'utf8');
   ok(!/(href|src)="\/[^/]/.test(s) && !/["'(]\/(assets|data)\//.test(s), 'no absolute /assets or /data URL in ' + path.relative(out, f));
 }
+ok(!fs.existsSync(path.join(out, 'v0.3.0-alpha.9')) && !fs.existsSync(path.join(out, 'data/v0.3.0-alpha.9.json')), 'no placeholder tag output');
 const sv = JSON.parse(fs.readFileSync(path.join(out, 'data/versions.json'), 'utf8'));
 ok(sv.default === vj.default && sv.versions.length === vj.versions.length, 'versions.json copied');
 
@@ -70,7 +71,7 @@ for (const t of vj.versions) {
   ok(await p.evaluate(() => document.getElementById('verSel').value) === t, 'selector shows ' + t);
   ok((await p.textContent('#verlabel')).includes(t), 'label shows ' + t);
   const n = await p.evaluate(() => document.querySelectorAll('#feats .feat').length);
-  ok(d.docsGenerated ? n === d.features.length : true, t + ' feature count', [n, d.features.length]);
+  ok(n === d.features.length, t + ' feature count', [n, d.features.length]);
   ok(p.__errs.length === 0, t + ' no page errors', p.__errs);
   const html = fs.readFileSync(path.join(out, t, 'index.html'), 'utf8');
   const favHref = (html.match(/<link rel="icon"[^>]*href="([^"]+)"/) || [])[1];
@@ -99,8 +100,61 @@ for (const t of vj.versions) {
   await p.context().close();
 }
 { const p = await page(); const r = await p.goto(B + '/no/such/page'); ok(r.status() === 404, '404 status'); ok((await p.textContent('h1')) === 'Page not found', '404 page served'); await p.context().close(); }
-{ const p = await page(); const r = await p.goto(B + '/v9.9.9/'); ok(r.status() === 404, 'unknown tag is 404'); await p.context().close(); }
+const first = vj.versions[vj.versions.length - 1];
+for (const u of ['/v9.9.9/', '/v0.3.0-alpha.9/', '/v0.3.0-alpha.11/index.html']) {
+  const p = await page(); const r = await p.goto(B + u); ok(r.status() === 404, u + ' is 404');
+  ok(await p.evaluate(() => !document.getElementById('notag').hidden), u + ' shows the no-docs message');
+  const t = await p.textContent('#notag'); ok(t.includes('No docs for this release. Docs start at ' + first + '.') && t.includes('このリリースのドキュメントはありません'), u + ' message EN/JA', t);
+  await p.context().close();
+}
+{ const p = await page(); await p.goto(B + '/no/such/page'); ok(await p.evaluate(() => document.getElementById('notag').hidden), 'plain 404 has no release message'); await p.context().close(); }
 
-await browser.close(); srv.close(); fs.rmSync(out, { recursive: true, force: true });
+// ---- covers: built from a throwaway copy of scripts/ and site/ (a fixture entry; nothing is written to the repo)
+const COV = 'v0.3.0-alpha.15', DOC = vj.versions[0];
+function fixtureTree(covers) {
+  const t = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-covers-src-'));
+  fs.mkdirSync(path.join(t, 'scripts')); fs.copyFileSync(path.join(root, 'scripts/build-pages.sh'), path.join(t, 'scripts/build-pages.sh'));
+  fs.cpSync(path.join(root, 'site'), path.join(t, 'site'), { recursive: true, filter: s => !s.includes('/tests') });
+  fs.writeFileSync(path.join(t, 'site/data/versions.json'), JSON.stringify({ ...vj, covers }));
+  execFileSync('git', ['init', '-q', t]);
+  return t;
+}
+const tryBuild = (covers, o) => { const t = fixtureTree(covers); try { execFileSync(path.join(t, 'scripts/build-pages.sh'), [o], { stdio: 'pipe' }); return null; } catch (e) { return String(e.stderr); } finally { fs.rmSync(t, { recursive: true, force: true }); } };
+const bad1 = tryBuild({ [COV]: vj.versions[1] }, fs.mkdtempSync(path.join(os.tmpdir(), 'rk-covers-bad-')));
+ok(bad1 && /nearest earlier/.test(bad1), 'build rejects a covers value that is not the nearest earlier doc version', bad1);
+const bad2 = tryBuild({ [COV]: 'v0.3.0-alpha.9' }, fs.mkdtempSync(path.join(os.tmpdir(), 'rk-covers-bad-')));
+ok(bad2 && /not a listed doc version/.test(bad2), 'build rejects a covers value that is not a doc version', bad2);
+const out2 = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-covers-out-'));
+ok(tryBuild({ [COV]: DOC }, out2) === null, 'build with a covers fixture succeeds');
+ok(fs.existsSync(path.join(out2, COV, 'index.html')) && !fs.existsSync(path.join(out2, 'data', COV + '.json')), 'covered tag has a page and no data file');
+ok(/window\.RK_TAG="v0\.3\.0-alpha\.15"/.test(fs.readFileSync(path.join(out2, COV, 'index.html'), 'utf8')), 'covered page sets RK_TAG');
+ok(fs.readFileSync(path.join(out2, '404.html'), 'utf8').includes(COV), '404 lists the covered tag');
+const srv2 = http.createServer((req, res) => {
+  const u = decodeURIComponent(req.url.split('?')[0]); let rel = u.slice(PFX.length) || '/'; if (rel.endsWith('/')) rel += 'index.html';
+  const f = u.startsWith(PFX + '/') ? path.join(out2, rel) : null;
+  if (!f || !fs.existsSync(f) || !fs.statSync(f).isFile()) { res.writeHead(404, { 'content-type': 'text/html' }); return res.end(fs.readFileSync(path.join(out2, '404.html'))); }
+  res.writeHead(200, { 'content-type': types[path.extname(f)] || 'application/octet-stream' }); res.end(fs.readFileSync(f));
+});
+await new Promise(r => srv2.listen(0, '127.0.0.1', r));
+const B2 = 'http://127.0.0.1:' + srv2.address().port + PFX;
+for (const [lang, notice, label] of [['en', `This release has no doc changes. Showing the docs for ${DOC}.`, `${COV} (docs from ${DOC})`], ['ja', `このリリースにはドキュメントの変更がありません。${DOC} のドキュメントを表示しています。`, `${COV} (ドキュメント: ${DOC})`]]) {
+  const p = await page(); await p.goto(`${B2}/${COV}/#${lang}.memory`); await loaded(p);
+  ok(await p.evaluate(() => !document.getElementById('notice').hidden) && (await p.textContent('#notice')) === notice, 'covered page notice ' + lang, await p.textContent('#notice'));
+  ok(await p.evaluate(() => document.getElementById('verSel').value) === COV, 'covered page selector on covered tag ' + lang);
+  const opts = await p.evaluate(() => [...document.querySelectorAll('#verSel option')].map(o => o.textContent));
+  ok(opts[0] === label, 'dropdown label for covered tag ' + lang, opts);
+  ok(opts.slice(1).join() === vj.versions.join(), 'doc versions listed without suffix ' + lang, opts);
+  const chip = await p.textContent('#verlabel'); ok(chip.includes(COV) && chip.includes(DOC), 'chip shows both ' + lang, chip);
+  const dd = JSON.parse(fs.readFileSync(path.join(out2, 'data', DOC + '.json'), 'utf8'));
+  ok(await p.evaluate(() => document.querySelectorAll('#feats .feat').length) === dd.features.length, 'covered page renders the doc version data ' + lang);
+  ok(new URL(p.url()).hash === '#' + lang + '.memory' && p.__errs.length === 0, 'covered page keeps permalink grammar, no errors ' + lang, p.__errs);
+  await p.context().close();
+}
+{ const p = await page(); await p.goto(`${B2}/${DOC}/`); await loaded(p); ok(await p.evaluate(() => document.getElementById('notice').hidden), 'doc version page has no covers notice');
+  await p.selectOption('#verSel', COV); await p.waitForURL(u => u.pathname === `${PFX}/${COV}/`); await p.context().close(); }
+await browser.close(); srv2.close(); for (const d of [out2]) fs.rmSync(d, { recursive: true, force: true });
+srv.close(); fs.rmSync(out, { recursive: true, force: true });
 console.log(`pages: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
+
+

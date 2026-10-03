@@ -23,7 +23,6 @@ for (const v of files) {
   let d; try { d = JSON.parse(fs.readFileSync(path.join(dataDir, v + '.json'), 'utf8')); ok(true); } catch (e) { ok(false, v + ' parses: ' + e); continue; }
   ok(d.tag === v, v + ' tag field matches file name');
   ok(d.commit === null ? d.commit_note === 'tag not present in local clone' : /^[0-9a-f]{40}$/.test(d.commit), v + ' commit is a 40-hex hash or null with commit_note');
-  if (!d.docsGenerated) continue;
   docVersions.push(v);
   ok(Array.isArray(d.features) && d.features.length > 0, v + ' has features');
   for (const ft of d.features) {
@@ -40,7 +39,19 @@ for (const v of files) {
     });
   }
 }
-ok(docVersions.length >= 1, 'at least one doc-generated version');
+ok(docVersions.length >= 1, 'at least one doc version');
+{ // covers: each covered tag maps to the nearest earlier listed doc version
+  const key = t => { const m = /^v(\d+)\.(\d+)\.(\d+)(?:-alpha\.(\d+))?$/.exec(t); return m ? [+m[1], +m[2], +m[3], m[4] ? 0 : 1, +(m[4] || 0)] : null; };
+  const cmp = (a, b) => { for (let i = 0; i < 5; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; };
+  for (const v of vj.versions) ok(!!key(v), v + ' has a supported tag format');
+  const sorted = [...vj.versions].sort((a, b) => cmp(key(b), key(a)));
+  ok(JSON.stringify(sorted) === JSON.stringify(vj.versions), 'versions are newest first');
+  for (const [t, d] of Object.entries(vj.covers || {})) {
+    ok(!!key(t) && vj.versions.includes(d) && !vj.versions.includes(t), t + ' covers a listed doc version');
+    const earlier = vj.versions.filter(x => cmp(key(x), key(t)) < 0).sort((a, b) => cmp(key(b), key(a)));
+    ok(earlier[0] === d, t + ' covers the nearest earlier doc version', [d, earlier[0]]);
+  }
+}
 
 // ---- 2. forbidden strings
 const walk = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => e.isDirectory() ? (e.name === 'shots' || e.name === 'node_modules' ? [] : walk(path.join(d, e.name))) : [path.join(d, e.name)]);
