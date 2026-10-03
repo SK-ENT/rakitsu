@@ -110,7 +110,7 @@ for (const u of ['/v9.9.9/', '/v0.3.0-alpha.9/', '/v0.3.0-alpha.11/index.html'])
 { const p = await page(); await p.goto(B + '/no/such/page'); ok(await p.evaluate(() => document.getElementById('notag').hidden), 'plain 404 has no release message'); await p.context().close(); }
 
 // ---- covers: built from a throwaway copy of scripts/ and site/ (a fixture entry; nothing is written to the repo)
-const COV = 'v0.3.0-alpha.15', DOC = vj.versions[0];
+const COV = 'v0.3.0-alpha.19', DOC = vj.versions[0];
 function fixtureTree(covers) {
   const t = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-covers-src-'));
   fs.mkdirSync(path.join(t, 'scripts')); fs.copyFileSync(path.join(root, 'scripts/build-pages.sh'), path.join(t, 'scripts/build-pages.sh'));
@@ -127,7 +127,7 @@ ok(bad2 && /not a listed doc version/.test(bad2), 'build rejects a covers value 
 const out2 = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-covers-out-'));
 ok(tryBuild({ [COV]: DOC }, out2) === null, 'build with a covers fixture succeeds');
 ok(fs.existsSync(path.join(out2, COV, 'index.html')) && !fs.existsSync(path.join(out2, 'data', COV + '.json')), 'covered tag has a page and no data file');
-ok(/window\.RK_TAG="v0\.3\.0-alpha\.15"/.test(fs.readFileSync(path.join(out2, COV, 'index.html'), 'utf8')), 'covered page sets RK_TAG');
+ok(/window\.RK_TAG="v0\.3\.0-alpha\.19"/.test(fs.readFileSync(path.join(out2, COV, 'index.html'), 'utf8')), 'covered page sets RK_TAG');
 ok(fs.readFileSync(path.join(out2, '404.html'), 'utf8').includes(COV), '404 lists the covered tag');
 const srv2 = http.createServer((req, res) => {
   const u = decodeURIComponent(req.url.split('?')[0]); let rel = u.slice(PFX.length) || '/'; if (rel.endsWith('/')) rel += 'index.html';
