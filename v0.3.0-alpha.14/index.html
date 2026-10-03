@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rakitsu Spec Reference v0.3.0-alpha.14</title>
+<link rel="icon" type="image/svg+xml" href="../assets/brand/rakitsu-mark.svg">
+<link rel="stylesheet" href="../assets/app.css">
+<link rel="stylesheet" href="../assets/viz.css">
+</head>
+<body>
+
+<header class="top"><div class="bar">
+  <div class="brand"><img class="logo" src="../assets/brand/rakitsu-mark.svg" alt="" width="32" height="32">Rakitsu <span data-i="ref"></span><small id="verlabel"></small></div>
+  <label class="ctl" for="verSel"><span data-i="version"></span>
+    <select id="verSel"></select></label>
+  <div class="ctl"><span data-i="view"></span>
+    <span class="seg" role="group"><button id="viewSimple" type="button" data-view="simple"></button><button id="viewDetail" type="button" data-view="detail"></button></span></div>
+  <div class="ctl"><span class="seg" role="group" aria-label="Language"><button id="langEn" type="button" data-lang="en">EN</button><button id="langJa" type="button" data-lang="ja">日本語</button></span></div>
+</div></header>
+
+<div class="wrap"><div class="layout">
+  <nav class="side" id="nav" aria-label="Sections"></nav>
+  <main>
+    <div class="hero"><img class="herologo" src="../assets/brand/rakitsu-logo.svg" alt="Rakitsu logo" width="120" height="132"><div class="herotxt"><h1 data-i="h1"></h1><p data-i="lead"></p></div></div>
+    <div class="meta" id="meta"></div>
+    <div class="notice" id="loaderr" role="alert" hidden></div>
+    <div class="notice" id="notice" hidden></div>
+    <div id="guides"></div>
+    <div class="grp-h" id="refhead"></div>
+    <div id="feats"></div>
+    <section class="feat" id="references"><div id="refsbox"></div></section>
+    <footer id="foot"></footer>
+    <details class="lidx" id="linkindex"><summary id="lidxsum"></summary><ul id="lidxlist"></ul></details>
+    <div id="linkmsg" role="status" aria-live="polite" hidden></div>
+  </main>
+</div></div>
+<script>window.RK_TAG="v0.3.0-alpha.14";</script>
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

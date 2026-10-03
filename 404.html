@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Page not found - Rakitsu Spec Reference</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem}</style></head>
+<body><h1>Page not found</h1>
+<p>This page does not exist. Try the <a id="lt" href="latest/">latest version</a> or pick a release:</p><ul id="tl">
+<li><a href="v0.3.0-alpha.14/">v0.3.0-alpha.14</a></li>
+<li><a href="v0.3.0-alpha.13/">v0.3.0-alpha.13</a></li>
+<li><a href="v0.3.0-alpha.12/">v0.3.0-alpha.12</a></li>
+<li><a href="v0.3.0-alpha.11/">v0.3.0-alpha.11</a></li>
+<li><a href="v0.3.0-alpha.10/">v0.3.0-alpha.10</a></li>
+<li><a href="v0.3.0-alpha.9/">v0.3.0-alpha.9</a></li>
+</ul>
+<script>
+/* On github.io project pages the first path segment is the repo; make links absolute to it so they work at any depth. */
+if(/\.github\.io$/.test(location.hostname)){var b="/"+location.pathname.split("/")[1]+"/";
+Array.prototype.forEach.call(document.querySelectorAll("a"),function(a){a.setAttribute("href",b+a.getAttribute("href"));});}
+</script></body></html>
