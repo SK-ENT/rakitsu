@@ -76,7 +76,7 @@ try {
     }));
     const tag = `${v}/${lang}/${view}`;
     ok(errs.length === 0, tag + ' no page errors ' + errs.join('|'));
-    ok(r.ids.length > 200, tag + ' link index size ' + r.ids.length);
+    ok(r.ids.length > 150, tag + ' link index size ' + r.ids.length);
     const ids = r.ids.map(h => h.replace(/^#(en|ja)\./, ''));
     ok(r.ids.every(h => h.startsWith('#' + lang + '.')), tag + ' links use the active language prefix');
     ok(new Set(ids).size === ids.length, tag + ' linkable ids unique (dups: ' + ids.filter((x, i) => ids.indexOf(x) !== i).slice(0, 5) + ')');
@@ -84,7 +84,7 @@ try {
     ok(ids.every(i => GRAMMAR.test(i)), tag + ' ids match grammar ' + ids.filter(i => !GRAMMAR.test(i)).slice(0, 5));
     ok(new Set(r.domIds).size === r.domIds.length, tag + ' DOM ids unique (dups: ' + r.domIds.filter((x, i) => r.domIds.indexOf(x) !== i).slice(0, 5) + ')');
     // widget-step ids (react-*, wake-tick-*, ...) are virtual: they point at a widget, not at their own element, so no DOM-existence check.
-    if (lang === 'en' && view === 'detail') fs.writeFileSync(path.join(here, 'link-ids.txt'), ids.join('\n') + '\n');
+    if (lang === 'en' && view === 'detail' && v === vj.default) fs.writeFileSync(path.join(here, 'link-ids.txt'), ids.join('\n') + '\n');
     await ctx.close();
   }
   // ids identical across language and view

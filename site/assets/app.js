@@ -6,15 +6,17 @@ var UI={
   h1:"How Rakitsu works, and what it does today",
   lead:"A teaching reference for Rakitsu, a YAML-configured multi-agent system written in Go. Each section explains the idea in plain words, the research behind it, how Rakitsu implements it, and where it stops. Diagrams are live: use Pause or Step on any of them. Simple shows the idea and the picture. Detail adds the full explanation.",
   learn:"Learn",refhead:"Spec reference for this release",refs:"References",
-  notice:"Docs not generated for this release. The per-feature reference below exists only for v0.3.0-alpha.12. The teaching sections describe the repository as prepared on 2026-10-03 and were not re-checked against this tag.",
+  notice:"Docs not generated for this release. The per-feature reference below exists only for releases marked (docs generated) in the version list. The teaching sections describe the repository as prepared on 2026-10-03 and were not re-checked against this tag.",
   noref:"No per-feature reference for this release.",
+  gate:"Not in this release: this link points to a feature that %TAG% does not have.",gateGo:"Open it in %TAG%",
   head:{Command:"Command",Description:"Description"}},
  ja:{ref:"仕様リファレンス",version:"バージョン",view:"表示",simple:"簡易",detail:"詳細",
   h1:"Rakitsu のしくみと、現時点でできること",
   lead:"Go で書かれた、YAML で設定するマルチエージェントシステム Rakitsu の学習用リファレンスです。各セクションで、考え方、背景にある研究、Rakitsu での実装、そして限界を説明します。図は動きます。どの図でも一時停止と 1 ステップ実行を使えます。「簡易」は考え方と図、「詳細」は完全な説明を表示します。",
   learn:"学ぶ",refhead:"このリリースの仕様リファレンス",refs:"参考文献",
-  notice:"このリリースのドキュメントは生成していません。機能ごとのリファレンスは v0.3.0-alpha.12 のみです。解説セクションは 2026-10-03 時点のリポジトリに基づいており、このタグに対しては再確認していません。",
+  notice:"このリリースのドキュメントは生成していません。機能ごとのリファレンスは、バージョン一覧で「docs generated」と表示されたリリースのみです。解説セクションは 2026-10-03 時点のリポジトリに基づいており、このタグに対しては再確認していません。",
   noref:"このリリースには機能ごとのリファレンスがありません。",
+  gate:"このリリースにはありません: このリンクの機能は %TAG% には含まれていません。",gateGo:"%TAG% で開く",
   head:{}}
 };
 var HEADJA={"Command":"コマンド","Description":"説明","Flag":"フラグ","Root key":"ルートキー","Key":"キー","Type":"種別","Default":"既定値","Endpoint":"エンドポイント","Key (settings.providers.<name>)":"キー (settings.providers.<名前>)","Key (settings.wake)":"キー (settings.wake)","Strategy":"戦略","Status":"状況","Protocol":"プロトコル","Where it lives":"実装箇所"};
@@ -27,6 +29,13 @@ function el(tag,cls,txt){var e=document.createElement(tag);if(cls)e.className=cl
 function L(o){return o&&typeof o==="object"?(o[st.lang]||o.en):o;}
 function T(a,b){return st.lang==="ja"?b:a;}
 function data(v){return DATA[v]||{features:[],meta:{},docsGenerated:false};}
+/* Version gating: an item with a needs key is shown only when the selected release has that feature id.
+   Releases without generated docs have no feature list, so nothing can be verified and nothing is hidden there (the page already says so). */
+function has(need){var d=data(st.ver);return !need||!d.docsGenerated||d.features.some(function(f){return f.id===need;});}
+/* Which feature would a (possibly aliased) link id need? Used only to explain a dead deep link; ids are never renamed. */
+function needOf(raw){var id=Object.prototype.hasOwnProperty.call(ALIAS,raw)?ALIAS[raw]:raw;
+ if(id==="card-long-running-monitor"||id==="rough-wake-monitors")return "wake";
+ var m=/^(?:ref-)?(wake|monitors)(?:-|$)/.exec(id);return m?m[1]:null;}
 function codeCell(s){return el("code",null,s);}
 function tog(g,c,on){g.classList.toggle(c,!!on);}
 
@@ -143,7 +152,7 @@ function flowW(host){
   llm:{what:{en:"A provider interface with implementations for OpenAI-compatible endpoints (OpenAI, Ollama, LiteLLM, NVIDIA), Anthropic, Gemini and Codex. Each agent can use a different provider.",ja:"プロバイダのインターフェース。実装は OpenAI 互換エンドポイント (OpenAI、Ollama、LiteLLM、NVIDIA)、Anthropic、Gemini、Codex。エージェントごとに別のプロバイダを使えます。"},keys:["settings.providers.<name>","agent.provider","agent.model","settings.default_provider","--provider","--model"],src:"internal/llm/"},
   tools:{what:{en:"The tool registry: cli (command allowlist or Docker sandbox), fs (path limits), mcp_server and a2a clients. Output is fenced and truncated before the model sees it.",ja:"ツールレジストリ。cli (コマンド許可リストまたは Docker サンドボックス)、fs (パス制限)、mcp_server と a2a のクライアント。モデルが見る前に、出力は囲い込まれ切り詰められます。"},keys:["tools[].type","sandbox.type","allowed_paths","settings.allowed_commands"],limit:{en:"The local_restricted allowlist is a guard rail, not a security boundary. Use docker for untrusted work.",ja:"local_restricted の許可リストはガードレールであり、セキュリティ境界ではありません。信頼できない処理には docker を使ってください。"},src:"internal/tools/"},
   bus:{what:{en:"Every step emits a typed event (agent start and end, tool call, reflection, and more). Consumers: the console tracer, the SSE endpoint, and the hub forwarder.",ja:"各ステップが型付きイベント (エージェントの開始と終了、ツール呼び出し、reflection など) を出します。受け手は、コンソールトレーサ、SSE エンドポイント、ハブへの転送です。"},keys:["--trace","--hub","--no-hub","--debug-port"],src:"internal/telemetry/events.go, internal/telemetry/forwarder.go"},
-  hub:{what:{en:"rakitsu serve hosts the hub: run registration, event ingest, SSE broadcast to browsers, and a queue of debug commands. The same process also serves /mcp, /a2a and /healthz.",ja:"rakitsu serve がハブを担います。run の登録、イベントの受け取り、ブラウザへの SSE 配信、デバッグコマンドのキュー。同じプロセスが /mcp、/a2a、/healthz も提供します。"},keys:["serve --port","serve --host","RAKITSU_API_TOKEN"],limit:{en:"Binds localhost by default. Any other host needs RAKITSU_API_TOKEN.",ja:"既定では localhost にバインドします。それ以外のホストには RAKITSU_API_TOKEN が必要です。"},src:"internal/server/hub.go, internal/server/sse.go"},
+  hub:{what:{en:"rakitsu serve hosts the hub: run registration, event ingest, SSE broadcast to browsers, and a queue of debug commands. The same process also serves /mcp"+(has("monitors")?", /a2a and /healthz.":" and /a2a.")+"",ja:"rakitsu serve がハブを担います。run の登録、イベントの受け取り、ブラウザへの SSE 配信、デバッグコマンドのキュー。同じプロセスが /mcp、/a2a"+(has("monitors")?"、/healthz":"")+" も提供します。"},keys:["serve --port","serve --host","RAKITSU_API_TOKEN"],limit:{en:"Binds localhost by default. Any other host needs RAKITSU_API_TOKEN.",ja:"既定では localhost にバインドします。それ以外のホストには RAKITSU_API_TOKEN が必要です。"},src:"internal/server/hub.go, internal/server/sse.go"},
   ui:{what:{en:"The embedded Vue app: visual builder, run inspector and debugger. The debugger sends commands (pause, breakpoint, parameter override) back through the hub to the run.",ja:"埋め込みの Vue アプリ。ビジュアルビルダー、実行インスペクタ、デバッガ。デバッガはコマンド (一時停止、ブレークポイント、パラメータ上書き) をハブ経由で run に送り返します。"},keys:[],src:"web/src/, internal/webui/embed.go"}};
  var an=FlowMap(host,{onUser:function(k){userHash(FID[k]);},key:"flow",vb:"0 0 640 310",label:T("Data flow map from YAML config to the web UI","YAML 設定から Web UI までのデータフロー図"),first:"ag", hint:{en:"Click or focus a node to see what it does and which config key controls it. Moving dashes and arrowheads show the direction of flow, not real timing.",ja:"ノードをクリック (またはフォーカス) すると、役割と制御する設定キーを表示します。流れる破線と矢印はデータの向きを示すもので、実際のタイミングではありません。"},
   nodes:{cfg:n(8,16,"YAML config","settings tools agents"),rt:n(172,16,"Runtime",T("builds the system","全体を組み立てる")),ag:n(336,16,"Agent loop","ReAct"),llm:n(500,16,"LLM provider",T("per agent","エージェントごと")),
@@ -280,7 +289,7 @@ function memW(host){
 function protoW(host){
  var w=150,h=54;function n(x,y,l,s){return {x:x,y:y,w:w,h:h,label:l,sub:s};}
  var info={
-  acp:{what:{en:"ACP connects an editor to an agent. Run rakitsu acp <config.yaml> and an ACP-speaking editor (such as Zed) can create a session, send prompts and receive streaming updates over stdio JSON-RPC.",ja:"ACP はエディタとエージェントをつなぎます。rakitsu acp <config.yaml> を実行すると、ACP に対応したエディタ (Zed など) が、stdio の JSON-RPC でセッション作成、プロンプト送信、ストリーミング更新の受信を行えます。"},keys:["rakitsu acp <config>"],limit:{en:"The ACP server cannot run wake timers. Use serve for those.",ja:"ACP サーバーではウェイクタイマーを使えません。その場合は serve を使ってください。"},src:"internal/acp/server.go"},
+  acp:{what:{en:"ACP connects an editor to an agent. Run rakitsu acp <config.yaml> and an ACP-speaking editor (such as Zed) can create a session, send prompts and receive streaming updates over stdio JSON-RPC.",ja:"ACP はエディタとエージェントをつなぎます。rakitsu acp <config.yaml> を実行すると、ACP に対応したエディタ (Zed など) が、stdio の JSON-RPC でセッション作成、プロンプト送信、ストリーミング更新の受信を行えます。"},keys:["rakitsu acp <config>"],limit:has("wake")?{en:"The ACP server cannot run wake timers. Use serve for those.",ja:"ACP サーバーではウェイクタイマーを使えません。その場合は serve を使ってください。"}:undefined,src:"internal/acp/server.go"},
   mcpc:{what:{en:"MCP, server side. rakitsu serve exposes its registered tools at POST /mcp so an MCP client can discover and call them.",ja:"MCP のサーバー側。rakitsu serve は登録済みのツールを POST /mcp で公開し、MCP クライアントが検出して呼び出せるようにします。"},keys:["serve --mcp-port N --config <config>","RAKITSU_API_TOKEN"],limit:{en:"Covers the legacy MCP era (revisions through 2025-11-25). The 2026-07-28 revision is not implemented yet.",ja:"レガシー世代の MCP (2025-11-25 までのリビジョン) に対応します。2026-07-28 リビジョンは未実装です。"},src:"internal/server/mcp.go"},
   rk:{what:{en:"The Rakitsu process. It can be an ACP server (stdio), an MCP and A2A server (via serve), and a client of MCP servers and other A2A agents through tools.",ja:"Rakitsu のプロセス。ACP サーバー (stdio)、MCP と A2A のサーバー (serve 経由) になれ、ツールを通じて MCP サーバーや他の A2A エージェントのクライアントにもなります。"},keys:["rakitsu acp","rakitsu serve"],src:"cmd/rakitsu/"},
   mcps:{what:{en:"MCP, client side. A tool of type mcp_server lets an agent call tools from an MCP server, over stdio (a subprocess) or http.",ja:"MCP のクライアント側。type: mcp_server のツールで、エージェントは MCP サーバーのツールを stdio (サブプロセス) または http で呼び出せます。"},keys:["tools[].type: mcp_server","transport","max_response_bytes"],src:"internal/tools/mcp/"},
@@ -351,7 +360,7 @@ var GUIDES=[
   {t:"code",text:"pipeline:\n  steps:\n    - name: implement\n      agent: Developer\n      require_tool_call:\n        tool: write_file\n    - name: refine\n      type: loop\n      max_iterations: 3\n      condition_agent: Judge\n      steps:\n        - { name: draft, agent: Writer }"},
   H("Limits","限界"),
   P("Besides ReAct, only Pipeline has its own implementation. Separately, settings.spawn gives agents a spawn_agent tool for runtime fan-out (off by default; children cannot spawn further by default).","ReAct のほかに独自の実装があるのは Pipeline だけです。これとは別に、settings.spawn はエージェントに、実行時に並列展開する spawn_agent ツールを与えます (既定は無効。既定では子エージェントはさらに起動できません)。")]},
-{id:"wake",widget:wakeW,name:{en:"Wake timer: check cheaply, think rarely",ja:"ウェイクタイマー: 安く確認し、考えるのはまれに"},
+{id:"wake",needs:"wake",widget:wakeW,name:{en:"Wake timer: check cheaply, think rarely",ja:"ウェイクタイマー: 安く確認し、考えるのはまれに"},
  simple:{en:"A clock runs free checks. The model is called only when something changes. Experimental.",ja:"タイマーが無料のチェックを実行し、変化があったときだけモデルを呼びます。実験的機能です。"},
  detail:[H("The idea","考え方"),
   P("Watching something all day with a model is expensive if the model reads every reading, and most readings are boring. So the work is split: cheap code checks run on a clock, and the model sleeps until a check says something changed.","1 日中モデルに監視させると、毎回の値をモデルが読むので高くつきますが、ほとんどの値は変化のないものです。そこで仕事を分けます。軽いコードのチェックをタイマーで回し、チェックが変化を告げるまでモデルは眠ります。"),
@@ -400,7 +409,7 @@ var CASES=[
  ["examples/single/04-pipeline",{en:"Content pipeline",ja:"コンテンツのパイプライン"},{en:"Researcher, Drafter and Editor in order, then three translators (ES, JP, FR) in parallel, then a synthesis step.",ja:"Researcher、Drafter、Editor が順に動き、3 人の翻訳者 (ES、JP、FR) が並列に動き、最後に統合ステップがあります。"}],
  ["examples/single/05-dev-team",{en:"Dev team pipeline",ja:"開発チームのパイプライン"},{en:"Planner, Developer, Verifier and Reviewer in sequence, with file read, file write and command tools.",ja:"Planner、Developer、Verifier、Reviewer が順に動き、ファイルの読み書きとコマンドのツールを使います。"}],
  ["examples/single/10-spawn-fanout",{en:"Parallel research fan-out",ja:"並列リサーチの展開"},{en:"A coordinator splits a task and calls spawn_agent once per part; subagents run in parallel up to max_concurrent.",ja:"Coordinator がタスクを分け、部分ごとに spawn_agent を呼びます。サブエージェントは max_concurrent まで並列に動きます。"}],
- ["examples/single/14-long-running-monitor",{en:"Price watcher",ja:"価格ウォッチャー"},{en:"Free checks every 60 seconds against a public price API. The model is called only on a change or alarm, at most 6 turns per hour. No API key is needed for that endpoint.",ja:"公開の価格 API に対し、60 秒ごとに無料のチェックを行います。モデルを呼ぶのは変化またはアラームのときだけで、1 時間に最大 6 ターンです。そのエンドポイントに API キーは要りません。"}],
+ ["examples/single/14-long-running-monitor",{en:"Price watcher",ja:"価格ウォッチャー"},{en:"Free checks every 60 seconds against a public price API. The model is called only on a change or alarm, at most 6 turns per hour. No API key is needed for that endpoint.",ja:"公開の価格 API に対し、60 秒ごとに無料のチェックを行います。モデルを呼ぶのは変化またはアラームのときだけで、1 時間に最大 6 ターンです。そのエンドポイントに API キーは要りません。"},"wake"],
  ["examples/single/09-memory-chat",{en:"Memory chat",ja:"メモリ付きチャット"},{en:"An assistant with native memory tools, a rolling summary of older turns and auto-recall of relevant notes.",ja:"組み込みのメモリツール、古いターンのローリング要約、関連ノートの自動リコールを備えたアシスタント。"}],
  ["examples/single/11-vision-chat",{en:"Vision chat",ja:"画像を扱うチャット"},{en:"An agent with vision: true and --attach for image input. It needs a vision-capable model.",ja:"vision: true のエージェントと、画像入力用の --attach。画像対応のモデルが必要です。"}],
  ["rakitsu serve --config",{en:"Agents as endpoints",ja:"エージェントをエンドポイントとして公開"},{en:"serve exposes your agents to other tools at /mcp and /a2a, next to the web UI.",ja:"serve は、Web UI のほかに、/mcp と /a2a で、あなたのエージェントを他のツールへ公開します。"}]];
@@ -418,7 +427,7 @@ var ROUGH=[
  {en:"Wake timer and monitors are experimental. A multi-day live run is still in progress.",ja:"ウェイクタイマーとモニターは実験的機能です。数日間の実運用での検証は進行中です。"},
  {en:"The MCP server covers revisions through 2025-11-25 only. The A2A server has no streaming and keeps tasks in memory.",ja:"MCP サーバーは 2025-11-25 までのリビジョンのみです。A2A サーバーはストリーミングがなく、タスクをメモリ上に置きます。"},
  {en:"Results depend on the model. Weak models can skip tools or delegation.",ja:"結果はモデルに左右されます。弱いモデルはツールや委譲を飛ばすことがあります。"},
- {en:"Per-feature docs have been generated for one release so far.",ja:"機能ごとのドキュメントを生成済みなのは、これまでのところ 1 つのリリースだけです。"}];
+ {en:"Per-feature docs are generated only for some releases. The version list marks which.",ja:"機能ごとのドキュメントを生成しているのは一部のリリースだけです。どれかはバージョン一覧に表示されます。"}];
 
 /* ---------- rendering ---------- */
 function mediaBlock(m){
@@ -429,6 +438,7 @@ function mediaBlock(m){
  return box;}
 var ctx={feat:null,tbl:0,name:null};
 var ROWSCOPE={cli:["","run-","serve-"]};
+var ROUGH_NEEDS={"wake-monitors":"wake"};
 var WORKS_IDS=["react-loop","pipeline","providers","web-ui","sessions","protocols"],ROUGH_IDS=["alpha","hierarchical","allowlist","wake-monitors","mcp-a2a-limits","model-dependent","docs-coverage"];
 function renderBlock(b){
  if(b.t==="p")return el("p",null,L(b));
@@ -460,6 +470,19 @@ function footer(ver){
  f.appendChild(el("div",null,T("Page assets: IBM Plex Sans and IBM Plex Mono under the SIL Open Font License 1.1, self-hosted (no third-party requests). Japanese text uses the fonts installed on your device. No JavaScript libraries; diagrams are inline SVG. Rakitsu's own third-party components and licenses are listed in the NOTICE file of the release.","ページの素材: IBM Plex Sans、IBM Plex Mono。いずれも SIL Open Font License 1.1 で、このサイトから配信します(外部への通信はありません)。日本語の表示には端末にインストールされているフォントを使います。JavaScript ライブラリは使っていません。図はインライン SVG です。Rakitsu 自体のサードパーティ部品とそのライセンスは、リリースの NOTICE ファイルに記載されています。")));
  f.appendChild(el("div",null,T("Rakitsu is alpha software. Interfaces and behavior may change without notice.","Rakitsu はアルファ版のソフトウェアです。インターフェースや動作は予告なく変わることがあります。")));
 }
+function checkGate(){
+ var old=$("gatenote");if(old)old.parentNode.removeChild(old);
+ var p=parseToken(location.hash);if(p.id||!p.raw)return;
+ var need=needOf(p.raw);if(!need||has(need))return;
+ var tag=null;VERSIONS.forEach(function(v){if(!tag&&DATA[v].docsGenerated&&DATA[v].features.some(function(f){return f.id===need;}))tag=v;});
+ if(DEFAULT_VER&&DATA[DEFAULT_VER]&&DATA[DEFAULT_VER].features.some(function(f){return f.id===need;}))tag=DEFAULT_VER;
+ var u=UI[st.lang],n=el("div","notice",u.gate.replace("%TAG%",st.ver));n.id="gatenote";n.setAttribute("role","status");
+ if(tag){n.appendChild(document.createTextNode(" "));var a=el("a",null,u.gateGo.replace("%TAG%",tag));
+  a.href=window.RK_TAG?"../"+encodeURIComponent(tag)+"/"+location.hash:location.hash;
+  a.addEventListener("click",function(e){if(window.RK_TAG)return;e.preventDefault();st.ver=tag;save();sel.value=tag;pendingScroll=p.raw;render();});
+  n.appendChild(a);}
+ var nt=$("notice");nt.parentNode.insertBefore(n,nt);
+}
 function render(){
  var saved={};anims.forEach(function(a){if(a.wid)saved[a.wid]={i:a.i,t:a.t,playing:a.playing};});anims.slice().forEach(function(a){a.kill();});anims.length=0;REG.list.length=0;REG.map={};ctx.feat=null;
  var d=data(st.ver),u=UI[st.lang];
@@ -476,17 +499,17 @@ function render(){
  var nav=$("nav");nav.textContent="";var g=$("guides");g.textContent="";var f=$("feats");f.textContent="";
  function link(id,txt){var a=el("a",null,txt);a.href=mkLink(st.lang,id);a.addEventListener("click",function(e){e.preventDefault();goTo(id);});nav.appendChild(a);}
  nav.appendChild(el("div","grp",u.learn));
- GUIDES.forEach(function(x){link(x.id,L(x.name));var s=section(x.id,x.name,x.simple,x.media);s.classList.add("guide");
+ GUIDES.forEach(function(x){if(!has(x.needs))return;link(x.id,L(x.name));var s=section(x.id,x.name,x.simple,x.media);s.classList.add("guide");
   var fig=el("div");s.appendChild(fig);var nb=anims.length;x.widget(fig);for(var q=nb;q<anims.length;q++)anims[q].wid=anims[q].wid||x.id;
   var dt=el("div","detail");x.detail.forEach(function(b){dt.appendChild(renderBlock(b));});s.appendChild(dt);g.appendChild(s);});
  anims.forEach(function(a){var s=saved[a.wid];if(s&&a.restore)a.restore(s);});
  link("can-do",T("What it can do","できること"));
  var cs=section("can-do",{en:"What it can really do",ja:"実際にできること"},{en:"Every card is an example shipped in the repository. None of them is a claim of production use.",ja:"どのカードもリポジトリに同梱の例です。本番利用を示すものではありません。"});
- var cg=el("div","cards");CASES.forEach(function(c){var cd=el("div","card");var ch=el("h3",null,L(c[1]));var cid="card-"+(slug(c[0].split("/").pop().replace(/^\d+-/,"").replace(/^rakitsu\s+/,""))||"x");if(regDom(cid,"highlight",c[1],cd))ch.appendChild(linkBtn(cid));cd.appendChild(ch);cd.appendChild(el("p",null,L(c[2])));cd.appendChild(codeCell(c[0]));cg.appendChild(cd);});cs.appendChild(cg);g.appendChild(cs);
+ var cg=el("div","cards");CASES.forEach(function(c){if(!has(c[3]))return;var cd=el("div","card");var ch=el("h3",null,L(c[1]));var cid="card-"+(slug(c[0].split("/").pop().replace(/^\d+-/,"").replace(/^rakitsu\s+/,""))||"x");if(regDom(cid,"highlight",c[1],cd))ch.appendChild(linkBtn(cid));cd.appendChild(ch);cd.appendChild(el("p",null,L(c[2])));cd.appendChild(codeCell(c[0]));cg.appendChild(cd);});cs.appendChild(cg);g.appendChild(cs);
  link("works-today",T("Works today, still rough","動くもの、まだ粗いもの"));
  var ws=section("works-today",{en:"Works today, and what is still rough",ja:"今動くものと、まだ粗いもの"},{en:"Rakitsu is alpha software and is not production-ready.",ja:"Rakitsu はアルファ版のソフトウェアで、本番利用の準備はできていません。"});
  var tw=el("div","two");var a1=el("div");a1.appendChild(el("h3","okh",T("Works today","今動くもの")));var l1=el("ul");WORKS.forEach(function(x,i){var li=el("li",null,L(x));var wid="works-"+WORKS_IDS[i];if(regDom(wid,"highlight",x,li))li.appendChild(linkBtn(wid));l1.appendChild(li);});a1.appendChild(l1);
- var a2=el("div");a2.appendChild(el("h3","badh",T("Still rough","まだ粗いもの")));var l2=el("ul");ROUGH.forEach(function(x,i){var li=el("li",null,L(x));var rid2="rough-"+ROUGH_IDS[i];if(regDom(rid2,"highlight",x,li))li.appendChild(linkBtn(rid2));l2.appendChild(li);});a2.appendChild(l2);
+ var a2=el("div");a2.appendChild(el("h3","badh",T("Still rough","まだ粗いもの")));var l2=el("ul");ROUGH.forEach(function(x,i){if(!has(ROUGH_NEEDS[ROUGH_IDS[i]]))return;var li=el("li",null,L(x));var rid2="rough-"+ROUGH_IDS[i];if(regDom(rid2,"highlight",x,li))li.appendChild(linkBtn(rid2));l2.appendChild(li);});a2.appendChild(l2);
  tw.appendChild(a1);tw.appendChild(a2);ws.appendChild(tw);g.appendChild(ws);
  $("refhead").textContent=u.refhead;
  nav.appendChild(el("div","grp",T("Reference","リファレンス")));
@@ -499,7 +522,7 @@ function render(){
  var rl=el("div","refs");Object.keys(REFS).forEach(function(k){var p=el("div");p.appendChild(document.createTextNode(REFS[k].en+" "));var a=el("a",null,REFS[k].url);a.href=REFS[k].url;a.target="_blank";a.rel="noopener";p.appendChild(a);rl.appendChild(p);});
  rs.appendChild(rl);rs.appendChild(el("p","hint",T("Each entry was checked against its source page on 2026-10-03.","各項目は 2026-10-03 に出典のページで確認しました。")));
  link("license",T("License","ライセンス"));
- footer(st.ver);buildIndex();
+ footer(st.ver);buildIndex();checkGate();
  if(pendingScroll!=null){var praw=pendingScroll;pendingScroll=null;window.setTimeout(function(){var c=canon(praw);if(c)reveal(c);},0);}
 }
 var sel=$("verSel");
@@ -509,7 +532,7 @@ $("viewSimple").addEventListener("click",function(){st.view="simple";save();rend
 $("viewDetail").addEventListener("click",function(){st.view="detail";save();render();});
 $("langEn").addEventListener("click",function(){setLang("en");});
 $("langJa").addEventListener("click",function(){setLang("ja");});
-window.addEventListener("hashchange",function(){var p=parseToken(location.hash);if(p.lang&&p.lang!==st.lang){st.lang=p.lang;save();pendingScroll=p.raw;render();}else if(p.id)reveal(p.id);});
+window.addEventListener("hashchange",function(){var p=parseToken(location.hash);if(p.lang&&p.lang!==st.lang){st.lang=p.lang;save();pendingScroll=p.raw;render();}else{if(p.id)reveal(p.id);checkGate();}});
 window.addEventListener("load",function(){var p=parseToken(location.hash);if(p.id)reveal(p.id);});
 var p0=parseToken(location.hash);if(p0.lang){st.lang=p0.lang;try{localStorage.setItem("rk-spec",JSON.stringify(st));}catch(e){}}
 pendingScroll=p0.raw;
