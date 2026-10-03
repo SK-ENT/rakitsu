@@ -118,5 +118,9 @@ try {
   ok(await p.evaluate(() => window.RakitsuLinks.mkLink('ja', 'wake')) === '#ja.wake', 'mkLink');
   await c.close();
 } finally { await browser.close(); srv.close(); }
+{ // no Google Fonts references anywhere in site/
+  const walkS = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => e.isDirectory() ? (e.name === 'shots' || e.name === 'tests' ? [] : walkS(path.join(d, e.name))) : [path.join(d, e.name)]);
+  for (const f of walkS(site).filter(f => /\.(html|css|js|mjs)$/.test(f))) ok(!/fonts\.(googleapis|gstatic)\.com/.test(fs.readFileSync(f, 'utf8')), 'no Google Fonts reference in ' + path.relative(site, f));
+}
 console.log(`validate: ${pass} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);

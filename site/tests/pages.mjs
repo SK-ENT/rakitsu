@@ -38,6 +38,7 @@ ok(fs.existsSync(path.join(out, '.nojekyll')), '.nojekyll present');
 for (const t of vj.versions) { ok(fs.existsSync(path.join(out, t, 'index.html')), 'dir for ' + t); ok(fs.existsSync(path.join(out, 'data', t + '.json')), 'data for ' + t); }
 for (const f of ['index.html', 'latest/index.html', '404.html']) ok(fs.existsSync(path.join(out, f)), f + ' present');
 for (const a of ['app.css', 'app.js', 'viz.css', 'viz.js']) ok(fs.existsSync(path.join(out, 'assets', a)), 'assets/' + a);
+for (const f of ['ibm-plex-sans-latin-400-normal.woff2', 'ibm-plex-sans-latin-500-normal.woff2', 'ibm-plex-sans-latin-600-normal.woff2', 'ibm-plex-mono-latin-400-normal.woff2', 'ibm-plex-mono-latin-500-normal.woff2', 'LICENSE-IBM-Plex.txt']) ok(fs.existsSync(path.join(out, 'assets/fonts', f)), 'assets/fonts/' + f + ' in Pages output');
 const walk = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
 for (const f of walk(out).filter(f => /\.(html|js|css)$/.test(f))) {
   const s = fs.readFileSync(f, 'utf8');
