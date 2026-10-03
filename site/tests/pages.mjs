@@ -18,7 +18,7 @@ const out = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-pages-test-'));
 execFileSync(path.join(root, 'scripts/build-pages.sh'), [out], { stdio: 'pipe' });
 const vj = JSON.parse(fs.readFileSync(path.join(root, 'site/data/versions.json'), 'utf8'));
 const PFX = '/rakitsu';
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml' };
 const srv = http.createServer((req, res) => {
   const u = decodeURIComponent(req.url.split('?')[0].split('#')[0]);
   let f = null;
@@ -39,6 +39,7 @@ for (const t of vj.versions) { ok(fs.existsSync(path.join(out, t, 'index.html'))
 for (const f of ['index.html', 'latest/index.html', '404.html']) ok(fs.existsSync(path.join(out, f)), f + ' present');
 for (const a of ['app.css', 'app.js', 'viz.css', 'viz.js']) ok(fs.existsSync(path.join(out, 'assets', a)), 'assets/' + a);
 for (const f of ['ibm-plex-sans-latin-400-normal.woff2', 'ibm-plex-sans-latin-500-normal.woff2', 'ibm-plex-sans-latin-600-normal.woff2', 'ibm-plex-mono-latin-400-normal.woff2', 'ibm-plex-mono-latin-500-normal.woff2', 'LICENSE-IBM-Plex.txt']) ok(fs.existsSync(path.join(out, 'assets/fonts', f)), 'assets/fonts/' + f + ' in Pages output');
+for (const f of ['rakitsu-logo.svg', 'rakitsu-mark.svg']) ok(fs.existsSync(path.join(out, 'assets/brand', f)), 'assets/brand/' + f + ' in Pages output');
 const walk = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
 for (const f of walk(out).filter(f => /\.(html|js|css)$/.test(f))) {
   const s = fs.readFileSync(f, 'utf8');
@@ -71,6 +72,16 @@ for (const t of vj.versions) {
   const n = await p.evaluate(() => document.querySelectorAll('#feats .feat').length);
   ok(d.docsGenerated ? n === d.features.length : true, t + ' feature count', [n, d.features.length]);
   ok(p.__errs.length === 0, t + ' no page errors', p.__errs);
+  const html = fs.readFileSync(path.join(out, t, 'index.html'), 'utf8');
+  const favHref = (html.match(/<link rel="icon"[^>]*href="([^"]+)"/) || [])[1];
+  const logoSrc = (html.match(/class="herologo" src="([^"]+)"/) || [])[1];
+  const markSrc = (html.match(/class="logo" src="([^"]+)"/) || [])[1];
+  for (const [n, u] of [['favicon', favHref], ['hero logo', logoSrc], ['header mark', markSrc]]) {
+    ok(!!u, t + ' has ' + n + ' url', u);
+    if (u) { const r = await p.request.get(new URL(u, `${B}/${t}/`).href); ok(r.status() === 200, t + ' ' + n + ' resolves 200', [u, r.status()]); }
+  }
+  ok(await p.evaluate(() => { const i = document.querySelector('img.herologo'); return !!i && i.complete && i.naturalWidth > 0; }), t + ' hero logo renders');
+  ok(await p.evaluate(() => { const i = document.querySelector('.brand img.logo'); return !!i && i.complete && i.naturalWidth > 0; }), t + ' header mark renders');
   await p.context().close();
 }
 { // deep link
