@@ -73,7 +73,7 @@ for (const h of ['#en.wake', '#ja.wake', '#wake-ref', '#en.ref-monitors', '#en.w
   const p = await open(WITHOUT[0], h.startsWith('#ja') ? 'ja' : 'en', h), s = await snap(p);
   ok(p.__errs.length === 0, h + ' dead link: no page error', p.__errs);
   ok(s.note && s.note.includes(WITHOUT[0]), h + ' dead link: notice names the tag', s.note);
-  // a documented release that has wake + monitors (alpha.18) now exists, so the notice offers it
+  // a documented release that has wake + monitors (alpha.19) now exists, so the notice offers it
   ok(await p.evaluate(t => { const a = document.querySelector('#gatenote a'); return !!a && a.textContent.includes(t); }, WAKE_TAG), h + ' dead link: offer link names the first tag that has it', s.note);
   ok(s.dom.includes('guides') && s.ids.length > 150, h + ' dead link: page still rendered');
 }
