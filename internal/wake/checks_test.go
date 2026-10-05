@@ -2,11 +2,13 @@ package wake
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -96,6 +98,61 @@ func TestHTTPStatusAndJSON(t *testing.T) {
 	}
 }
 
+func TestHTTPJSONProductionDoesNotRetainPerProbeConnections(t *testing.T) {
+	var mu sync.Mutex
+	connections := make(map[net.Conn]http.ConnState)
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"value":1}`))
+	}))
+	srv.Config.ConnState = func(conn net.Conn, state http.ConnState) {
+		mu.Lock()
+		defer mu.Unlock()
+		if state == http.StateClosed || state == http.StateHijacked {
+			delete(connections, conn)
+			return
+		}
+		connections[conn] = state
+	}
+	srv.Start()
+	defer srv.Close()
+
+	run := NewBuiltinChecks(config.WakeConfig{Allow: config.WakeAllow{URLHosts: []string{hostOf(srv)}}}, t.TempDir(), nil)
+	for i := 0; i < 5; i++ {
+		o := run(context.Background(), config.WakeCheck{Type: "http_json", URL: srv.URL, Field: "value", TimeoutSeconds: 2})
+		if o.Err != nil || o.Number == nil || *o.Number != 1 {
+			t.Fatalf("probe %d: %+v", i, o)
+		}
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		idle := 0
+		for _, state := range connections {
+			if state == http.StateIdle {
+				idle++
+			}
+		}
+		mu.Unlock()
+		if idle >= 5 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	idle := 0
+	for _, state := range connections {
+		if state == http.StateIdle {
+			idle++
+		}
+	}
+	if idle > 1 {
+		t.Fatalf("five probes left %d idle connections; expected a reused or closed transport", idle)
+	}
+}
+
 func TestHTTPJSONBadBodyIsUnknown(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -148,5 +205,72 @@ func TestHTTPTimeoutIsError(t *testing.T) {
 	o := run(context.Background(), config.WakeCheck{Type: "http_status", URL: srv.URL, TimeoutSeconds: 1})
 	if o.Err == nil {
 		t.Fatal("timeout must be an error observation")
+	}
+}
+
+func TestHTTPRedirectNeverFollowed(t *testing.T) {
+	var hits int
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++ }))
+	defer target.Close()
+	redir := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	defer redir.Close()
+	// Both hosts allowed: the redirect must still not be followed.
+	run := NewBuiltinChecks(config.WakeConfig{Allow: config.WakeAllow{URLHosts: []string{hostOf(redir), hostOf(target)}}}, t.TempDir(), nil)
+	o := run(context.Background(), config.WakeCheck{Type: "http_status", URL: redir.URL, TimeoutSeconds: 2})
+	if o.Err == nil || hits != 0 {
+		t.Fatalf("redirect followed: %+v hits=%d", o, hits)
+	}
+}
+
+func TestHTTPCheckRejectsUserinfo(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
+	defer srv.Close()
+	run := NewBuiltinChecks(config.WakeConfig{Allow: config.WakeAllow{URLHosts: []string{hostOf(srv)}}}, t.TempDir(), nil)
+	o := run(context.Background(), config.WakeCheck{Type: "http_status", URL: "http://user:pw@" + hostOf(srv), TimeoutSeconds: 2})
+	if o.Err == nil {
+		t.Fatalf("userinfo URL accepted: %+v", o)
+	}
+}
+
+func TestHTTPUnlistedMetadataAddressRefused(t *testing.T) {
+	run := NewBuiltinChecks(config.WakeConfig{Allow: config.WakeAllow{URLHosts: []string{"169.254.169.254"}}}, t.TempDir(), nil)
+	o := run(context.Background(), config.WakeCheck{Type: "http_status", URL: "http://169.254.169.253/", TimeoutSeconds: 1})
+	if o.Err == nil {
+		t.Fatal("unlisted host must be refused")
+	}
+}
+
+func TestHTTPInjectedClientHonored(t *testing.T) {
+	var used bool
+	hc := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		used = true
+		return &http.Response{StatusCode: 204, Body: http.NoBody, Request: r, Header: http.Header{}}, nil
+	})}
+	run := NewBuiltinChecks(config.WakeConfig{Allow: config.WakeAllow{URLHosts: []string{"example.test"}}}, t.TempDir(), hc)
+	o := run(context.Background(), config.WakeCheck{Type: "http_status", URL: "http://example.test/", TimeoutSeconds: 2})
+	if !used || o.Err != nil || o.HTTPStatus != 204 {
+		t.Fatalf("injected client not used: used=%v %+v", used, o)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// With no injected client the production path must use the netsafe client,
+// which never uses proxies. The default transport would send this request to
+// the proxy named in HTTP_PROXY.
+func TestHTTPNilClientIgnoresProxyEnv(t *testing.T) {
+	var proxied int
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { proxied++ }))
+	defer proxy.Close()
+	t.Setenv("HTTP_PROXY", proxy.URL)
+	t.Setenv("http_proxy", proxy.URL)
+	run := NewBuiltinChecks(config.WakeConfig{Allow: config.WakeAllow{URLHosts: []string{"wake-proxy-test.invalid"}}}, t.TempDir(), nil)
+	_ = run(context.Background(), config.WakeCheck{Type: "http_status", URL: "http://wake-proxy-test.invalid/", TimeoutSeconds: 2})
+	if proxied != 0 {
+		t.Fatal("request went through the proxy: default transport in use")
 	}
 }

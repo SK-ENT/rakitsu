@@ -1208,7 +1208,8 @@ GET  /debug/export          → Download config with overrides
 `rakitsu serve` mounts more than the hub: alongside the SSE/hub endpoints
 below, it also serves an MCP server at `/mcp` (with `--mcp-port` + `--config`)
 and an A2A endpoint at `/a2a` + `/.well-known/agent-card.json` (with
-`--config`) on the same or a separate port. See §14 for the protocol details.
+`--config`): `/a2a` is mounted on the main port, `/mcp` only on the separate
+`--mcp-port` listener. See §14 for the protocol details.
 
 ```
 rakitsu run (CLI)                       rakitsu serve (Hub)          Browser
@@ -1304,8 +1305,9 @@ rune-safe at storage time to bound memory on long-running sessions.
 
 ### MCP server — `rakitsu serve --mcp-port N --config <config.yaml>`
 
-Exposes rakitsu's registered tools as an MCP server at `POST /mcp` (also
-mounted on the main `serve` port). Implementation: `internal/server/mcp.go`.
+Exposes rakitsu's registered tools as an MCP server at `POST /mcp` (mounted
+only on the `--mcp-port` listener, not on the main `serve` port, where only
+`/a2a` is mounted). Implementation: `internal/server/mcp.go`.
 Spec-compliant for the **legacy MCP era** (protocol revisions through
 2025-11-25): `Mcp-Session-Id` is required and validated (400/404 on
 missing/unknown), `protocolVersion` is negotiated against the versions

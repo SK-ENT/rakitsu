@@ -2,6 +2,7 @@ package wake
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -121,7 +122,12 @@ func TestHourlyCapAndWindowSlides(t *testing.T) {
 	n := 0
 	var last TickResult
 	for i := 0; i < 6; i++ {
+		p.obs.Contains = true
 		last = e.Tick(context.Background(), accept(&n))
+		e.TurnDone()
+		clk.Advance(time.Minute)
+		p.obs.Contains = false // clear so the next trip is a new transition
+		e.Tick(context.Background(), accept(&n))
 		e.TurnDone()
 		clk.Advance(time.Minute)
 	}
@@ -132,6 +138,7 @@ func TestHourlyCapAndWindowSlides(t *testing.T) {
 		t.Fatalf("want suppressed hourly_cap, got %q", last.Suppressed)
 	}
 	clk.Advance(61 * time.Minute)
+	p.obs.Contains = true
 	r := e.Tick(context.Background(), accept(&n))
 	if !r.Escalated || n != 4 {
 		t.Fatalf("window must slide after an hour: %+v n=%d", r, n)
@@ -151,8 +158,8 @@ func TestSingleFlight(t *testing.T) {
 	e.TurnDone()
 	clk.Advance(time.Minute)
 	e.Tick(context.Background(), accept(&n))
-	if n != 2 {
-		t.Fatalf("after TurnDone the next alarming tick enqueues, n=%d", n)
+	if n != 1 {
+		t.Fatalf("unchanged alarm after TurnDone stays suppressed, n=%d", n)
 	}
 }
 
@@ -256,18 +263,23 @@ func TestRestartKeepsCapWindowAndTickCounter(t *testing.T) {
 	e1 := mk()
 	n := 0
 	for i := 0; i < 3; i++ {
+		p.obs.Contains = true
 		e1.Tick(context.Background(), accept(&n))
 		e1.TurnDone()
+		clk.Advance(time.Minute)
+		p.obs.Contains = false // clear so each trip is a new alarm
+		e1.Tick(context.Background(), accept(&n))
 		clk.Advance(time.Minute)
 	}
 	e1.Close() // simulated crash/restart
 	e2 := mk()
 	defer e2.Close()
+	p.obs.Contains = true
 	r := e2.Tick(context.Background(), accept(&n))
 	if n != 3 || r.Suppressed != "hourly_cap" {
 		t.Fatalf("cap window must survive restart: n=%d %+v", n, r)
 	}
-	if r.Tick != 4 {
+	if r.Tick != 7 {
 		t.Fatalf("tick counter must continue, got %d", r.Tick)
 	}
 }
@@ -451,5 +463,220 @@ func TestHeartbeatEvery(t *testing.T) {
 		if got != c.want {
 			t.Errorf("interval=%d stale=%d: got %v want %v", c.interval, c.stale, got, c.want)
 		}
+	}
+}
+
+func readAudit(t *testing.T, dir string) []map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, "s1.audit.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []map[string]any
+	for _, ln := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(ln), &m); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+func TestPersistentAlarmEscalatesOnceThenReArms(t *testing.T) {
+	p := &fakeProbe{obs: Observation{Exists: true, Contains: true}}
+	e, clk, _ := newEngine(t, func(d *Deps) { d.Cfg.MaxTurnsPerHour = 100 }, p)
+	n := 0
+	for i := 0; i < 8; i++ {
+		r := e.Tick(context.Background(), accept(&n))
+		e.TurnDone() // turn finished: single_flight no longer applies
+		if i > 0 && (r.Escalated || r.Suppressed != "single_flight") {
+			t.Fatalf("tick %d: persistent alarm must be suppressed: %+v", i, r)
+		}
+		clk.Advance(20 * time.Second)
+	}
+	if n != 1 {
+		t.Fatalf("persistent alarm over 8 ticks must give exactly 1 turn, got %d", n)
+	}
+	p.obs.Contains = false
+	e.Tick(context.Background(), accept(&n))
+	p.obs.Contains = true
+	e.Tick(context.Background(), accept(&n))
+	if n != 2 {
+		t.Fatalf("clear then re-trip must escalate again, got %d", n)
+	}
+}
+
+func TestPersistentAlarmSuppressionSurvivesRestartAndCapStillBounds(t *testing.T) {
+	p := &fakeProbe{obs: Observation{Exists: true, Contains: true}}
+	e, clk, dir := newEngine(t, func(d *Deps) { d.Cfg.MaxTurnsPerHour = 2 }, p)
+	n := 0
+	e.Tick(context.Background(), accept(&n))
+	e.TurnDone()
+	e.Close()
+	cfg2 := baseCfg(dir)
+	cfg2.MaxTurnsPerHour = 2
+	e2, err := New(Deps{Cfg: cfg2, SessionID: "s1", Dir: dir, Clock: clk, Checks: p.fn,
+		Rand: func() float64 { return 0.5 }, Getenv: func(string) string { return "" }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e2.Close()
+	clk.Advance(time.Minute)
+	e2.Tick(context.Background(), accept(&n))
+	if n != 1 {
+		t.Fatalf("restart must not re-escalate an unchanged alarm, n=%d", n)
+	}
+	// distinct trips are bounded by the cap
+	for i := 0; i < 4; i++ {
+		p.obs.Contains = false
+		e2.Tick(context.Background(), accept(&n))
+		p.obs.Contains = true
+		e2.Tick(context.Background(), accept(&n))
+		e2.TurnDone()
+	}
+	if n != 2 {
+		t.Fatalf("cap 2/hour must bound re-trips, n=%d", n)
+	}
+}
+
+func TestDeferredAndCappedTicksDoNotConsumeAlarm(t *testing.T) {
+	p := &fakeProbe{obs: Observation{Exists: true, Contains: true}}
+	e, clk, _ := newEngine(t, nil, p)
+	e.Tick(context.Background(), func(Escalation) error { return errors.New("busy") })
+	clk.Advance(time.Minute)
+	n := 0
+	if r := e.Tick(context.Background(), accept(&n)); !r.Escalated {
+		t.Fatalf("deferred alarm must still escalate next tick: %+v", r)
+	}
+}
+
+func TestKilledTickNumberNotRepeatedAfterResume(t *testing.T) {
+	p := &fakeProbe{obs: Observation{Exists: true}}
+	e, _, dir := newEngine(t, nil, p)
+	n := 0
+	e.Tick(context.Background(), accept(&n))
+	stop := filepath.Join(dir, "STOP")
+	_ = os.WriteFile(stop, nil, 0o600)
+	k := e.Tick(context.Background(), accept(&n))
+	if !k.Killed || k.Tick != 2 {
+		t.Fatalf("killed tick: %+v", k)
+	}
+	_ = os.Remove(stop)
+	if err := e.Resume(); err != nil {
+		t.Fatal(err)
+	}
+	r := e.Tick(context.Background(), accept(&n))
+	if r.Tick != 3 {
+		t.Fatalf("tick after resume must be 3, got %d", r.Tick)
+	}
+}
+
+func TestResumeWithKillFileReturnsSentinel(t *testing.T) {
+	p := &fakeProbe{obs: Observation{Exists: true}}
+	e, _, dir := newEngine(t, nil, p)
+	_ = os.WriteFile(filepath.Join(dir, "STOP"), nil, 0o600)
+	if err := e.Resume(); !errors.Is(err, ErrKillSwitchPresent) {
+		t.Fatalf("want ErrKillSwitchPresent, got %v", err)
+	}
+}
+
+func TestAuditRecordsCarryRFC3339UTCTimestamp(t *testing.T) {
+	p := &fakeProbe{obs: Observation{Exists: true, Contains: true}}
+	e, _, dir := newEngine(t, nil, p)
+	n := 0
+	e.Tick(context.Background(), accept(&n))
+	e.NoteTurnResult(1, "done")
+	recs := readAudit(t, dir)
+	if len(recs) < 2 {
+		t.Fatalf("records: %v", recs)
+	}
+	for _, r := range recs {
+		ts, ok := r["ts"].(string)
+		if !ok {
+			t.Fatalf("missing ts: %v", r)
+		}
+		tm, err := time.Parse(time.RFC3339, ts)
+		if err != nil || !strings.HasSuffix(ts, "Z") || tm.Location() != time.UTC {
+			t.Fatalf("ts must be RFC3339 UTC: %q (%v)", ts, err)
+		}
+	}
+}
+
+func TestRestartAfterQuietClearedAlarmEscalatesOnce(t *testing.T) {
+	p := &fakeProbe{obs: Observation{Exists: true, Contains: true}}
+	e, clk, dir := newEngine(t, func(d *Deps) { d.Cfg.MaxTurnsPerHour = 100 }, p)
+	n := 0
+	e.Tick(context.Background(), accept(&n))
+	e.TurnDone()
+	clk.Advance(time.Minute)
+	p.obs.Contains = false
+	e.Tick(context.Background(), accept(&n)) // quiet tick clears the alarm
+	st, err := os.ReadFile(filepath.Join(dir, "s1.state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(st), "alarm_sig") {
+		t.Fatalf("saved state must not hold alarm_sig after a quiet tick: %s", st)
+	}
+	e.Close()
+	cfg := baseCfg(dir)
+	cfg.MaxTurnsPerHour = 100
+	e2, err := New(Deps{Cfg: cfg, SessionID: "s1", Dir: dir, Clock: clk, Checks: p.fn,
+		Rand: func() float64 { return 0.5 }, Getenv: func(string) string { return "" }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e2.Close()
+	p.obs.Contains = true
+	for i := 0; i < 4; i++ {
+		clk.Advance(time.Minute)
+		e2.Tick(context.Background(), accept(&n))
+		e2.TurnDone()
+	}
+	if n != 2 {
+		t.Fatalf("re-tripped alarm after restart must give exactly one more turn (total 2), got %d", n)
+	}
+}
+
+func TestAlarmChangedWhileInFlightEscalatesOnceAfterTurnDone(t *testing.T) {
+	cfg2 := func(d *Deps) {
+		d.Cfg.MaxTurnsPerHour = 100
+		d.Cfg.Checks = []config.WakeCheck{
+			{Name: "a", Type: "file_contains", Path: "x", Contains: "A", TimeoutSeconds: 1},
+			{Name: "b", Type: "file_contains", Path: "x", Contains: "B", TimeoutSeconds: 1},
+		}
+	}
+	var contA, contB bool
+	probe := func(_ context.Context, c config.WakeCheck) Observation {
+		return Observation{Exists: true, Contains: (c.Name == "a" && contA) || (c.Name == "b" && contB)}
+	}
+	e, clk, dir := newEngine(t, func(d *Deps) { cfg2(d); d.Checks = probe }, &fakeProbe{})
+	n := 0
+	contA = true
+	e.Tick(context.Background(), accept(&n)) // A escalates, turn in flight
+	clk.Advance(time.Minute)
+	contA, contB = false, true
+	r := e.Tick(context.Background(), accept(&n)) // B appears while A in flight
+	if r.Escalated || r.Suppressed != "single_flight" {
+		t.Fatalf("B during flight must be suppressed: %+v", r)
+	}
+	e.TurnDone()
+	for i := 0; i < 5; i++ {
+		clk.Advance(time.Minute)
+		e.Tick(context.Background(), accept(&n))
+		e.TurnDone()
+	}
+	if n != 2 {
+		t.Fatalf("A once plus B exactly once, got %d", n)
+	}
+	unchanged := 0
+	for _, rec := range readAudit(t, dir) {
+		if rec["reason"] == "alarm_unchanged" {
+			unchanged++
+		}
+	}
+	if unchanged != 4 {
+		t.Fatalf("want 4 alarm_unchanged suppressions, got %d", unchanged)
 	}
 }

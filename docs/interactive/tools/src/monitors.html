@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Monitors, /healthz and alerts</title>
+<style>/*@CSS@*/
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:6px 0}
+.row label{display:flex;gap:6px;align-items:center;font-size:.92rem}
+pre.out{background:var(--term-bg);color:var(--term-ink);border-radius:8px;padding:10px;overflow:auto;font-size:12.5px;margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+textarea,input[type=text]{width:100%;max-width:100%}
+.bad{color:var(--bad)} .good{color:var(--ok)} .warnc{color:var(--warn)}
+td.n{white-space:nowrap}
+</style>
+</head>
+<body>
+<header class="top">
+  <nav><a href="index.html">All demos</a> <a href="wake.html">Wake timer</a> <a href="messaging.html">Session messaging</a></nav>
+  <button id="theme-toggle" type="button">Dark mode</button>
+</header>
+<main>
+<h1>Monitors, /healthz and alerts</h1>
+<p class="lead"><code>rakitsu serve --config monitor.yaml</code> starts every monitor itself, under a stable session id (<code>monitor-&lt;id&gt;</code>). <code>/healthz</code> tells a supervisor if they are all fine. The model can queue alerts, and the server sends them to ntfy or a webhook.</p>
+<p class="small">The step lists and the two testers are explanation (<span class="badge sim">simulation</span>) built from <code>internal/server/healthz.go</code>, <code>wake_status.go</code> and <code>internal/alert/</code>. The recording at the bottom is a <span class="badge real">real run</span>.</p>
+
+<h2>Step through</h2>
+<div class="card" id="stepper"></div>
+
+<h2>/healthz tester</h2>
+<div class="card">
+  <div class="row">
+    <label>Monitor state <select id="h-state"><option>ok</option><option>starting</option><option>stale</option><option>stopped</option><option>failed</option></select></label>
+    <label><input type="checkbox" id="h-fos" checked> healthz_fail_on_stopped (default true)</label>
+    <label>Caller <select id="h-caller"><option value="lo">loopback</option><option value="rem">remote address</option></select></label>
+    <label><input type="checkbox" id="h-remote"> healthz_allow_remote (default false)</label>
+  </div>
+  <pre class="out mono" id="h-out" aria-live="polite"></pre>
+  <div class="row">
+    <label>heartbeat_stale_seconds <input type="number" id="hb-stale" value="180" min="15" style="width:6em"></label>
+    <label>Heartbeat age (s) <input type="range" id="hb-age" min="0" max="400" value="20"> <span id="hb-age-v">20</span></label>
+    <label><input type="checkbox" id="hb-running" checked> loop is running</label>
+    <label><input type="checkbox" id="hb-file" checked> heartbeat file is readable</label>
+  </div>
+  <p class="small" id="hb-note"></p>
+</div>
+
+<h2>Alert tester</h2>
+<div class="card">
+  <p class="small">The agent calls <code>send_alert(severity, title, body)</code>. The tool only queues the message; the server sends it. Try a secret or a home path in the body.</p>
+  <div class="row">
+    <label>Severity <select id="a-sev"><option>info</option><option selected>warn</option><option>critical</option></select></label>
+  </div>
+  <label class="small" for="a-title">Title</label><input type="text" id="a-title" value="log-watch alarm">
+  <label class="small" for="a-body">Body</label>
+  <textarea id="a-body" rows="3">The timer saw ERROR. Home is /Users/someone. Header was Authorization: Bearer demo-not-a-real-token-123 and key sk-demoFAKEkey123.</textarea>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Sink</th><th>Type</th><th>min_severity</th><th>URL from env</th><th>Result</th></tr></thead>
+    <tbody id="a-sinks"></tbody>
+  </table></div>
+  <pre class="out mono" id="a-out" aria-live="polite"></pre>
+</div>
+
+<h2>Rate cap and retry</h2>
+<div class="card">
+  <div class="row">
+    <label>rate_per_hour <input type="number" id="r-rate" value="3" min="1" max="600" style="width:5em"></label>
+    <label>alerts sent in one hour <input type="number" id="r-n" value="5" min="0" max="50" style="width:5em"></label>
+  </div>
+  <p id="r-out" class="small" aria-live="polite"></p>
+  <div class="row">
+    <label>Sink answers <select id="y-resp"><option value="500">HTTP 500</option><option value="429">HTTP 429</option><option value="400">HTTP 400</option><option value="204">HTTP 204 (ok)</option><option value="down">unreachable</option></select></label>
+    <label>max_attempts <input type="number" id="y-max" value="3" min="1" max="5" style="width:5em"></label>
+    <label>backoff_seconds <input type="number" id="y-back" value="5" min="1" max="60" style="width:5em"></label>
+  </div>
+  <p id="y-out" class="small" aria-live="polite"></p>
+</div>
+
+<h2>Real recording</h2>
+<p class="small">Recorded by <code>docs/interactive/tools/record_monitor.py</code>: <code>/healthz</code>, <code>rakitsu healthcheck</code>, the stop route, and an alert reaching a webhook sink and an ntfy-style sink (a local stand-in server). Waits are shortened; output is not edited.</p>
+<div class="card" id="player"></div>
+
+<h2>Read more</h2>
+<ul>
+<li><a href="../monitor-autostart.md">docs/monitor-autostart.md</a></li>
+<li><a href="../wake-timer.md">docs/wake-timer.md</a></li>
+<li><a href="../reference/">Reference pages</a></li>
+<li>Deployment files: <code>deploy/monitor/</code> (Docker, systemd, launchd)</li>
+</ul>
+</main>
+<script type="application/json" id="cast-monitor">/*@CAST:monitor@*/</script>
+<script>/*@JS@*/</script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var A = [
+    { id: 'sup', label: 'Supervisor', sub: 'Docker, systemd, launchd' },
+    { id: 'srv', label: 'rakitsu serve', sub: 'monitors + /healthz' },
+    { id: 'loop', label: 'Wake loop', sub: 'monitor-<id> session' },
+    { id: 'out', label: 'Sink', sub: 'ntfy or webhook' }
+  ];
+  var scen = {
+    health: { tab: '/healthz', title: 'How a supervisor sees a monitor', steps: [
+      { from: 'srv', to: 'loop', title: 'Autostart', text: 'serve --config monitor.yaml starts each monitors[] entry as session monitor-<id>. YAML holds env var NAMES only (env_refs). A monitor that cannot start is marked failed; the others still run.', state: { monitor: 'starting' } },
+      { from: 'loop', to: 'srv', title: 'Heartbeat', text: 'The loop writes a heartbeat every min(interval_seconds, heartbeat_stale_seconds / 3), even while quiet ticks back off. With no readable heartbeat the state is "starting" for heartbeat_stale_seconds after the loop started, then "stale".', tone: 'ok', state: { monitor: 'ok' } },
+      { from: 'sup', to: 'srv', title: 'GET /healthz', text: '200 {"status":"ok","monitors":{"log-watch":"ok"}} when every monitor is ok. Loopback callers only unless healthz_allow_remote is true (a remote caller gets 403).', tone: 'ok', state: { http: 200 } },
+      { from: 'sup', to: 'srv', title: 'Docker probe', text: 'rakitsu healthcheck [--url URL] [--timeout 5s]: exit 0 when healthy, exit 1 otherwise, and it names the unhealthy monitors. systemd can use WatchdogSec with sd_notify.', tone: 'ok' },
+      { from: 'sup', to: 'loop', title: 'Stop on purpose', text: 'POST /api/chat/monitor-<id>/wake/stop creates the kill-switch file. At its next tick the loop sees it and stops. The session stays open.', tone: 'warn', state: { monitor: 'stopped' } },
+      { from: 'sup', to: 'srv', title: 'healthz while stopped', text: '503 {"status":"fail",...,"log-watch":"stopped"}. Set healthz_fail_on_stopped: false if a stopped monitor should not fail the check. stale, failed: always 503. starting: 200.', tone: 'bad', state: { http: 503 } },
+      { from: 'sup', to: 'loop', title: 'Resume', text: 'POST .../wake/resume returns 409 while the kill-switch file exists. Remove the file first, then resume.', tone: 'ok', state: { monitor: 'ok', http: 200 } }
+    ]},
+    alert: { tab: 'Alerts', title: 'From send_alert to the phone', steps: [
+      { from: 'loop', to: 'srv', title: 'The model calls send_alert', text: 'Arguments: severity (info, warn, critical), title, body. The tool answers "alert queued" at once and never waits for delivery. If the queue is full the oldest message is dropped.', tone: 'ok' },
+      { from: 'srv', to: 'srv', title: 'Redact and cut', text: 'Explicit secrets, Bearer tokens, sk-/ghp_/xox/AKIA tokens and token=/key=/secret= values become [redacted]; /Users/name and /home/name become ~. Title is cut to 200 characters, body to 2000.', tone: 'ok' },
+      { from: 'srv', to: 'srv', title: 'Pick the sinks', text: 'A sink gets the alert only if the severity is at least its min_severity (default warn). The sink URL comes from the env var named in url_env; it must be https (or http to localhost / 127.0.0.1), have no credentials, and its host must be in allow_hosts. Otherwise the sink is disabled.', tone: 'warn' },
+      { from: 'srv', to: 'srv', title: 'Rate cap', text: 'At most rate_per_hour (default 20) per sink per hour. Extra alerts are only counted. When the next alert arrives after the hour is over, one "Alerts suppressed" summary is sent first.', tone: 'warn' },
+      { from: 'srv', to: 'out', title: 'Deliver', text: 'webhook: JSON {severity, title, body, time}. ntfy: the body as plain text with Title and Priority headers (info 3, warn 4, critical 5). 5xx, 429 and network errors are retried with doubling backoff (defaults: 3 attempts, 5 s); other 4xx are not retried. The whole delivery stops after 60 s. Redirects to another host are refused.', tone: 'ok' }
+    ]}
+  };
+  RK.Stepper($('stepper'), { actors: A, scenarios: scen });
+
+  /* ---- healthz tester ---- */
+  function health() {
+    var st = $('h-state').value, fos = $('h-fos').checked, remote = $('h-caller').value === 'rem', allow = $('h-remote').checked;
+    var code, body;
+    if (remote && !allow) { code = 403; body = '{"error":"forbidden"}'; }
+    else {
+      var healthy = true;
+      if (st === 'failed' || st === 'stale') healthy = false;
+      if (st === 'stopped' && fos) healthy = false;
+      code = healthy ? 200 : 503;
+      body = JSON.stringify({ status: healthy ? 'ok' : 'fail', monitors: { 'log-watch': st } });
+    }
+    $('h-out').textContent = '$ curl -s -w " (HTTP %{http_code})" http://127.0.0.1:9100/healthz\n' + body + ' (HTTP ' + code + ')\n$ rakitsu healthcheck   # exit ' + (code === 200 ? 0 : 1);
+  }
+  ['h-state', 'h-fos', 'h-caller', 'h-remote'].forEach(function (i) { $(i).addEventListener('change', health); });
+  function hb() {
+    var stale = parseInt($('hb-stale').value, 10) || 180, age = parseInt($('hb-age').value, 10), run = $('hb-running').checked, file = $('hb-file').checked;
+    $('hb-age-v').textContent = age;
+    var st, why;
+    if (!run) { st = 'stopped'; why = 'The loop is not running (kill switch or stop route).'; }
+    else if (!file) { st = 'starting'; why = 'No readable heartbeat yet: "starting" until ' + stale + ' s after the loop started, then "stale". (Shown here as within that time.)'; }
+    else if (age > stale) { st = 'stale'; why = 'Heartbeat is ' + age + ' s old, older than ' + stale + ' s.'; }
+    else { st = 'ok'; why = 'Heartbeat is ' + age + ' s old, within ' + stale + ' s. The loop writes it every min(interval, ' + stale + '/3) s, so a healthy monitor stays below that.'; }
+    $('hb-note').textContent = 'State: ' + st + '. ' + why;
+    $('h-state').value = st; health();
+  }
+  ['hb-stale', 'hb-age', 'hb-running', 'hb-file'].forEach(function (i) { $(i).addEventListener('input', hb); });
+  hb();
+
+  /* ---- alert tester (same rules as internal/alert) ---- */
+  var SINKS = [
+    { name: 'phone', type: 'webhook', min: 'warn', url: 'http://127.0.0.1:4011/hook', hosts: ['127.0.0.1'] },
+    { name: 'phone-push', type: 'ntfy', min: 'warn', url: 'http://127.0.0.1:4011/ntfy', hosts: ['127.0.0.1'] },
+    { name: 'pager', type: 'webhook', min: 'critical', url: 'http://127.0.0.1:4011/pager', hosts: ['127.0.0.1'] }
+  ];
+  var RANK = { info: 1, warn: 2, critical: 3 };
+  function redact(s) {
+    s = s.replace(/\bBearer[ \t]+[A-Za-z0-9._~+\/=-]+/gi, 'Bearer [redacted]');
+    s = s.replace(/\b(?:sk-[A-Za-z0-9_-]+|ghp_[A-Za-z0-9_]+|xox[baprs]?-[A-Za-z0-9-]+|AKIA[A-Z0-9]+)/g, '[redacted]');
+    s = s.replace(/\b(token|key|secret)=([A-Za-z0-9+\/=_-]{32,})/gi, '$1=[redacted]');
+    return s.replace(/\/(?:Users|home)\/[^\/\s"'<>]+/g, '~');
+  }
+  function cut(s, n) { return Array.from(s).slice(0, n).join(''); }
+  function allowed(u, hosts) {
+    var m = /^(https?):\/\/([^\/:@]+)(?::\d+)?(\/|$)/i.exec(u);
+    if (!m) return false;
+    var h = m[2].toLowerCase();
+    if (m[1] !== 'https' && !(m[1] === 'http' && (h === 'localhost' || h === '127.0.0.1'))) return false;
+    return hosts.indexOf(h) >= 0;
+  }
+  function alerts() {
+    var sev = $('a-sev').value, title = cut(redact($('a-title').value), 200), body = cut(redact($('a-body').value), 2000);
+    var tb = $('a-sinks'); tb.innerHTML = '';
+    var lines = [];
+    SINKS.forEach(function (s) {
+      var tr = document.createElement('tr'), res;
+      if (!allowed(s.url, s.hosts)) res = 'disabled: URL not allowed';
+      else if (RANK[sev] < RANK[s.min]) res = 'skipped: ' + sev + ' is below ' + s.min;
+      else {
+        res = 'delivered';
+        if (s.type === 'ntfy') lines.push('POST ' + s.name + '  Title: ' + title.replace(/[\r\n]+/g, ' ') + '  Priority: ' + (RANK[sev] + 2) + '\n' + body);
+        else lines.push('POST ' + s.name + '  Content-Type: application/json\n' + JSON.stringify({ severity: sev, title: title, body: body, time: '2026-10-04T00:00:00Z' }));
+      }
+      [s.name, s.type, s.min, s.url, res].forEach(function (c, i) { var td = document.createElement('td'); td.textContent = c; if (i === 4) td.className = res === 'delivered' ? 'good' : 'warnc'; tr.appendChild(td); });
+      tb.appendChild(tr);
+    });
+    $('a-out').textContent = lines.length ? lines.join('\n\n') : 'No sink takes this alert.';
+  }
+  ['a-sev', 'a-title', 'a-body'].forEach(function (i) { $(i).addEventListener('input', alerts); });
+  alerts();
+
+  function rate() {
+    var r = parseInt($('r-rate').value, 10) || 1, n = parseInt($('r-n').value, 10) || 0;
+    var sent = Math.min(n, r), sup = Math.max(0, n - r);
+    $('r-out').textContent = n + ' alerts in one hour with rate_per_hour ' + r + ': ' + sent + ' sent, ' + sup + ' suppressed.' + (sup ? ' When the next alert arrives after the hour is over, one extra message goes first: title "Alerts suppressed", body "' + sup + ' alerts suppressed".' : '');
+  }
+  ['r-rate', 'r-n'].forEach(function (i) { $(i).addEventListener('input', rate); }); rate();
+  function retry() {
+    var resp = $('y-resp').value, max = parseInt($('y-max').value, 10) || 1, back = parseInt($('y-back').value, 10) || 1;
+    var t = 0, parts = [], b = back, done = false;
+    for (var a = 0; a < max; a++) {
+      var line = 'attempt ' + (a + 1) + ' at +' + t + ' s';
+      if (resp === '204') { parts.push(line + ': delivered'); done = true; break; }
+      var retryable = resp === 'down' || resp === '500' || resp === '429';
+      parts.push(line + ': ' + (resp === 'down' ? 'network error' : 'HTTP ' + resp));
+      if (!retryable) { parts.push('4xx other than 429 is not retried'); break; }
+      if (a + 1 === max) break;
+      if (b >= 60 - t) { parts.push('no time left in the 60 s window'); break; }
+      t += b; b = b < 60 ? b * 2 : b;
+    }
+    if (!done) parts.push('gave up: the failure is logged, the alert is lost');
+    $('y-out').textContent = parts.join(' -> ');
+  }
+  ['y-resp', 'y-max', 'y-back'].forEach(function (i) { $(i).addEventListener('input', retry); }); retry();
+
+  var cp = RK.CastPlayer($('player'), RK.loadCast('cast-monitor'));
+  window.__page = { redact: redact, cast: cp };
+})();
+</script>
+</body>
+</html>

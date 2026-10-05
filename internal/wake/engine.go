@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,7 +19,14 @@ import (
 var (
 	ErrLocked        = errors.New("wake: state dir locked by another process")
 	ErrMissingSecret = errors.New("wake: secret_env variable not set")
+	// ErrKillSwitchPresent is returned by Resume while the kill-switch file exists.
+	ErrKillSwitchPresent = errors.New("wake: kill-switch file present; remove it before resuming")
+	// ErrLockReplaced means the lock file path no longer refers to the file we locked.
+	ErrLockReplaced = errors.New("wake lock file was replaced")
 )
+
+// testHookAfterLock runs right after the lock is taken (tests only).
+var testHookAfterLock func()
 
 type Deps struct {
 	Cfg           config.WakeConfig // defaulted and validated
@@ -42,7 +50,8 @@ type TickResult struct {
 	Tick            int
 	Outcome         Outcome
 	Results         []CheckResult
-	Killed          bool // kill-switch present; caller must stop the loop
+	Killed          bool // kill-switch present or lock lost; caller must stop the loop
+	LockLost        bool // the singleton lock file was replaced or removed; implies Killed
 	Degraded        bool // state/audit write failed; no enqueue
 	ResumedAfterGap bool
 	Escalated       bool   // enqueue callback accepted the turn
@@ -65,6 +74,7 @@ type Engine struct {
 	summary      func() (int, int)
 	auditMax     int64
 	lock         *os.File
+	lockPath     string
 	state        *persisted
 	interval     float64
 	lastTickTime time.Time
@@ -113,6 +123,14 @@ func New(d Deps) (*Engine, error) {
 		lockFile.Close()
 		return nil, ErrLocked
 	}
+	if testHookAfterLock != nil {
+		testHookAfterLock()
+	}
+	if err := verifyLockPath(lockPath, lockFile); err != nil {
+		unlock(lockFile)
+		lockFile.Close()
+		return nil, err
+	}
 
 	// Check secrets
 	for _, name := range d.Cfg.SecretEnv {
@@ -143,6 +161,7 @@ func New(d Deps) (*Engine, error) {
 		summary:   d.Summary,
 		auditMax:  d.AuditMaxBytes,
 		lock:      lockFile,
+		lockPath:  lockPath,
 		state:     st,
 		interval:  float64(d.Cfg.IntervalSeconds),
 		stopped:   st.Stopped,
@@ -163,11 +182,28 @@ func (e *Engine) Tick(ctx context.Context, enqueue func(Escalation) error) TickR
 
 	r := TickResult{Tick: e.state.Tick + 1, IntervalSeconds: int(e.interval)}
 
+	// The singleton lock must still be the file we hold. If it was replaced or
+	// removed, another process may now hold a lock for this session: stop without
+	// touching state or heartbeat, which the new holder owns.
+	if e.lock != nil {
+		if err := verifyLockPath(e.lockPath, e.lock); err != nil {
+			e.stopped = true
+			r.Killed, r.LockLost = true, true
+			_ = appendAudit(e.dir, e.sessionID, map[string]any{
+				"event": "lock_replaced", "tick": r.Tick, "reason": "lock_replaced",
+			}, e.auditMax)
+			return r
+		}
+	}
+
 	// Check kill switch
 	killPath := expandPath(e.cfg.KillSwitchFile)
 	if _, err := os.Stat(killPath); err == nil {
 		e.stopped = true
 		r.Killed = true
+		// Consume the tick number so the first tick after resume does not repeat it.
+		e.state.Tick = r.Tick
+		_ = e.saveDurableState()
 		_ = appendAudit(e.dir, e.sessionID, map[string]any{
 			"event": "tick", "tick": r.Tick, "outcome": "quiet", "result": "killed",
 		}, e.auditMax)
@@ -219,6 +255,14 @@ func (e *Engine) Tick(ctx context.Context, enqueue func(Escalation) error) TickR
 		e.interval = float64(e.cfg.IntervalSeconds)
 	}
 
+	// A tick with no non-OK check clears the alarm signature, re-arming escalation.
+	sig := alarmSignature(r.Results)
+	prevSig := e.state.AlarmSig
+	repeat := sig != "" && sig == prevSig
+	if sig == "" {
+		e.state.AlarmSig = ""
+	}
+
 	// Record summary
 	r.SummaryChars, r.SummaryCap = e.summary()
 
@@ -249,6 +293,17 @@ func (e *Engine) Tick(ctx context.Context, enqueue func(Escalation) error) TickR
 		r.Suppressed = "degraded"
 		_ = appendAudit(e.dir, e.sessionID, map[string]any{
 			"event": "tick", "tick": r.Tick, "outcome": r.Outcome, "result": "degraded",
+			"summary_chars": r.SummaryChars, "summary_cap": r.SummaryCap,
+		}, e.auditMax)
+		return r
+	}
+
+	// Persistent alarm: the same alarm/unknown set as the last escalated tick is not
+	// a new event; suppress until it clears or changes.
+	if repeat {
+		r.Suppressed = "single_flight"
+		_ = appendAudit(e.dir, e.sessionID, map[string]any{
+			"event": "tick", "tick": r.Tick, "outcome": r.Outcome, "suppressed": "single_flight", "reason": "alarm_unchanged",
 			"summary_chars": r.SummaryChars, "summary_cap": r.SummaryCap,
 		}, e.auditMax)
 		return r
@@ -305,12 +360,14 @@ func (e *Engine) Tick(ctx context.Context, enqueue func(Escalation) error) TickR
 
 	// Add to cap window and mark inflight
 	e.state.CapWindow = append(e.state.CapWindow, now.UnixNano())
+	e.state.AlarmSig = sig
 	e.inflight.Store(true)
 
 	// Save state before enqueuing
 	if err := e.saveDurableState(); err != nil {
 		e.inflight.Store(false)
 		e.state.CapWindow = e.state.CapWindow[:len(e.state.CapWindow)-1]
+		e.state.AlarmSig = prevSig
 		_ = e.saveDurableState()
 		r.Degraded = true
 		r.Suppressed = "degraded"
@@ -322,6 +379,7 @@ func (e *Engine) Tick(ctx context.Context, enqueue func(Escalation) error) TickR
 		// Deferred: revert cap window entry
 		e.inflight.Store(false)
 		e.state.CapWindow = e.state.CapWindow[:len(e.state.CapWindow)-1]
+		e.state.AlarmSig = prevSig
 		_ = e.saveDurableState()
 		r.Deferred = true
 		_ = appendAudit(e.dir, e.sessionID, map[string]any{
@@ -407,7 +465,12 @@ func (e *Engine) Resume() error {
 
 	killPath := expandPath(e.cfg.KillSwitchFile)
 	if _, err := os.Stat(killPath); err == nil {
-		return errors.New("kill switch file present")
+		return ErrKillSwitchPresent
+	}
+	if e.lock != nil {
+		if err := verifyLockPath(e.lockPath, e.lock); err != nil {
+			return err
+		}
 	}
 
 	e.stopped = false
@@ -554,4 +617,16 @@ func expandPath(p string) string {
 		}
 	}
 	return p
+}
+
+// alarmSignature identifies the set of non-OK checks (name and status, not detail,
+// which can drift every tick). Empty when every check is OK.
+func alarmSignature(rs []CheckResult) string {
+	var parts []string
+	for _, r := range rs {
+		if r.Status != StatusOK {
+			parts = append(parts, fmt.Sprintf("%s=%s", r.Name, r.Status))
+		}
+	}
+	return strings.Join(parts, ",")
 }

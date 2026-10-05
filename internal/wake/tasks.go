@@ -4,6 +4,7 @@ package wake
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -45,6 +46,7 @@ func MarkTaskContext(ctx context.Context) context.Context {
 type ResolvedConfig struct {
 	Name   string
 	Path   string // absolute, symlink-resolved, inside the workdir
+	SHA256 string // hex sha256 of the file bytes at session start; Start refuses if the file no longer matches
 	Task   string
 	Params map[string]config.WakeTaskParam
 }
@@ -73,12 +75,21 @@ func ResolveAllowlist(w config.WakeConfig, workdir string) (map[string]ResolvedC
 		if fi, err := os.Stat(abs); err != nil || !fi.Mode().IsRegular() {
 			return nil, fmt.Errorf("wake allow.configs %q: not a regular file: %s", ac.Name, ac.Path)
 		}
+		data, err := os.ReadFile(abs)
+		if err != nil {
+			return nil, fmt.Errorf("wake allow.configs %q: %w", ac.Name, err)
+		}
 		if _, err := config.Load(abs); err != nil {
 			return nil, fmt.Errorf("wake allow.configs %q: %w", ac.Name, err)
 		}
-		out[ac.Name] = ResolvedConfig{Name: ac.Name, Path: abs, Task: ac.Task, Params: ac.Params}
+		out[ac.Name] = ResolvedConfig{Name: ac.Name, Path: abs, SHA256: hashBytes(data), Task: ac.Task, Params: ac.Params}
 	}
 	return out, nil
+}
+
+func hashBytes(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }
 
 // TaskSpec is what a TaskRunFunc receives. It carries no environment from the wake session.
@@ -194,6 +205,11 @@ func (m *TaskManager) Start(ctx context.Context, name string, args map[string]an
 	vals, err := validateArgs(rc, args, m.d.Cfg.Allow.Paths)
 	if err != nil {
 		return m.refuse(name, err.Error())
+	}
+	// The file may have been swapped since session start. Compare against the
+	// session-start hash; a missing or unreadable file counts as changed.
+	if data, err := os.ReadFile(rc.Path); err != nil || hashBytes(data) != rc.SHA256 {
+		return m.refuse(name, "task_config_changed")
 	}
 
 	m.mu.Lock()

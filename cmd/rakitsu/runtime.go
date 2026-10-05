@@ -67,6 +67,41 @@ type BuildOptions struct {
 	ExtraTools []tools.Tool
 }
 
+// newRunRootGuard applies the configured run-wide budgets, with an optional
+// CLI --max-cost override. Zero leaves the configured cost limit in effect.
+func newRunRootGuard(cfg *config.Config, maxCostOverride float64) *agent.CompositeGuard {
+	maxCost := cfg.Settings.Execution.MaxCost
+	if maxCostOverride > 0 {
+		maxCost = maxCostOverride
+	}
+	if cfg.Settings.Execution.MaxTotalTokens > 0 || maxCost > 0 {
+		rootTG := agent.NewTokenGuard(cfg.Settings.Execution.MaxTotalTokens, maxCost)
+		return agent.NewCompositeGuard(nil, rootTG)
+	}
+	return nil
+}
+
+// wireAgentBudget attaches the shared run guard and per-agent limits to an
+// agent. The web/server execution path passes its YAML-only root guard; the
+// CLI path may include --max-cost when it creates that guard.
+func wireAgentBudget(ag *agent.Agent, cfg *config.Config, def *config.AgentDefinition, model string, rootGuard *agent.CompositeGuard) {
+	var agentMaxTokens int
+	var agentMaxCost float64
+	if def.Settings != nil {
+		agentMaxTokens = def.Settings.MaxTotalTokens
+		agentMaxCost = def.Settings.MaxCost
+	}
+	if agentMaxTokens == 0 && agentMaxCost == 0 && rootGuard == nil {
+		return
+	}
+
+	agentTG := agent.NewTokenGuard(agentMaxTokens, agentMaxCost)
+	ag.SetTokenGuard(agentTG)
+	ag.SetGuard(agent.NewCompositeGuard(rootGuard, agentTG))
+	pricing, pricingKnown := agent.ResolvePricing(model, cfg.Settings.Pricing)
+	ag.SetPricing(pricing, pricingKnown)
+}
+
 // BuildResult is returned from BuildRunner.
 type BuildResult struct {
 	Runner   agent.Runner            // top-level entity to Run
@@ -219,14 +254,7 @@ type runtimeBuilder struct {
 }
 
 func (b *runtimeBuilder) buildRootGuard() {
-	effectiveMaxCost := b.cfg.Settings.Execution.MaxCost
-	if b.opts.MaxCostOverride > 0 {
-		effectiveMaxCost = b.opts.MaxCostOverride
-	}
-	if b.cfg.Settings.Execution.MaxTotalTokens > 0 || effectiveMaxCost > 0 {
-		rootTG := agent.NewTokenGuard(b.cfg.Settings.Execution.MaxTotalTokens, effectiveMaxCost)
-		b.rootGuard = agent.NewCompositeGuard(nil, rootTG)
-	}
+	b.rootGuard = newRunRootGuard(b.cfg, b.opts.MaxCostOverride)
 	b.rateLimiters = buildRateLimiters(b.cfg)
 }
 
@@ -272,20 +300,7 @@ func (b *runtimeBuilder) buildAgentDepth(def *config.AgentDefinition, depth int)
 		ag.SetDebugController(b.opts.DebugCtrl)
 	}
 
-	// Token guard
-	var maxTok int
-	var maxCost float64
-	if def.Settings != nil {
-		maxTok = def.Settings.MaxTotalTokens
-		maxCost = def.Settings.MaxCost
-	}
-	if maxTok > 0 || maxCost > 0 || b.cfg.Settings.Execution.MaxTotalTokens > 0 || b.cfg.Settings.Execution.MaxCost > 0 {
-		tg := agent.NewTokenGuard(maxTok, maxCost)
-		ag.SetTokenGuard(tg)
-		ag.SetGuard(agent.NewCompositeGuard(b.rootGuard, tg))
-		pricing, pricingKnown := agent.ResolvePricing(provider.GetModel(), b.cfg.Settings.Pricing)
-		ag.SetPricing(pricing, pricingKnown)
-	}
+	wireAgentBudget(ag, b.cfg, def, provider.GetModel(), b.rootGuard)
 	wireAgentRetryAndRateLimit(ag, b.cfg, def, b.rateLimiters)
 	wireStorageClaimGuard(ag, b.memStore)
 	wireAutoRecall(ag, b.cfg, b.memStore, b.opts.MemorySessionScope, def.Name, b.eventBus)

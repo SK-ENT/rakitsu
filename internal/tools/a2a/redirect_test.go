@@ -55,21 +55,20 @@ func TestA2ATool_Redirect_CrossHostDoesNotLeakBearerToken(t *testing.T) {
 	defer redirector.Close()
 
 	var out map[string]interface{}
-	if err := newRedirectTool(t, redirector.URL).call(context.Background(), "GetTask", map[string]string{"id": "x"}, &out); err != nil {
-		t.Fatalf("call: %v", err)
+	if err := newRedirectTool(t, redirector.URL).call(context.Background(), "GetTask", map[string]string{"id": "x"}, &out); err == nil {
+		t.Fatal("cross-host redirect must be refused")
 	}
-	if hits.Load() != 1 {
-		t.Fatalf("target hits = %d, want 1 (redirect followed)", hits.Load())
+	if hits.Load() != 0 {
+		t.Fatalf("target hits = %d, want 0 (redirect refused)", hits.Load())
 	}
 	if v, _ := gotAuth.Load().(string); v != "" {
 		t.Fatalf("bearer token leaked to a different host on redirect: %q", v)
 	}
 }
 
-// Pinned current behavior, not an endorsement: a redirect to another service
-// on the SAME hostname (e.g. another loopback port) is followed and the token
-// goes with it. The endpoint URL is operator-configured.
-func TestA2ATool_Redirect_SameHostIsFollowedWithToken(t *testing.T) {
+// A redirect to another port on the same hostname is a different origin and
+// is refused; the token never reaches it.
+func TestA2ATool_Redirect_OtherPortRefused(t *testing.T) {
 	var gotAuth atomic.Value
 	var hits atomic.Int32
 	target := redirectTarget(t, &gotAuth, &hits)
@@ -81,14 +80,14 @@ func TestA2ATool_Redirect_SameHostIsFollowedWithToken(t *testing.T) {
 	defer redirector.Close()
 
 	var out map[string]interface{}
-	if err := newRedirectTool(t, redirector.URL).call(context.Background(), "GetTask", map[string]string{"id": "x"}, &out); err != nil {
-		t.Fatalf("call: %v", err)
+	if err := newRedirectTool(t, redirector.URL).call(context.Background(), "GetTask", map[string]string{"id": "x"}, &out); err == nil {
+		t.Fatal("other-port redirect must be refused")
 	}
-	if hits.Load() != 1 {
-		t.Fatalf("target hits = %d, want 1", hits.Load())
+	if hits.Load() != 0 {
+		t.Fatalf("target hits = %d, want 0", hits.Load())
 	}
-	if v, _ := gotAuth.Load().(string); v != "Bearer redteam-fake-peer-credential" {
-		t.Fatalf("Authorization on same-host redirect = %q", v)
+	if v, _ := gotAuth.Load().(string); v != "" {
+		t.Fatalf("Authorization reached the redirect target: %q", v)
 	}
 }
 
@@ -109,7 +108,7 @@ func TestA2ATool_Redirect_LoopTerminatesWithError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "redirects") {
 		t.Fatalf("want stopped-after-redirects error, got %v", err)
 	}
-	if n := hits.Load(); n > 11 {
-		t.Fatalf("followed %d redirects, want the stdlib cap (10)", n)
+	if n := hits.Load(); n > 6 {
+		t.Fatalf("followed %d redirects, want the cap (5)", n)
 	}
 }

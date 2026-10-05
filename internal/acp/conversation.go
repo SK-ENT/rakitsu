@@ -42,6 +42,9 @@ type sessionConv struct {
 // enabled, and a single bare agent runs the turn. Chat only engages for a
 // plain agent runner; a config with an orchestrator has no single agent whose
 // provider owns the turn, so it keeps the text-composed history.
+//
+// Orchestrator configs keep the text-composed history in ACP (single-agent
+// only). Orchestrator support is deliberately not implemented here.
 func (s *Server) convEngaged() bool {
 	m := s.cfg.Settings.Memory
 	if !m.Enabled || !m.Conversation.Enabled {

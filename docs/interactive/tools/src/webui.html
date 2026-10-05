@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Web UI screenshots</title>
+<style>/*@CSS@*/
+figure{margin:12px 0}
+figure img,figure video{width:100%;height:auto;border:1px solid var(--line);border-radius:8px;display:block;background:var(--term-bg)}
+figcaption{color:var(--muted);font-size:.93rem;margin-top:6px}
+</style>
+</head>
+<body>
+<header class="top">
+  <nav><a href="index.html">All demos</a> <a href="wake.html">Wake timer</a> <a href="starttask.html">start_task</a></nav>
+  <button id="theme-toggle" type="button">Dark mode</button>
+</header>
+<main>
+<h1>Web UI</h1>
+<p class="lead">Screenshots of the real web UI served by <code>rakitsu serve</code>, taken with Playwright against a local demo (fake model, no private data). <span class="badge real">real run</span></p>
+
+<h2>A monitor session after an alarm</h2>
+<figure>
+  <img src="shots/chat-monitor.png" alt="Chat view of the session log-watch. A timer-sourced turn lists log-errors=alarm. The agent called send_alert (alert queued), start_task for summary-note (launched with a task id), and start_task for not-on-the-list, which was refused because the config is not in settings.wake.allow.configs." loading="lazy">
+  <figcaption>The monitor session <code>log-watch</code>. The first message is the timer-sourced turn (not from a user). Below it: <code>send_alert</code> queued, <code>start_task</code> launched for an allowed config, and <code>start_task</code> refused for one that is not on the list. See the <a href="wake.html">wake timer</a>, <a href="starttask.html">start_task</a> and <a href="monitors.html">alerts</a> pages.</figcaption>
+</figure>
+
+<h2>A chat session from an imported config</h2>
+<figure>
+  <img src="shots/builder.png" alt="Visual builder with the config bridge-reviewer imported: one agent node named reviewer, role worker, provider fake, model fake-model, no tools." loading="lazy">
+  <figcaption>The visual builder after importing <code>bridge-reviewer.yaml</code>.</figcaption>
+</figure>
+<figure>
+  <img src="shots/chat-reply.png" alt="Chat view of a bridge-reviewer session. The user message is Review this: 2 + 2 = 5 and the fake model replies that the conversation has 1 user message." loading="lazy">
+  <figcaption>The same config as a chat session. This is the kind of session <a href="ask.html">rakitsu-ask</a> and <a href="messaging.html">session messaging</a> talk to.</figcaption>
+</figure>
+
+<h2>Short clip</h2>
+<figure>
+  <video controls preload="none" muted playsinline width="960" aria-label="Short screen recording: import a config, open the monitor session, start a chat and send a message">
+    <source src="shots/ui-flow.webm" type="video/webm">
+    Your browser cannot play WebM video. The screenshots above show the same steps.
+  </video>
+  <figcaption>The whole capture flow, about 20 seconds. It does not play by itself.</figcaption>
+</figure>
+
+<p class="small">Regenerate with <code>docs/interactive/tools/record_shots.py</code> (see the README in this folder). More on the UI: <a href="../WEBUI.md">docs/WEBUI.md</a>.</p>
+</main>
+<script>/*@JS@*/</script>
+</body>
+</html>

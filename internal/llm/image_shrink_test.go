@@ -2,6 +2,7 @@ package llm
 
 import (
 	"bytes"
+	"encoding/base64"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -26,7 +27,7 @@ func noisePNG(w, h int) []byte {
 
 func TestShrinkImage_LargePNGBecomesSmallJPEG(t *testing.T) {
 	in := noisePNG(2000, 1000)
-	if len(in) <= 1<<20 {
+	if int64(base64.StdEncoding.EncodedLen(len(in))) <= 1_000_000 {
 		t.Fatalf("fixture too small: %d", len(in))
 	}
 	out, mt := ShrinkImage(in, "image/png")
@@ -98,5 +99,39 @@ func TestExifOrientationParse(t *testing.T) {
 	data := append([]byte{0xFF, 0xD8, 0xFF, 0xE1, byte(n >> 8), byte(n)}, seg...)
 	if got := jpegOrientation(data); got != 6 {
 		t.Fatalf("got %d", got)
+	}
+}
+
+// An image whose raw size is under the threshold but whose base64 size is
+// over it must be shrunk: the request body carries the base64 form.
+func TestShrinkImage_UsesEncodedSize(t *testing.T) {
+	old := ImageShrinkThreshold
+	defer func() { ImageShrinkThreshold = old }()
+	ImageShrinkThreshold = 1_000_000
+	var in []byte
+	for w := 300; w < 1400; w += 10 {
+		in = noisePNG(w, 300)
+		if len(in) > 800_000 {
+			break
+		}
+	}
+	enc := int64(base64.StdEncoding.EncodedLen(len(in)))
+	if len(in) >= 1_000_000 || enc <= 1_000_000 {
+		t.Fatalf("fixture raw=%d enc=%d", len(in), enc)
+	}
+	out, mt := ShrinkImage(in, "image/png")
+	if mt != "image/jpeg" || len(out) >= len(in) {
+		t.Fatalf("not shrunk: mime=%s out=%d in=%d", mt, len(out), len(in))
+	}
+	b64, _, _ := ShrinkBase64Image(base64.StdEncoding.EncodeToString(in), "image/png")
+	if len(b64) >= 1_000_000 {
+		t.Fatalf("base64 payload still %d", len(b64))
+	}
+}
+
+func TestDefaultShrinkThresholdEncodedBudget(t *testing.T) {
+	t.Setenv("RAKITSU_IMAGE_SHRINK_BYTES", "")
+	if got := defaultImageShrinkThreshold(); got != 1_000_000 {
+		t.Fatalf("default %d", got)
 	}
 }

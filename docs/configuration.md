@@ -246,6 +246,8 @@ Enables rakitsu's native memory / knowledge-graph store.
 
 Switches chat surfaces from full-history re-feed to a rolling summary + recent verbatim turns (bounded per-turn context). The summary is maintained by a post-turn summarizer inference and persisted in the session scope, so resume keeps the compressed context. Turns are only dropped from the model-visible window once they have been folded into the summary — a summarizer failure degrades to full history, never data loss.
 
+`rakitsu acp` honors this setting for single-agent configs only. Orchestrator configs keep the text-composed history in ACP (single-agent only).
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enabled` | bool | `false` | Enable conversation memory mode |
@@ -437,7 +439,7 @@ tools:
 | `type` | string | **Required.** Tool type: `cli`, `fs`, `mcp_server`, `a2a`, `jev` |
 | `description` | string | What the tool does (shown to LLM) |
 | `command` | string | Shell command (for `cli` type) |
-| `operation` | string | Operation name (for `fs` type): `read`, `read_image`, `write`, `search`, `list`. `read_image` loads a png/jpeg/gif/webp file (max 20 MB, same `allowed_paths` fence) and gives the image itself to a `vision: true` agent. Images over 1 MiB (also `--attach` and MCP tool images) are first downscaled to 1568 px and re-sent as JPEG; set `RAKITSU_IMAGE_SHRINK_BYTES` to another byte threshold, or `0` to disable |
+| `operation` | string | Operation name (for `fs` type): `read`, `read_image`, `write`, `search`, `list`. `read_image` loads a png/jpeg/gif/webp file (max 20 MB, same `allowed_paths` fence) and gives the image itself to a `vision: true` agent. Images whose base64 form is over 1,000,000 bytes (about 750 KB raw; also `--attach` and MCP tool images) are first downscaled to 1568 px and re-sent as JPEG; set `RAKITSU_IMAGE_SHRINK_BYTES` to another threshold in base64 bytes, or `0` to disable |
 | `method` | string | HTTP method (for future `http` type) |
 | `executable` | string | Path to executable |
 | `script` | string | Script content |

@@ -1023,6 +1023,7 @@ func runAgent(cmd *cobra.Command, args []string) (runErr error) {
 	}
 	ep := createEmbeddingProvider(ctx, cfg, agentRetrievalConfig(agentDef))
 	ag := agent.NewAgent(agentDef, llmProvider, toolRegistry, eventBus, ep)
+	wireAgentBudget(ag, cfg, agentDef, llmProvider.GetModel(), newRunRootGuard(cfg, maxCostFlag))
 	if hook := steerHook(steerCh, eventBus, agentDef.Name); hook != nil {
 		ag.SetSteering(hook)
 	}
@@ -1512,12 +1513,8 @@ func executeConfigConv(ctx context.Context, cfg *config.Config, eventBus *teleme
 
 	memStore := openMemoryStore(cfg)
 
-	// Create root guard from global execution settings
-	var rootGuard *agent.CompositeGuard
-	if cfg.Settings.Execution.MaxTotalTokens > 0 || cfg.Settings.Execution.MaxCost > 0 {
-		rootTG := agent.NewTokenGuard(cfg.Settings.Execution.MaxTotalTokens, cfg.Settings.Execution.MaxCost)
-		rootGuard = agent.NewCompositeGuard(nil, rootTG)
-	}
+	// Create root guard from global execution settings.
+	rootGuard := newRunRootGuard(cfg, 0)
 	// Note: executeConfig is called from the web runner and does not have access to CLI flags,
 	// so --max-cost is not applied here. Use settings.execution.max_cost in YAML instead.
 	rateLimiters := buildRateLimiters(cfg)
@@ -1568,20 +1565,7 @@ func executeConfigConv(ctx context.Context, cfg *config.Config, eventBus *teleme
 			if debugCtrl != nil {
 				ag.SetDebugController(debugCtrl)
 			}
-			// Wire guard
-			var agMaxTok int
-			var agMaxCost float64
-			if agentDef.Settings != nil {
-				agMaxTok = agentDef.Settings.MaxTotalTokens
-				agMaxCost = agentDef.Settings.MaxCost
-			}
-			if agMaxTok > 0 || agMaxCost > 0 || rootGuard != nil {
-				tg := agent.NewTokenGuard(agMaxTok, agMaxCost)
-				ag.SetTokenGuard(tg)
-				ag.SetGuard(agent.NewCompositeGuard(rootGuard, tg))
-				pricing, pricingKnown := agent.ResolvePricing(agentProvider.GetModel(), cfg.Settings.Pricing)
-				ag.SetPricing(pricing, pricingKnown)
-			}
+			wireAgentBudget(ag, cfg, agentDef, agentProvider.GetModel(), rootGuard)
 			wireAgentRetryAndRateLimit(ag, cfg, agentDef, rateLimiters)
 			agents[agentDef.Name] = ag
 		}
@@ -1700,20 +1684,7 @@ func executeConfigConv(ctx context.Context, cfg *config.Config, eventBus *teleme
 	if debugCtrl != nil {
 		ag.SetDebugController(debugCtrl)
 	}
-	// Wire guard for single-agent mode
-	var agMaxTok int
-	var agMaxCost float64
-	if agentDef.Settings != nil {
-		agMaxTok = agentDef.Settings.MaxTotalTokens
-		agMaxCost = agentDef.Settings.MaxCost
-	}
-	if agMaxTok > 0 || agMaxCost > 0 || rootGuard != nil {
-		tg := agent.NewTokenGuard(agMaxTok, agMaxCost)
-		ag.SetTokenGuard(tg)
-		ag.SetGuard(agent.NewCompositeGuard(rootGuard, tg))
-		pricing, pricingKnown := agent.ResolvePricing(provider.GetModel(), cfg.Settings.Pricing)
-		ag.SetPricing(pricing, pricingKnown)
-	}
+	wireAgentBudget(ag, cfg, agentDef, provider.GetModel(), rootGuard)
 	wireAgentRetryAndRateLimit(ag, cfg, agentDef, rateLimiters)
 	if registrar != nil {
 		registrar([]debug.Attachable{ag})

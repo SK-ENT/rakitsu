@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>rakitsu-ask: native subagent to a serve chat session</title>
+<style>/*@CSS@*/</style>
+</head>
+<body>
+<header class="top">
+  <nav><a href="index.html">All demos</a> <a href="wake.html">Wake timer</a> <a href="messaging.html">Session messaging</a></nav>
+  <button id="theme-toggle" type="button">Dark mode</button>
+</header>
+<main>
+<h1>rakitsu-ask</h1>
+<p class="lead">A native Claude Code subagent asks a rakitsu chat session a question, gets the reply back as fenced, untrusted text, and keeps the same conversation next time. The client is one Python file with no dependencies.</p>
+<p class="small">Source of the facts: <code>scripts/rakitsu-ask</code> and <code>docs/native-subagent-bridge.md</code> (from the native bridge change). The step diagram is explanation, <span class="badge sim">diagram</span>; the terminal recording further down is the real script against a real local <code>rakitsu serve</code> with a fake model, <span class="badge real">real run</span>.</p>
+
+<h2>Step through it</h2>
+<div class="card" id="stepper"></div>
+
+<h2>Exit codes</h2>
+<div class="card tablewrap">
+<table>
+<thead><tr><th>Exit</th><th>Meaning</th><th>Seen in the recording</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>Reply completed (<code>ok</code>), <code>--no-wait</code> delivered, or <code>--list</code> worked</td><td>yes</td></tr>
+<tr><td>2</td><td>Usage, name lookup, config, or security refusal (this includes the depth guard)</td><td>yes (depth guard, unknown name)</td></tr>
+<tr><td>3</td><td>Turn error or interrupted turn (<code>turn_error</code>)</td><td>no, from the script and its unit tests</td></tr>
+<tr><td>4</td><td><code>waited:false</code> (<code>timeout</code>), deadline or transport timeout, or HTTP 429. No retry.</td><td>no, from the script and its unit tests</td></tr>
+<tr><td>5</td><td>Transport or protocol error: 401/403, other HTTP errors, redirects, bad JSON, body over 1 MiB</td><td>yes (wrong token gives 401)</td></tr>
+</tbody></table>
+</div>
+
+<h2>Real recording</h2>
+<p class="small">Recorded by <code>docs/interactive/tools/record_ask.py</code>. The model is a fake local server that echoes your text and counts the user messages it has seen, so session reuse is visible. Waits are shortened; output is not edited.</p>
+<div class="card" id="player"></div>
+
+<h2>Read more</h2>
+<ul>
+<li><a href="../native-subagent-bridge.md">Native subagent bridge (threat model, setup, limits)</a> (added by the bridge change)</li>
+<li><a href="../reference/">Reference pages</a></li>
+<li><a href="../SECURITY.md">Security</a></li>
+</ul>
+</main>
+<script type="application/json" id="cast-ask">/*@CAST:ask@*/</script>
+<script>/*@JS@*/</script>
+<script>
+(function () {
+  var A = [
+    { id: 'sub', label: 'Claude Code subagent', sub: 'native, trusted caller' },
+    { id: 'ask', label: 'rakitsu-ask', sub: 'Python, stdlib only' },
+    { id: 'srv', label: 'rakitsu serve', sub: '127.0.0.1, API token' },
+    { id: 'mod', label: 'chat session + model', sub: 'session_msg.enabled' }
+  ];
+  var scenarios = {
+    first: { tab: 'First call', title: 'First call: no session yet', steps: [
+      { from: 'sub', to: 'ask', title: 'Runs the command', text: 'rakitsu-ask bridge-reviewer "Review this: 2 + 2 = 5"', state: { depth: 0, session: 'none' } },
+      { from: 'ask', to: 'ask', title: 'Depth guard', text: 'RAKITSU_ASK_DEPTH is 0 and the limit is 3 (default), so the call may go on. This check runs before the token file is read and before any request.', tone: 'ok' },
+      { from: 'ask', to: 'ask', title: 'Read the token file', text: '~/.rakitsu/ask.token must be a regular file you own with mode 0600. The token is never taken from argv.' },
+      { from: 'ask', to: 'srv', title: 'GET /api/configs', text: 'Bearer token on every request. The name must match exactly one config and that config must be interactive.' },
+      { from: 'ask', to: 'ask', title: 'Look in the session cache', text: 'Key is "<url>|<config id>" in ~/.rakitsu/ask-sessions.json, read under a file lock. Nothing cached.', state: { session: 'none cached' } },
+      { from: 'ask', to: 'srv', title: 'POST /api/chat/start', text: '{"config_id": "..."} returns a session id. It is saved to the cache (private file, atomic write).', state: { session: 'chat-... (new)' } },
+      { from: 'ask', to: 'srv', title: 'POST /api/sessions/{id}/message', text: 'text, from_name "claude-code-subagent;depth=1", wait true, timeout_ms. The server blocks until the turn ends or the wait runs out (at most 120000 ms).', state: { depth_sent: 1 } },
+      { from: 'srv', to: 'mod', title: 'The turn runs', text: 'The target config must have opted in with settings.session_msg.enabled: true. The sender name is an unverified claim.' },
+      { from: 'srv', to: 'ask', title: 'Reply comes back', text: '{"waited": true, "reply": "...", "interrupted": false}', tone: 'ok' },
+      { from: 'ask', to: 'sub', title: 'Fenced, untrusted output', text: 'stdout is one block: <<<RAKITSU_REPLY untrusted="true" session="..." status="ok" truncated="false">>> ... <<<END_RAKITSU_REPLY>>>. stderr says the reply is untrusted data. Exit 0.', tone: 'ok', state: { exit: 0 } }
+    ]},
+    reuse: { tab: 'Second call', title: 'Second call: the session is reused', steps: [
+      { from: 'sub', to: 'ask', title: 'Runs the command again', text: 'rakitsu-ask bridge-reviewer "And is 2 + 3 = 5?"', state: { depth: 0, session: 'cached' } },
+      { from: 'ask', to: 'srv', title: 'GET /api/configs', text: 'Same lookup as before.' },
+      { from: 'ask', to: 'ask', title: 'Cache hit', text: 'The key is in the cache, so no POST /api/chat/start. This is why the model sees the whole conversation.', tone: 'ok', state: { session: 'chat-... (reused)' } },
+      { from: 'ask', to: 'srv', title: 'POST /api/sessions/{id}/message', text: 'One request. In the recording the fake model answers "This conversation now has 2 user message(s)".', tone: 'ok', state: { 'user messages': 2 } },
+      { from: 'ask', to: 'ask', title: 'If the cached id is gone', text: 'A 404 (for example after a server restart) causes one fresh session start and one new message attempt. Other errors are not retried. The old history is not resumed.', tone: 'warn' },
+      { from: 'ask', to: 'ask', title: 'Force a fresh start', text: '--new always starts a new session. It does not stop or delete the old one on the server.', tone: 'warn' }
+    ]},
+    nowait: { tab: '--no-wait', title: '--no-wait: fire and forget', steps: [
+      { from: 'sub', to: 'ask', title: 'Runs with --no-wait', text: 'rakitsu-ask --no-wait bridge-reviewer "FYI: build finished"', state: { wait: false } },
+      { from: 'ask', to: 'srv', title: 'POST .../message with wait false', text: 'No timeout_ms is sent. The 16 KiB limit and the pair rate limit (6 per 30 seconds) still apply.' },
+      { from: 'srv', to: 'mod', title: 'Message is queued', text: 'The session starts its own turn. Nobody waits for it.' },
+      { from: 'srv', to: 'ask', title: 'Only a status comes back', text: '{"status": "delivered"} (or "mailboxed" when the target is not live).', tone: 'ok' },
+      { from: 'ask', to: 'sub', title: 'One line, exit 0', text: 'rakitsu-ask: delivered session=... (no reply requested; it lands in the session transcript). The reply is in the session transcript or the web UI, not here.', tone: 'ok', state: { exit: 0 } },
+      { from: 'ask', to: 'ask', title: 'Not allowed with --list', text: '--no-wait cannot be combined with --list (exit 2).', tone: 'warn' }
+    ]},
+    depth: { tab: 'Depth guard', title: 'Depth guard: stop at the maximum depth', steps: [
+      { from: 'sub', to: 'ask', title: 'Caller at depth 0', text: 'RAKITSU_ASK_DEPTH unset means 0. Allowed. The wrapper sends from_name "claude-code-subagent;depth=1".', tone: 'ok', state: { depth: 0, max: 3 } },
+      { from: 'sub', to: 'ask', title: 'Caller at depth 2', text: 'Allowed (2 is below 3). The wrapper sends depth=3. This is what the recording shows.', tone: 'ok', state: { depth: 2 } },
+      { from: 'sub', to: 'ask', title: 'Caller at depth 3', text: 'Refused: depth is at or above the maximum. Message: "rakitsu-ask: depth guard refused call". Exit 2.', tone: 'bad', state: { depth: 3, exit: 2 } },
+      { from: 'ask', to: 'ask', title: 'Nothing is sent', text: 'The check runs before the token is read and before any HTTP request. In the recording the refusal also happens with nothing listening on the port.', tone: 'ok' },
+      { from: 'ask', to: 'ask', title: 'Changing the limit', text: '--max-depth N or RAKITSU_ASK_MAX_DEPTH, valid range 1 to 8 (hard cap 8). Outside the range: exit 2.' },
+      { from: 'ask', to: 'ask', title: 'Honest limit', text: 'Best effort. The wrapper starts no children, so a caller that starts one must set RAKITSU_ASK_DEPTH to depth + 1 itself. Rakitsu cannot see the environment and from_name is unverified, so the server cannot enforce this. Removing reverse-call tools from the target config is the main loop protection.', tone: 'warn' }
+    ]},
+    errors: { tab: 'Errors', title: 'What goes wrong, and the exit code', steps: [
+      { from: 'ask', to: 'sub', title: 'Unknown or ambiguous name', text: '"rakitsu-ask: config missing, ambiguous, or non-interactive". Exit 2.', tone: 'bad', state: { exit: 2 } },
+      { from: 'srv', to: 'ask', title: 'Wrong token: HTTP 401', text: '"rakitsu-ask: HTTP request refused". Exit 5. No server body is ever printed.', tone: 'bad', state: { exit: 5 } },
+      { from: 'srv', to: 'ask', title: 'Rate limited: HTTP 429', text: 'More than 6 messages in 30 seconds between the same pair. "rate limited; no retry". Exit 4.', tone: 'warn', state: { exit: 4 } },
+      { from: 'srv', to: 'ask', title: 'Wait ran out: waited false', text: 'Reply block with status="timeout". Exit 4. The message may still have been delivered; the wrapper does not poll or resend.', tone: 'warn', state: { exit: 4 } },
+      { from: 'srv', to: 'ask', title: 'Turn error or interrupted', text: 'Reply block with status="turn_error". Exit 3.', tone: 'bad', state: { exit: 3 } },
+      { from: 'ask', to: 'sub', title: 'Reply is data, not instructions', text: 'Control characters are stripped, the closing marker is neutralised, text is cut at --max-bytes (default 20000) with truncated="true". Fencing reduces risk; it does not remove prompt injection.', tone: 'warn' }
+    ]}
+  };
+  var st = RK.Stepper(document.getElementById('stepper'), { actors: A, scenarios: scenarios });
+  var cp = RK.CastPlayer(document.getElementById('player'), RK.loadCast('cast-ask'));
+  window.__page = { stepper: st, cast: cp };
+})();
+</script>
+</body>
+</html>

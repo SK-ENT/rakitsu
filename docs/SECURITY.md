@@ -279,6 +279,27 @@ subprocesses it spawns so an agent cannot read it back.
   env var values in `localStorage`; keys saved there by older versions are
   removed on next load.
 
+## Outbound HTTP: wake checks and the A2A client
+
+Behavior changes in v0.3.0-alpha.20. They can break a config that used to work.
+
+- **Wake `http_status` / `http_json` checks treat a redirect as an error.** They
+  never follow one; a 301/302/307/308 answer makes the check report `unknown`.
+- **The A2A client follows only same-origin redirects** (same scheme and
+  host:port, at most 5) and drops `Authorization` on each. A redirect to
+  another origin fails with `cross-origin redirect refused`.
+- **Neither client honors `HTTP_PROXY` / `HTTPS_PROXY`.** They connect directly,
+  so a proxy cannot be used to bypass the address checks.
+- **URLs with userinfo (`http://user:pw@host/`) are rejected.** A wake check
+  fails the config load; the A2A tool is skipped with
+  `URL must not contain credentials`. Use the tool's `api_key` instead.
+- The destination address is validated when the connection is made, and that
+  same address is dialed. Loopback, private, link-local, CGNAT, multicast,
+  unspecified and cloud-metadata addresses are refused unless listed
+  (`allow.url_hosts` for wake; the configured `url` host:port for A2A).
+
+User-facing summary: [docs/reference/security.md](reference/security.md#network-rules).
+
 ## Telemetry & session logs
 
 Session files live in `~/.rakitsu/sessions/` (directory `0700`, files `0600`,

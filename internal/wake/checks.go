@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/SK-ENT/rakitsu/internal/netsafe"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,11 +19,8 @@ import (
 
 type CheckFunc func(ctx context.Context, c config.WakeCheck) Observation
 
-// NewBuiltinChecks builds the real checks. workdir confines file checks. hc may be nil.
+// NewBuiltinChecks builds the real checks. workdir confines file checks. hc may be nil (production: a netsafe client is built per check).
 func NewBuiltinChecks(cfg config.WakeConfig, workdir string, hc *http.Client) CheckFunc {
-	if hc == nil {
-		hc = &http.Client{}
-	}
 	return func(ctx context.Context, c config.WakeCheck) Observation {
 		switch c.Type {
 		case "file_mtime", "file_contains":
@@ -110,9 +107,9 @@ func isPathUnder(path, base string) bool {
 
 func checkHTTP(ctx context.Context, c config.WakeCheck, hc *http.Client, allowedHosts []string) Observation {
 	// Validate URL
-	u, err := url.Parse(c.URL)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return Observation{Err: errors.New("invalid URL")}
+	u, err := netsafe.ValidateURL(c.URL)
+	if err != nil {
+		return Observation{Err: fmt.Errorf("invalid URL: %w", err)}
 	}
 
 	// Check host is allowed
@@ -133,18 +130,19 @@ func checkHTTP(ctx context.Context, c config.WakeCheck, hc *http.Client, allowed
 		return Observation{Err: fmt.Errorf("request creation: %w", err)}
 	}
 
-	// Create a custom client with redirect checking
-	client := &http.Client{
-		Timeout: timeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) > 2 {
-				return errors.New("too many redirects")
-			}
-			if !hostAllowed(allowedHosts, req.URL.Host) {
-				return errors.New("redirect to disallowed host")
-			}
-			return nil
-		},
+	// Production: a client that refuses internal addresses at dial time
+	// unless allow.url_hosts lists them, and never follows redirects. An
+	// injected client keeps its transport but gets the same redirect and
+	// deadline policy.
+	var client *http.Client
+	if hc != nil {
+		cp := *hc
+		cp.Timeout = timeout
+		cp.CheckRedirect = netsafe.RedirectChecker(netsafe.RedirectNone)
+		client = &cp
+	} else {
+		client = netsafe.NewClient(netsafe.Options{Allow: allowedHosts, Timeout: timeout})
+		defer client.CloseIdleConnections()
 	}
 
 	resp, err := client.Do(req)

@@ -1,0 +1,77 @@
+name: log-watch
+version: "1.0"
+description: Demo monitor. Free checks every few seconds; the fake model only runs when the log shows ERROR.
+interactive: true
+
+settings:
+  default_provider: fake
+  providers:
+    fake:
+      type: openai
+      api_key: demo-not-a-secret
+      base_url: http://127.0.0.1:4010/v1
+      default_model: fake-model
+  memory:
+    enabled: true
+    conversation:
+      enabled: true
+  wake:
+    enabled: true
+    interval_seconds: 10          # demo values: short, so the recording is short
+    min_interval_seconds: 10
+    max_interval_seconds: 20
+    backoff_factor: 1.5
+    jitter_percent: 0
+    max_turns_per_hour: 2
+    turn_timeout_seconds: 60
+    heartbeat_stale_seconds: 30
+    max_tasks_per_hour: 3
+    max_concurrent_tasks: 1
+    task_timeout_seconds: 60
+    allow:
+      paths: [./logs]
+      configs:
+        - name: summary-note
+          path: tasks/summary-note.yaml
+          task: Write a one-line note about the log alarm.
+          params:
+            topic: { type: enum, enum: [log] }
+    checks:
+      - name: log-errors
+        type: file_contains        # alarm if the file contains the text
+        path: ./logs/app.log
+        contains: "ERROR"
+    alerts:
+      rate_per_hour: 20
+      retry: { max_attempts: 3, backoff_seconds: 5 }
+      sinks:
+        - name: phone
+          type: webhook
+          url_env: ALERT_WEBHOOK_URL
+          allow_hosts: [127.0.0.1]
+          min_severity: warn
+        - name: phone-push
+          type: ntfy
+          url_env: ALERT_NTFY_URL
+          allow_hosts: [127.0.0.1]
+          min_severity: warn
+        - name: pager
+          type: webhook
+          url_env: ALERT_PAGER_URL
+          allow_hosts: [127.0.0.1]
+          min_severity: critical      # a warn alert does not reach this sink
+
+agents:
+  - name: watcher
+    role: worker
+    model: fake-model
+    system_prompt: |
+      You are woken by a timer, never by a person. A message starting with
+      [TIMER-SOURCED TURN] lists check results. Report what you see.
+    tools: []
+    max_iterations: 6
+
+orchestrator:
+  strategy: ReAct
+  agents:
+    - watcher
