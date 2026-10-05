@@ -1,6 +1,7 @@
 {
- "default": "v0.3.0-alpha.19",
+ "default": "v0.3.0-beta.3",
  "versions": [
+  "v0.3.0-beta.3",
   "v0.3.0-alpha.19",
   "v0.3.0-alpha.14",
   "v0.3.0-alpha.13",

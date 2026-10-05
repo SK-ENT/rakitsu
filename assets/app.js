@@ -30,7 +30,7 @@ function L(o){return o&&typeof o==="object"?(o[st.lang]||o.en):o;}
 function T(a,b){return st.lang==="ja"?b:a;}
 function docOf(v){return Object.prototype.hasOwnProperty.call(COVERS,v)?COVERS[v]:v;}
 function data(v){return DATA[docOf(v)]||{features:[],meta:{}};}
-function tagKey(t){var m=t.match(/\d+/g)||[];return m.map(Number);}
+function tagKey(t){var m=/^v(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)\.(\d+))?$/.exec(t);if(!m)return [0,0,0,0,0];var rank={alpha:0,beta:1,rc:2};return [+m[1],+m[2],+m[3],m[4]?rank[m[4]]:3,+(m[5]||0)];}
 function tagCmp(a,b){var x=tagKey(a),y=tagKey(b);for(var i=0;i<Math.max(x.length,y.length);i++){var d=(y[i]||0)-(x[i]||0);if(d)return d;}return 0;}
 /* Version gating: an item with a needs key is shown only when the docs for the selected release have that feature id. */
 function has(need){var d=data(st.ver);if(!need)return true;
@@ -424,7 +424,7 @@ var WORKS=[
  {en:"Sessions saved as JSONL, with resume and fork.",ja:"JSONL で保存されるセッション。再開とフォークに対応。"},
  {en:"MCP client and server, A2A client and server, ACP server, within the limits listed above.",ja:"MCP のクライアントとサーバー、A2A のクライアントとサーバー、ACP サーバー。上に挙げた制限の範囲で。"}];
 var ROUGH=[
- {en:"Alpha software. Interfaces and behavior may change without notice.",ja:"アルファ版のソフトウェアです。インターフェースや動作は予告なく変わることがあります。"},
+ {en:"Pre-release software. Interfaces and behavior may change without notice.",ja:"プレリリース版のソフトウェアです。インターフェースや動作は予告なく変わることがあります。"},
  {en:"Hierarchical and PlanAndExecute have no separate implementation yet.",ja:"Hierarchical と PlanAndExecute には、まだ独自の実装がありません。"},
  {en:"The local_restricted command allowlist is a guard rail, not a security boundary. Use Docker for untrusted work.",ja:"local_restricted のコマンド許可リストはガードレールであり、セキュリティ境界ではありません。信頼できない処理には Docker を使ってください。"},
  {en:"Wake timer and monitors are experimental. A multi-day live run is still in progress.",ja:"ウェイクタイマーとモニターは実験的機能です。数日間の実運用での検証は進行中です。"},
@@ -471,7 +471,7 @@ function footer(ver){
  var p3=el("div");p3.appendChild(document.createTextNode(T("Release ","リリース ")+ver+": "));
  ["LICENSE","NOTICE"].forEach(function(n,i){var a=el("a",null,n);a.href=REPO+"/blob/"+ver+"/"+n;a.target="_blank";a.rel="noopener";if(i)p3.appendChild(document.createTextNode(", "));p3.appendChild(a);});f.appendChild(p3);
  f.appendChild(el("div",null,T("Page assets: IBM Plex Sans and IBM Plex Mono under the SIL Open Font License 1.1, self-hosted (no third-party requests). Japanese text uses the fonts installed on your device. No JavaScript libraries; diagrams are inline SVG. Rakitsu's own third-party components and licenses are listed in the NOTICE file of the release.","ページの素材: IBM Plex Sans、IBM Plex Mono。いずれも SIL Open Font License 1.1 で、このサイトから配信します(外部への通信はありません)。日本語の表示には端末にインストールされているフォントを使います。JavaScript ライブラリは使っていません。図はインライン SVG です。Rakitsu 自体のサードパーティ部品とそのライセンスは、リリースの NOTICE ファイルに記載されています。")));
- f.appendChild(el("div",null,T("Rakitsu is alpha software. Interfaces and behavior may change without notice.","Rakitsu はアルファ版のソフトウェアです。インターフェースや動作は予告なく変わることがあります。")));
+ f.appendChild(el("div",null,T("Rakitsu is pre-release software. Interfaces and behavior may change without notice.","Rakitsu はプレリリース版のソフトウェアです。インターフェースや動作は予告なく変わることがあります。")));
 }
 function checkGate(){
  var old=$("gatenote");if(old)old.parentNode.removeChild(old);
@@ -511,7 +511,7 @@ function render(){
  var cs=section("can-do",{en:"What it can really do",ja:"実際にできること"},{en:"Every card is an example shipped in the repository. None of them is a claim of production use.",ja:"どのカードもリポジトリに同梱の例です。本番利用を示すものではありません。"});
  var cg=el("div","cards");CASES.forEach(function(c){if(!has(c[3]))return;var cd=el("div","card");var ch=el("h3",null,L(c[1]));var cid="card-"+(slug(c[0].split("/").pop().replace(/^\d+-/,"").replace(/^rakitsu\s+/,""))||"x");if(regDom(cid,"highlight",c[1],cd))ch.appendChild(linkBtn(cid));cd.appendChild(ch);cd.appendChild(el("p",null,L(c[2])));cd.appendChild(codeCell(c[0]));cg.appendChild(cd);});cs.appendChild(cg);g.appendChild(cs);
  link("works-today",T("Works today, still rough","動くもの、まだ粗いもの"));
- var ws=section("works-today",{en:"Works today, and what is still rough",ja:"今動くものと、まだ粗いもの"},{en:"Rakitsu is alpha software and is not production-ready.",ja:"Rakitsu はアルファ版のソフトウェアで、本番利用の準備はできていません。"});
+ var ws=section("works-today",{en:"Works today, and what is still rough",ja:"今動くものと、まだ粗いもの"},{en:"Rakitsu is pre-release software and is not production-ready.",ja:"Rakitsu はプレリリース版のソフトウェアで、本番利用の準備はできていません。"});
  var tw=el("div","two");var a1=el("div");a1.appendChild(el("h3","okh",T("Works today","今動くもの")));var l1=el("ul");WORKS.forEach(function(x,i){var li=el("li",null,L(x));var wid="works-"+WORKS_IDS[i];if(regDom(wid,"highlight",x,li))li.appendChild(linkBtn(wid));l1.appendChild(li);});a1.appendChild(l1);
  var a2=el("div");a2.appendChild(el("h3","badh",T("Still rough","まだ粗いもの")));var l2=el("ul");ROUGH.forEach(function(x,i){if(!has(ROUGH_NEEDS[ROUGH_IDS[i]]))return;var li=el("li",null,L(x));var rid2="rough-"+ROUGH_IDS[i];if(regDom(rid2,"highlight",x,li))li.appendChild(linkBtn(rid2));l2.appendChild(li);});a2.appendChild(l2);
  tw.appendChild(a1);tw.appendChild(a2);ws.appendChild(tw);g.appendChild(ws);
@@ -560,4 +560,3 @@ getJSON(BASE+"data/versions.json").then(function(vj){
  window.__rkLoaded=true;
 }).catch(showLoadError);
 })();
-
