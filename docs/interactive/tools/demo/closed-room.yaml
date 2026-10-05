@@ -1,0 +1,23 @@
+name: closed-room
+interactive: true
+interactive_overlay: false
+settings:
+  default_provider: fake
+  providers:
+    fake:
+      type: openai
+      api_key: demo-not-a-secret
+      base_url: http://127.0.0.1:4010/v1
+      default_model: fake-model
+  session_msg:
+    enabled: false          # this session does not accept messages from other sessions
+tools: []
+agents:
+  - name: sealed
+    role: worker
+    model: fake-model
+    tools: []
+    system_prompt: |
+      Answer briefly.
+    settings:
+      max_iterations: 3

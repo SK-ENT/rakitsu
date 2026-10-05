@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Messaging between sessions</title>
+<style>:root{
+  --bg:#f7f8fa;--panel:#fff;--ink:#1b1f27;--muted:#5b6475;--line:#d9dde5;
+  --accent:#2f5fd0;--accent-ink:#fff;--ok:#1f8a4c;--warn:#a86a00;--bad:#c0322b;--info:#2f5fd0;
+  --term-bg:#12141a;--term-ink:#d7dbe4;--term-dim:#7b8496;--term-green:#5fd08a;--term-cyan:#6cc6e8;--term-red:#ff7b72;
+  --chip:#eef1f6;
+}
+html[data-theme="dark"]{
+  --bg:#0f1218;--panel:#171b24;--ink:#e6e9ef;--muted:#9aa3b5;--line:#2a3140;
+  --accent:#6b94ff;--accent-ink:#0b1020;--ok:#4cc27d;--warn:#e0a53a;--bad:#ff7b72;--info:#6b94ff;
+  --term-bg:#0a0c10;--chip:#202636;
+}
+@media (prefers-color-scheme: dark){
+  html:not([data-theme="light"]){
+    --bg:#0f1218;--panel:#171b24;--ink:#e6e9ef;--muted:#9aa3b5;--line:#2a3140;
+    --accent:#6b94ff;--accent-ink:#0b1020;--ok:#4cc27d;--warn:#e0a53a;--bad:#ff7b72;--info:#6b94ff;
+    --term-bg:#0a0c10;--chip:#202636;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--accent)}
+code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+code{background:var(--chip);padding:.05em .35em;border-radius:4px;font-size:.92em}
+header.top{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+header.top nav{display:flex;gap:14px;flex-wrap:wrap;font-size:.95rem}
+main{max-width:980px;margin:0 auto;padding:16px}
+h1{font-size:1.6rem;margin:.4em 0 .2em}
+h2{font-size:1.2rem;margin:1.6em 0 .4em}
+p.lead{color:var(--muted);margin:.2em 0 1em}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin:12px 0}
+.badge{display:inline-block;font-size:.75rem;padding:.1em .55em;border-radius:99px;border:1px solid var(--line);color:var(--muted);background:var(--chip)}
+.badge.sim{color:var(--warn);border-color:var(--warn)}
+.badge.real{color:var(--ok);border-color:var(--ok)}
+button,select,input[type=number],input[type=text]{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:.4em .8em;min-height:40px}
+button{cursor:pointer}
+button:hover:not(:disabled){border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:default}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button[aria-pressed="true"],button.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.actors{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.actor{flex:1 1 130px;min-width:120px;border:2px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--panel);transition:border-color .25s,background .25s}
+.actor b{display:block;font-size:.92rem}
+.actor small{color:var(--muted)}
+.actor.from{border-color:var(--warn)}
+.actor.to{border-color:var(--ok)}
+.actor.from.to{border-color:var(--accent)}
+.steps{list-style:none;margin:8px 0;padding:0}
+.steps li{border-left:4px solid var(--line);padding:6px 10px;margin:6px 0;background:var(--panel);border-radius:0 8px 8px 0}
+.steps li.current{border-left-color:var(--accent);background:var(--chip)}
+.steps li.ok{border-left-color:var(--ok)}
+.steps li.warn{border-left-color:var(--warn)}
+.steps li.bad{border-left-color:var(--bad)}
+.steps .route{font-size:.8rem;color:var(--muted)}
+.steps .t{font-weight:600}
+.steps .d{color:var(--muted);font-size:.93rem;margin-top:2px;overflow-wrap:anywhere}
+.state{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.state span{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:2px 9px;font-size:.88rem}
+.state span b{font-weight:600}
+.caption{min-height:1.5em;color:var(--muted);font-size:.93rem}
+table{border-collapse:collapse;width:100%;font-size:.93rem}
+th,td{border-bottom:1px solid var(--line);text-align:left;padding:6px 8px;vertical-align:top}
+.tablewrap{overflow-x:auto}
+.term{background:var(--term-bg);color:var(--term-ink);border-radius:8px;padding:12px;margin:8px 0;height:360px;overflow:auto;font-size:12.5px;line-height:1.45;white-space:pre;tab-size:4}
+.term .dim{color:var(--term-dim)}
+.term .grn{color:var(--term-green)}
+.term .cyn{color:var(--term-cyan)}
+.term .red{color:var(--term-red)}
+.term .bld{font-weight:700}
+.term .cur{display:inline-block;width:.6em;background:var(--term-ink);opacity:.8;animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+input[type=range]{flex:1 1 160px;min-width:120px;min-height:28px}
+.small{font-size:.88rem;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:640px){
+  main{padding:12px}
+  .grid2{grid-template-columns:1fr}
+  .term{height:300px;font-size:11.5px}
+  .actor{flex:1 1 44%;min-width:0}
+  label{display:block;max-width:100%;min-width:0}
+  select,input[type=number],input[type=text]{max-width:100%;width:100%;box-sizing:border-box}
+  pre,code,.actor b,.actor small{overflow-wrap:anywhere}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+.sr{position:absolute;left:-9999px}
+
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:6px 0}
+.row label{display:flex;gap:6px;align-items:center;font-size:.92rem}
+.sess{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:8px 0}
+.sess .s{border:2px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--panel)}
+.sess .s.open{border-color:var(--ok)}
+.sess .s.closed{border-color:var(--bad)}
+pre.out{background:var(--term-bg);color:var(--term-ink);border-radius:8px;padding:10px;height:220px;overflow:auto;font-size:12.5px;margin:6px 0;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<header class="top">
+  <nav><a href="index.html">All demos</a> <a href="ask.html">rakitsu-ask</a> <a href="wake.html">Wake timer</a></nav>
+  <button id="theme-toggle" type="button">Dark mode</button>
+</header>
+<main>
+<h1>Messaging between sessions</h1>
+<p class="lead">One live session can send a message into another. The target must have opted in, the message starts a normal turn there, and a pair of sessions cannot ping-pong forever.</p>
+<p class="small">The playground is a <span class="badge sim">simulation</span> of <code>deliverMessage</code> and <code>handleSessionMessage</code> in <code>internal/server/session_message.go</code> (same order of checks, same status names and HTTP codes). The recording at the bottom is a <span class="badge real">real run</span> against a local serve, and the playground can replay its main cases.</p>
+
+<h2>Step through</h2>
+<div class="card" id="stepper"></div>
+
+<h2>Playground</h2>
+<div class="card">
+  <div class="sess" id="sess"></div>
+  <div class="row">
+    <label>From <select id="p-from"><option value="C">session C</option><option value="X">no session id</option></select></label>
+    <label>To <select id="p-to"><option value="A">session A (opted in)</option><option value="B">session B (not opted in)</option><option value="N">no-such-session</option></select></label>
+    <label><input type="checkbox" id="p-wait"> wait for the reply</label>
+    <label>Target turn takes <select id="p-dur"><option value="2">2 s</option><option value="200">200 s</option></select></label>
+  </div>
+  <div class="row">
+    <label>Text <select id="p-text"><option value="ok">short text</option><option value="empty">empty text</option><option value="big">17 KiB of text</option></select></label>
+    <label><input type="checkbox" id="p-token"> server has an API token and the sender sends none</label>
+  </div>
+  <div class="row">
+    <button id="p-send" class="primary" type="button">Send</button>
+    <button id="p-burst" type="button">Send 7 quickly</button>
+    <button id="p-busy" type="button">Start a long turn in A</button>
+    <button id="p-fin" type="button">Finish A's turn</button>
+    <button id="p-t10" type="button">Wait 10 s</button>
+    <button id="p-reset" type="button">Reset</button>
+  </div>
+  <p class="small" id="p-clock" aria-live="polite"></p>
+  <pre class="out mono" id="p-log" role="log" aria-label="Simulated requests" tabindex="0"></pre>
+  <div class="row"><button id="p-replay" type="button">Replay the recorded cases</button></div>
+</div>
+
+<h2>Rules in order</h2>
+<div class="card">
+<ol>
+<li>Auth: if the server has <code>RAKITSU_API_TOKEN</code> (or <code>RAKITSU_SESSION_MSG_TOKEN</code>) set, the request needs that bearer token, else 401.</li>
+<li>Body: text is required (400) and at most 16 KiB (413). With <code>wait</code>, <code>timeout_ms</code> defaults to 30000 and is clamped to 120000.</li>
+<li>Rate limit: at most 6 tries per 30 seconds between the same pair of sessions, counted before any other check (429). Busy and refused tries count too.</li>
+<li>Target lookup: unknown id gives 404 (or "mailboxed" for a known external mailbox).</li>
+<li>Opt-in: the target config needs <code>settings.session_msg.enabled: true</code>, else rejected (403).</li>
+<li>Queue: a running turn is never interrupted. One message may wait behind it; if that slot is taken the answer is busy (409).</li>
+<li>With <code>wait</code> the server blocks for the turn and returns the reply; if the wait runs out it answers <code>waited: false</code> and the turn still finishes in the background.</li>
+</ol>
+<p class="small"><code>from_name</code> and <code>from_session_id</code> are claimed by the sender and not verified. In the receiving transcript the message is shown as coming from another session. Agents get the same ability through the <code>send_message</code> and <code>list_sessions</code> tools. See <a href="../native-subagent-bridge.md">the bridge doc</a> and <a href="../reference/">reference pages</a>.</p>
+</div>
+
+<h2>Real recording</h2>
+<p class="small">Recorded by <code>docs/interactive/tools/record_msg.py</code>. Three live chat sessions: A and C opted in, B did not. Note the 409 answers in the last burst: session A was still busy with the earlier fire-and-forget message, and those tries count toward the 6.</p>
+<div class="card" id="player"></div>
+</main>
+<script type="application/json" id="cast-msg">{"version":1,"title":"session messaging between two live sessions","width":100,"height":28,"events":[[0.5,"o","\u001b[2m# three live chat sessions. A and C opted in (session_msg.enabled), B did not\u001b[0m\r\n"],[0.9,"o","\u001b[32m$ \u001b[0m"],[0.925,"o","c"],[0.95,"o","u"],[0.975,"o","r"],[1.0,"o","l"],[1.025,"o"," "],[1.05,"o","-"],[1.075,"o","s"],[1.1,"o"," "],[1.125,"o","h"],[1.15,"o","t"],[1.175,"o","t"],[1.2,"o","p"],[1.225,"o",":"],[1.25,"o","/"],[1.275,"o","/"],[1.3,"o","1"],[1.325,"o","2"],[1.35,"o","7"],[1.375,"o","."],[1.4,"o","0"],[1.425,"o","."],[1.45,"o","0"],[1.475,"o","."],[1.5,"o","1"],[1.525,"o",":"],[1.55,"o","9"],[1.575,"o","1"],[1.6,"o","0"],[1.625,"o","3"],[1.65,"o","/"],[1.675,"o","a"],[1.7,"o","p"],[1.725,"o","i"],[1.75,"o","/"],[1.775,"o","s"],[1.8,"o","e"],[1.825,"o","s"],[1.85,"o","s"],[1.875,"o","i"],[1.9,"o","o"],[1.925,"o","n"],[1.95,"o","s"],[1.975,"o","/"],[2.0,"o","l"],[2.025,"o","i"],[2.05,"o","v"],[2.075,"o","e"],[2.375,"o","\r\n"],[2.775,"o","[{\"id\":\"SESSION_A\",\"name\":\"reviewer\",\"location\":\"local\",\"kind\":\"chat\",\"status\":\"running\",\"accepts_messages\":true},{\"id\":\"SESSION_B\",\"name\":\"sealed\",\"location\":\"local\",\"kind\":\"chat\",\"status\":\"running\",\"accepts_messages\":false},{\"id\":\"SESSION_C\",\"name\":\"reviewer\",\"location\":\"local\",\"kind\":\"chat\",\"status\":\"running\",\"accepts_messages\":true}]\r\n\r\n"],[3.275,"o","\u001b[2m# C sends to A and waits for A's turn to finish\u001b[0m\r\n"],[3.675,"o","\u001b[32m$ \u001b[0m"],[3.7,"o","c"],[3.725,"o","u"],[3.75,"o","r"],[3.775,"o","l"],[3.8,"o"," "],[3.825,"o","-"],[3.85,"o","s"],[3.875,"o"," "],[3.9,"o","-"],[3.925,"o","X"],[3.95,"o"," "],[3.975,"o","P"],[4.0,"o","O"],[4.025,"o","S"],[4.05,"o","T"],[4.075,"o"," "],[4.1,"o","h"],[4.125,"o","t"],[4.15,"o","t"],[4.175,"o","p"],[4.2,"o",":"],[4.225,"o","/"],[4.25,"o","/"],[4.275,"o","1"],[4.3,"o","2"],[4.325,"o","7"],[4.35,"o","."],[4.375,"o","0"],[4.4,"o","."],[4.425,"o","0"],[4.45,"o","."],[4.475,"o","1"],[4.5,"o",":"],[4.525,"o","9"],[4.55,"o","1"],[4.575,"o","0"],[4.6,"o","3"],[4.625,"o","/"],[4.65,"o","a"],[4.675,"o","p"],[4.7,"o","i"],[4.725,"o","/"],[4.75,"o","s"],[4.775,"o","e"],[4.8,"o","s"],[4.825,"o","s"],[4.85,"o","i"],[4.875,"o","o"],[4.9,"o","n"],[4.925,"o","s"],[4.95,"o","/"],[4.975,"o","S"],[5.0,"o","E"],[5.025,"o","S"],[5.05,"o","S"],[5.075,"o","I"],[5.1,"o","O"],[5.125,"o","N"],[5.15,"o","_"],[5.175,"o","A"],[5.2,"o","/"],[5.225,"o","m"],[5.25,"o","e"],[5.275,"o","s"],[5.3,"o","s"],[5.325,"o","a"],[5.35,"o","g"],[5.375,"o","e"],[5.4,"o"," "],[5.425,"o","-"],[5.45,"o","d"],[5.475,"o"," "],[5.5,"o","'"],[5.525,"o","{"],[5.55,"o","\""],[5.575,"o","t"],[5.6,"o","e"],[5.625,"o","x"],[5.65,"o","t"],[5.675,"o","\""],[5.7,"o",":"],[5.725,"o","\""],[5.75,"o","H"],[5.775,"o","e"],[5.8,"o","l"],[5.825,"o","l"],[5.85,"o","o"],[5.875,"o"," "],[5.9,"o","f"],[5.925,"o","r"],[5.95,"o","o"],[5.975,"o","m"],[6.0,"o"," "],[6.025,"o","C"],[6.05,"o","\""],[6.075,"o",","],[6.1,"o","\""],[6.125,"o","f"],[6.15,"o","r"],[6.175,"o","o"],[6.2,"o","m"],[6.225,"o","_"],[6.25,"o","s"],[6.275,"o","e"],[6.3,"o","s"],[6.325,"o","s"],[6.35,"o","i"],[6.375,"o","o"],[6.4,"o","n"],[6.425,"o","_"],[6.45,"o","i"],[6.475,"o","d"],[6.5,"o","\""],[6.525,"o",":"],[6.55,"o","\""],[6.575,"o","S"],[6.6,"o","E"],[6.625,"o","S"],[6.65,"o","S"],[6.675,"o","I"],[6.7,"o","O"],[6.725,"o","N"],[6.75,"o","_"],[6.775,"o","C"],[6.8,"o","\""],[6.825,"o",","],[6.85,"o","\""],[6.875,"o","f"],[6.9,"o","r"],[6.925,"o","o"],[6.95,"o","m"],[6.975,"o","_"],[7.0,"o","n"],[7.025,"o","a"],[7.05,"o","m"],[7.075,"o","e"],[7.1,"o","\""],[7.125,"o",":"],[7.15,"o","\""],[7.175,"o","s"],[7.2,"o","e"],[7.225,"o","s"],[7.25,"o","s"],[7.275,"o","i"],[7.3,"o","o"],[7.325,"o","n"],[7.35,"o","-"],[7.375,"o","c"],[7.4,"o","\""],[7.425,"o",","],[7.45,"o","\""],[7.475,"o","w"],[7.5,"o","a"],[7.525,"o","i"],[7.55,"o","t"],[7.575,"o","\""],[7.6,"o",":"],[7.625,"o","t"],[7.65,"o","r"],[7.675,"o","u"],[7.7,"o","e"],[7.725,"o","}"],[7.75,"o","'"],[8.05,"o","\r\n"],[8.5,"o","{\"interrupted\":false,\"reply\":\"Fake model reply. This conversation now has 1 user message(s). You said: \\u003csession_message from_session=\\\"chat-472c3c8b-3a0b-4847-828a-\",\"status\":\"delivered\",\"waited\":true}\r\n"],[9.0,"o","\u001b[2m# fire and forget: only the delivery status comes back\u001b[0m\r\n"],[9.4,"o","\u001b[32m$ \u001b[0m"],[9.425,"o","c"],[9.45,"o","u"],[9.475,"o","r"],[9.5,"o","l"],[9.525,"o"," "],[9.55,"o","-"],[9.575,"o","s"],[9.6,"o"," "],[9.625,"o","-"],[9.65,"o","X"],[9.675,"o"," "],[9.7,"o","P"],[9.725,"o","O"],[9.75,"o","S"],[9.775,"o","T"],[9.8,"o"," "],[9.825,"o","h"],[9.85,"o","t"],[9.875,"o","t"],[9.9,"o","p"],[9.925,"o",":"],[9.95,"o","/"],[9.975,"o","/"],[10.0,"o","1"],[10.025,"o","2"],[10.05,"o","7"],[10.075,"o","."],[10.1,"o","0"],[10.125,"o","."],[10.15,"o","0"],[10.175,"o","."],[10.2,"o","1"],[10.225,"o",":"],[10.25,"o","9"],[10.275,"o","1"],[10.3,"o","0"],[10.325,"o","3"],[10.35,"o","/"],[10.375,"o","a"],[10.4,"o","p"],[10.425,"o","i"],[10.45,"o","/"],[10.475,"o","s"],[10.5,"o","e"],[10.525,"o","s"],[10.55,"o","s"],[10.575,"o","i"],[10.6,"o","o"],[10.625,"o","n"],[10.65,"o","s"],[10.675,"o","/"],[10.7,"o","S"],[10.725,"o","E"],[10.75,"o","S"],[10.775,"o","S"],[10.8,"o","I"],[10.825,"o","O"],[10.85,"o","N"],[10.875,"o","_"],[10.9,"o","A"],[10.925,"o","/"],[10.95,"o","m"],[10.975,"o","e"],[11.0,"o","s"],[11.025,"o","s"],[11.05,"o","a"],[11.075,"o","g"],[11.1,"o","e"],[11.125,"o"," "],[11.15,"o","-"],[11.175,"o","d"],[11.2,"o"," "],[11.225,"o","'"],[11.25,"o","{"],[11.275,"o","\""],[11.3,"o","t"],[11.325,"o","e"],[11.35,"o","x"],[11.375,"o","t"],[11.4,"o","\""],[11.425,"o",":"],[11.45,"o","\""],[11.475,"o","F"],[11.5,"o","Y"],[11.525,"o","I"],[11.55,"o"," "],[11.575,"o","o"],[11.6,"o","n"],[11.625,"o","l"],[11.65,"o","y"],[11.675,"o","\""],[11.7,"o",","],[11.725,"o","\""],[11.75,"o","f"],[11.775,"o","r"],[11.8,"o","o"],[11.825,"o","m"],[11.85,"o","_"],[11.875,"o","s"],[11.9,"o","e"],[11.925,"o","s"],[11.95,"o","s"],[11.975,"o","i"],[12.0,"o","o"],[12.025,"o","n"],[12.05,"o","_"],[12.075,"o","i"],[12.1,"o","d"],[12.125,"o","\""],[12.15,"o",":"],[12.175,"o","\""],[12.2,"o","S"],[12.225,"o","E"],[12.25,"o","S"],[12.275,"o","S"],[12.3,"o","I"],[12.325,"o","O"],[12.35,"o","N"],[12.375,"o","_"],[12.4,"o","C"],[12.425,"o","\""],[12.45,"o",","],[12.475,"o","\""],[12.5,"o","f"],[12.525,"o","r"],[12.55,"o","o"],[12.575,"o","m"],[12.6,"o","_"],[12.625,"o","n"],[12.65,"o","a"],[12.675,"o","m"],[12.7,"o","e"],[12.725,"o","\""],[12.75,"o",":"],[12.775,"o","\""],[12.8,"o","s"],[12.825,"o","e"],[12.85,"o","s"],[12.875,"o","s"],[12.9,"o","i"],[12.925,"o","o"],[12.95,"o","n"],[12.975,"o","-"],[13.0,"o","c"],[13.025,"o","\""],[13.05,"o","}"],[13.075,"o","'"],[13.375,"o","\r\n"],[13.825,"o","{\"status\":\"delivered\"}\r\n"],[14.325,"o","\u001b[2m# B did not opt in: refused (403), and no turn is started\u001b[0m\r\n"],[14.725,"o","\u001b[32m$ \u001b[0m"],[14.75,"o","c"],[14.775,"o","u"],[14.8,"o","r"],[14.825,"o","l"],[14.85,"o"," "],[14.875,"o","-"],[14.9,"o","s"],[14.925,"o"," "],[14.95,"o","-"],[14.975,"o","w"],[15.0,"o"," "],[15.025,"o","'"],[15.05,"o"," "],[15.075,"o","("],[15.1,"o","H"],[15.125,"o","T"],[15.15,"o","T"],[15.175,"o","P"],[15.2,"o"," "],[15.225,"o","%"],[15.25,"o","{"],[15.275,"o","h"],[15.3,"o","t"],[15.325,"o","t"],[15.35,"o","p"],[15.375,"o","_"],[15.4,"o","c"],[15.425,"o","o"],[15.45,"o","d"],[15.475,"o","e"],[15.5,"o","}"],[15.525,"o",")"],[15.55,"o","\\"],[15.575,"o","n"],[15.6,"o","'"],[15.625,"o"," "],[15.65,"o","-"],[15.675,"o","X"],[15.7,"o"," "],[15.725,"o","P"],[15.75,"o","O"],[15.775,"o","S"],[15.8,"o","T"],[15.825,"o"," "],[15.85,"o","h"],[15.875,"o","t"],[15.9,"o","t"],[15.925,"o","p"],[15.95,"o",":"],[15.975,"o","/"],[16.0,"o","/"],[16.025,"o","1"],[16.05,"o","2"],[16.075,"o","7"],[16.1,"o","."],[16.125,"o","0"],[16.15,"o","."],[16.175,"o","0"],[16.2,"o","."],[16.225,"o","1"],[16.25,"o",":"],[16.275,"o","9"],[16.3,"o","1"],[16.325,"o","0"],[16.35,"o","3"],[16.375,"o","/"],[16.4,"o","a"],[16.425,"o","p"],[16.45,"o","i"],[16.475,"o","/"],[16.5,"o","s"],[16.525,"o","e"],[16.55,"o","s"],[16.575,"o","s"],[16.6,"o","i"],[16.625,"o","o"],[16.65,"o","n"],[16.675,"o","s"],[16.7,"o","/"],[16.725,"o","S"],[16.75,"o","E"],[16.775,"o","S"],[16.8,"o","S"],[16.825,"o","I"],[16.85,"o","O"],[16.875,"o","N"],[16.9,"o","_"],[16.925,"o","B"],[16.95,"o","/"],[16.975,"o","m"],[17.0,"o","e"],[17.025,"o","s"],[17.05,"o","s"],[17.075,"o","a"],[17.1,"o","g"],[17.125,"o","e"],[17.15,"o"," "],[17.175,"o","-"],[17.2,"o","d"],[17.225,"o"," "],[17.25,"o","'"],[17.275,"o","{"],[17.3,"o","\""],[17.325,"o","t"],[17.35,"o","e"],[17.375,"o","x"],[17.4,"o","t"],[17.425,"o","\""],[17.45,"o",":"],[17.475,"o","\""],[17.5,"o","l"],[17.525,"o","e"],[17.55,"o","t"],[17.575,"o"," "],[17.6,"o","m"],[17.625,"o","e"],[17.65,"o"," "],[17.675,"o","i"],[17.7,"o","n"],[17.725,"o","\""],[17.75,"o",","],[17.775,"o","\""],[17.8,"o","f"],[17.825,"o","r"],[17.85,"o","o"],[17.875,"o","m"],[17.9,"o","_"],[17.925,"o","s"],[17.95,"o","e"],[17.975,"o","s"],[18.0,"o","s"],[18.025,"o","i"],[18.05,"o","o"],[18.075,"o","n"],[18.1,"o","_"],[18.125,"o","i"],[18.15,"o","d"],[18.175,"o","\""],[18.2,"o",":"],[18.225,"o","\""],[18.25,"o","S"],[18.275,"o","E"],[18.3,"o","S"],[18.325,"o","S"],[18.35,"o","I"],[18.375,"o","O"],[18.4,"o","N"],[18.425,"o","_"],[18.45,"o","C"],[18.475,"o","\""],[18.5,"o","}"],[18.525,"o","'"],[18.825,"o","\r\n"],[19.275,"o","{\"error\":\"session does not accept messages (settings.session_msg.enabled is false)\",\"status\":\"rejected\"}\r\n"],[19.305,"o"," (HTTP 403)\r\n"],[19.805,"o","\u001b[2m# unknown target: 404\u001b[0m\r\n"],[20.205,"o","\u001b[32m$ \u001b[0m"],[20.23,"o","c"],[20.255,"o","u"],[20.28,"o","r"],[20.305,"o","l"],[20.33,"o"," "],[20.355,"o","-"],[20.38,"o","s"],[20.405,"o"," "],[20.43,"o","-"],[20.455,"o","w"],[20.48,"o"," "],[20.505,"o","'"],[20.53,"o"," "],[20.555,"o","("],[20.58,"o","H"],[20.605,"o","T"],[20.63,"o","T"],[20.655,"o","P"],[20.68,"o"," "],[20.705,"o","%"],[20.73,"o","{"],[20.755,"o","h"],[20.78,"o","t"],[20.805,"o","t"],[20.83,"o","p"],[20.855,"o","_"],[20.88,"o","c"],[20.905,"o","o"],[20.93,"o","d"],[20.955,"o","e"],[20.98,"o","}"],[21.005,"o",")"],[21.03,"o","\\"],[21.055,"o","n"],[21.08,"o","'"],[21.105,"o"," "],[21.13,"o","-"],[21.155,"o","X"],[21.18,"o"," "],[21.205,"o","P"],[21.23,"o","O"],[21.255,"o","S"],[21.28,"o","T"],[21.305,"o"," "],[21.33,"o","h"],[21.355,"o","t"],[21.38,"o","t"],[21.405,"o","p"],[21.43,"o",":"],[21.455,"o","/"],[21.48,"o","/"],[21.505,"o","1"],[21.53,"o","2"],[21.555,"o","7"],[21.58,"o","."],[21.605,"o","0"],[21.63,"o","."],[21.655,"o","0"],[21.68,"o","."],[21.705,"o","1"],[21.73,"o",":"],[21.755,"o","9"],[21.78,"o","1"],[21.805,"o","0"],[21.83,"o","3"],[21.855,"o","/"],[21.88,"o","a"],[21.905,"o","p"],[21.93,"o","i"],[21.955,"o","/"],[21.98,"o","s"],[22.005,"o","e"],[22.03,"o","s"],[22.055,"o","s"],[22.08,"o","i"],[22.105,"o","o"],[22.13,"o","n"],[22.155,"o","s"],[22.18,"o","/"],[22.205,"o","n"],[22.23,"o","o"],[22.255,"o","-"],[22.28,"o","s"],[22.305,"o","u"],[22.33,"o","c"],[22.355,"o","h"],[22.38,"o","-"],[22.405,"o","s"],[22.43,"o","e"],[22.455,"o","s"],[22.48,"o","s"],[22.505,"o","i"],[22.53,"o","o"],[22.555,"o","n"],[22.58,"o","/"],[22.605,"o","m"],[22.63,"o","e"],[22.655,"o","s"],[22.68,"o","s"],[22.705,"o","a"],[22.73,"o","g"],[22.755,"o","e"],[22.78,"o"," "],[22.805,"o","-"],[22.83,"o","d"],[22.855,"o"," "],[22.88,"o","'"],[22.905,"o","{"],[22.93,"o","\""],[22.955,"o","t"],[22.98,"o","e"],[23.005,"o","x"],[23.03,"o","t"],[23.055,"o","\""],[23.08,"o",":"],[23.105,"o","\""],[23.13,"o","h"],[23.155,"o","i"],[23.18,"o","\""],[23.205,"o","}"],[23.23,"o","'"],[23.53,"o","\r\n"],[23.98,"o","{\"error\":\"no-such-session: session not found\",\"status\":\"not_found\"}\r\n"],[24.01,"o"," (HTTP 404)\r\n"],[24.51,"o","\u001b[2m# loop protection: at most 6 tries per 30 seconds per pair. A busy target answers 409, and those tries count too\u001b[0m\r\n"],[24.91,"o","\u001b[32m$ \u001b[0m"],[24.935,"o","f"],[24.96,"o","o"],[24.985,"o","r"],[25.01,"o"," "],[25.035,"o","i"],[25.06,"o"," "],[25.085,"o","i"],[25.11,"o","n"],[25.135,"o"," "],[25.16,"o","1"],[25.185,"o"," "],[25.21,"o","2"],[25.235,"o"," "],[25.26,"o","3"],[25.285,"o"," "],[25.31,"o","4"],[25.335,"o"," "],[25.36,"o","5"],[25.385,"o"," "],[25.41,"o","6"],[25.435,"o"," "],[25.46,"o","7"],[25.485,"o",";"],[25.51,"o"," "],[25.535,"o","d"],[25.56,"o","o"],[25.585,"o"," "],[25.61,"o","c"],[25.635,"o","u"],[25.66,"o","r"],[25.685,"o","l"],[25.71,"o"," "],[25.735,"o","-"],[25.76,"o","s"],[25.785,"o"," "],[25.81,"o","-"],[25.835,"o","o"],[25.86,"o"," "],[25.885,"o","/"],[25.91,"o","d"],[25.935,"o","e"],[25.96,"o","v"],[25.985,"o","/"],[26.01,"o","n"],[26.035,"o","u"],[26.06,"o","l"],[26.085,"o","l"],[26.11,"o"," "],[26.135,"o","-"],[26.16,"o","w"],[26.185,"o"," "],[26.21,"o","\""],[26.235,"o","m"],[26.26,"o","e"],[26.285,"o","s"],[26.31,"o","s"],[26.335,"o","a"],[26.36,"o","g"],[26.385,"o","e"],[26.41,"o"," "],[26.435,"o","$"],[26.46,"o","i"],[26.485,"o"," "],[26.51,"o","-"],[26.535,"o",">"],[26.56,"o"," "],[26.585,"o","H"],[26.61,"o","T"],[26.635,"o","T"],[26.66,"o","P"],[26.685,"o"," "],[26.71,"o","%"],[26.735,"o","{"],[26.76,"o","h"],[26.785,"o","t"],[26.81,"o","t"],[26.835,"o","p"],[26.86,"o","_"],[26.885,"o","c"],[26.91,"o","o"],[26.935,"o","d"],[26.96,"o","e"],[26.985,"o","}"],[27.01,"o","\\"],[27.035,"o","n"],[27.06,"o","\""],[27.085,"o"," "],[27.11,"o","-"],[27.135,"o","X"],[27.16,"o"," "],[27.185,"o","P"],[27.21,"o","O"],[27.235,"o","S"],[27.26,"o","T"],[27.285,"o"," "],[27.31,"o","h"],[27.335,"o","t"],[27.36,"o","t"],[27.385,"o","p"],[27.41,"o",":"],[27.435,"o","/"],[27.46,"o","/"],[27.485,"o","1"],[27.51,"o","2"],[27.535,"o","7"],[27.56,"o","."],[27.585,"o","0"],[27.61,"o","."],[27.635,"o","0"],[27.66,"o","."],[27.685,"o","1"],[27.71,"o",":"],[27.735,"o","9"],[27.76,"o","1"],[27.785,"o","0"],[27.81,"o","3"],[27.835,"o","/"],[27.86,"o","a"],[27.885,"o","p"],[27.91,"o","i"],[27.935,"o","/"],[27.96,"o","s"],[27.985,"o","e"],[28.01,"o","s"],[28.035,"o","s"],[28.06,"o","i"],[28.085,"o","o"],[28.11,"o","n"],[28.135,"o","s"],[28.16,"o","/"],[28.185,"o","S"],[28.21,"o","E"],[28.235,"o","S"],[28.26,"o","S"],[28.285,"o","I"],[28.31,"o","O"],[28.335,"o","N"],[28.36,"o","_"],[28.385,"o","A"],[28.41,"o","/"],[28.435,"o","m"],[28.46,"o","e"],[28.485,"o","s"],[28.51,"o","s"],[28.535,"o","a"],[28.56,"o","g"],[28.585,"o","e"],[28.61,"o"," "],[28.635,"o","-"],[28.66,"o","d"],[28.685,"o"," "],[28.71,"o","'"],[28.735,"o","{"],[28.76,"o","\""],[28.785,"o","t"],[28.81,"o","e"],[28.835,"o","x"],[28.86,"o","t"],[28.885,"o","\""],[28.91,"o",":"],[28.935,"o","\""],[28.96,"o","b"],[28.985,"o","u"],[29.01,"o","r"],[29.035,"o","s"],[29.06,"o","t"],[29.085,"o","\""],[29.11,"o",","],[29.135,"o","\""],[29.16,"o","f"],[29.185,"o","r"],[29.21,"o","o"],[29.235,"o","m"],[29.26,"o","_"],[29.285,"o","s"],[29.31,"o","e"],[29.335,"o","s"],[29.36,"o","s"],[29.385,"o","i"],[29.41,"o","o"],[29.435,"o","n"],[29.46,"o","_"],[29.485,"o","i"],[29.51,"o","d"],[29.535,"o","\""],[29.56,"o",":"],[29.585,"o","\""],[29.61,"o","S"],[29.635,"o","E"],[29.66,"o","S"],[29.685,"o","S"],[29.71,"o","I"],[29.735,"o","O"],[29.76,"o","N"],[29.785,"o","_"],[29.81,"o","C"],[29.835,"o","\""],[29.86,"o","}"],[29.885,"o","'"],[29.91,"o",";"],[29.935,"o"," "],[29.96,"o","d"],[29.985,"o","o"],[30.01,"o","n"],[30.035,"o","e"],[30.335,"o","\r\n"],[30.785,"o","message 1 -> HTTP 200\r\n"],[30.815,"o","message 2 -> HTTP 200\r\n"],[30.845,"o","message 3 -> HTTP 409\r\n"],[30.875,"o","message 4 -> HTTP 409\r\n"],[30.905,"o","message 5 -> HTTP 429\r\n"],[30.935,"o","message 6 -> HTTP 429\r\n"],[30.965,"o","message 7 -> HTTP 429\r\n"]]}</script>
+<script>/* Shared helpers: theme toggle, step-through diagrams, cast player. No dependencies. */
+(function () {
+  'use strict';
+  var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function h(tag, attrs, kids) {
+    var e = document.createElement(tag);
+    if (attrs) for (var k in attrs) {
+      if (k === 'text') e.textContent = attrs[k];
+      else if (k === 'class') e.className = attrs[k];
+      else e.setAttribute(k, attrs[k]);
+    }
+    (kids || []).forEach(function (c) { e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    return e;
+  }
+
+  /* ---------- theme ---------- */
+  function initTheme() {
+    var btn = document.getElementById('theme-toggle');
+    var saved = null;
+    try { saved = localStorage.getItem('rk-theme'); } catch (e) {}
+    if (saved) document.documentElement.setAttribute('data-theme', saved);
+    function cur() {
+      var t = document.documentElement.getAttribute('data-theme');
+      if (t) return t;
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    function label() { if (btn) btn.textContent = cur() === 'dark' ? 'Light mode' : 'Dark mode'; }
+    if (btn) btn.addEventListener('click', function () {
+      var n = cur() === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', n);
+      try { localStorage.setItem('rk-theme', n); } catch (e) {}
+      label();
+    });
+    label();
+  }
+
+  /* ---------- step-through diagram ---------- */
+  function Stepper(root, cfg) {
+    var actors = cfg.actors, scen = cfg.scenarios, order = Object.keys(scen);
+    var sid = order[0], idx = -1, timer = null, speed = 1;
+    var tabs = h('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Scenario' });
+    var title = h('p', { class: 'caption' });
+    var actorBox = h('div', { class: 'actors' });
+    var steps = h('ol', { class: 'steps', 'aria-live': 'polite' });
+    var state = h('div', { class: 'state', 'aria-label': 'State' });
+    var bReset = h('button', { text: 'Reset', type: 'button' });
+    var bPrev = h('button', { text: 'Back', type: 'button' });
+    var bPlay = h('button', { text: 'Play', type: 'button', class: 'primary' });
+    var bNext = h('button', { text: 'Step', type: 'button' });
+    var sp = h('select', { 'aria-label': 'Speed' }, [h('option', { value: '1', text: '1x' }), h('option', { value: '2', text: '2x' }), h('option', { value: '0.5', text: '0.5x' })]);
+    var pos = h('span', { class: 'small' });
+    var controls = h('div', { class: 'controls' }, [bReset, bPrev, bPlay, bNext, sp, pos]);
+    root.appendChild(tabs); root.appendChild(title); root.appendChild(actorBox);
+    root.appendChild(controls); root.appendChild(steps); root.appendChild(state);
+    var actorEls = {};
+    actors.forEach(function (a) {
+      var e = h('div', { class: 'actor' }, [h('b', { text: a.label }), h('small', { text: a.sub || '' })]);
+      actorEls[a.id] = e; actorBox.appendChild(e);
+    });
+    var tabEls = {};
+    function buildTabs() {
+      tabs.innerHTML = ''; tabEls = {};
+      order.forEach(function (k) {
+        var b = h('button', { type: 'button', role: 'tab', text: scen[k].tab, 'aria-selected': 'false' });
+        b.addEventListener('click', function () { choose(k); });
+        tabEls[k] = b; tabs.appendChild(b);
+      });
+      tabs.style.display = order.length > 1 ? '' : 'none';
+    }
+    buildTabs();
+    function S() { return scen[sid].steps; }
+    function stopTimer() { if (timer) { clearInterval(timer); timer = null; } bPlay.textContent = 'Play'; }
+    function render() {
+      steps.innerHTML = ''; state.innerHTML = '';
+      Object.keys(actorEls).forEach(function (k) { actorEls[k].className = 'actor'; });
+      var merged = {};
+      for (var i = 0; i <= idx; i++) {
+        var s = S()[i];
+        var li = h('li', { class: (s.tone || '') + (i === idx ? ' current' : '') }, [
+          h('div', { class: 'route', text: (actorName(s.from) + (s.to ? ' -> ' + actorName(s.to) : '')) }),
+          h('div', { class: 't', text: s.title }),
+          h('div', { class: 'd', text: s.text || '' })
+        ]);
+        steps.appendChild(li);
+        if (s.state) for (var k in s.state) merged[k] = s.state[k];
+      }
+      if (idx >= 0) {
+        var c = S()[idx];
+        if (c.from && actorEls[c.from]) actorEls[c.from].classList.add('from');
+        if (c.to && actorEls[c.to]) actorEls[c.to].classList.add('to');
+        var last = steps.lastChild; if (last && last.scrollIntoView && !RM) last.scrollIntoView({ block: 'nearest' });
+      }
+      Object.keys(merged).forEach(function (k) {
+        state.appendChild(h('span', {}, [h('b', { text: k + ': ' }), String(merged[k])]));
+      });
+      pos.textContent = (idx + 1) + ' / ' + S().length;
+      bPrev.disabled = idx < 0; bNext.disabled = idx >= S().length - 1;
+      order.forEach(function (k) { tabEls[k].setAttribute('aria-selected', k === sid ? 'true' : 'false'); tabEls[k].classList.toggle('on', k === sid); });
+      title.textContent = scen[sid].title;
+    }
+    function actorName(id) { var a = actors.filter(function (x) { return x.id === id; })[0]; return a ? a.label : (id || ''); }
+    function choose(k) { stopTimer(); sid = k; idx = -1; render(); }
+    function next() { if (idx < S().length - 1) { idx++; render(); } else stopTimer(); }
+    bNext.addEventListener('click', function () { stopTimer(); next(); });
+    bPrev.addEventListener('click', function () { stopTimer(); if (idx >= 0) { idx--; render(); } });
+    bReset.addEventListener('click', function () { stopTimer(); idx = -1; render(); });
+    sp.addEventListener('change', function () { speed = parseFloat(sp.value); if (timer) { stopTimer(); play(); } });
+    function play() {
+      if (idx >= S().length - 1) idx = -1;
+      bPlay.textContent = 'Pause';
+      next();
+      timer = setInterval(function () { if (idx >= S().length - 1) stopTimer(); else next(); }, 1800 / speed);
+    }
+    bPlay.addEventListener('click', function () { if (timer) stopTimer(); else play(); });
+    function load(newScen) { stopTimer(); scen = newScen; order = Object.keys(scen); sid = order[0]; idx = -1; buildTabs(); render(); }
+    render();
+    return { choose: choose, next: next, load: load, last: function () { stopTimer(); idx = S().length - 1; render(); }, state: function () { return { scenario: sid, index: idx }; } };
+  }
+
+  /* ---------- cast player ---------- */
+  function ansi(text, st) {
+    // Tiny SGR parser: 0 reset, 1 bold, 2 dim, 31 red, 32 green, 36 cyan.
+    var out = '', re = /\x1b\[([0-9;]*)m/g, last = 0, m;
+    function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function open() {
+      var c = [];
+      if (st.b) c.push('bld'); if (st.d) c.push('dim'); if (st.c) c.push(st.c);
+      return c.length ? '<span class="' + c.join(' ') + '">' : '';
+    }
+    var cur = '';
+    function emit(s) { if (!s) return; var o = open(); out += o + esc(s) + (o ? '</span>' : ''); }
+    while ((m = re.exec(text))) {
+      emit(text.slice(last, m.index)); last = re.lastIndex;
+      (m[1] || '0').split(';').forEach(function (n) {
+        n = parseInt(n, 10);
+        if (n === 0) { st.b = st.d = false; st.c = ''; }
+        else if (n === 1) st.b = true;
+        else if (n === 2) st.d = true;
+        else if (n === 31) st.c = 'red';
+        else if (n === 32) st.c = 'grn';
+        else if (n === 36) st.c = 'cyn';
+      });
+    }
+    emit(text.slice(last));
+    return out;
+  }
+
+  function CastPlayer(root, cast) {
+    var ev = cast.events, n = ev.length, idx = 0, timer = null, speed = 1, dragging = false;
+    // A "chapter" starts at a note line ("# ...") or at a prompt that no note introduces.
+    var chap = [];
+    ev.forEach(function (e, i) {
+      var t = e[2], isNote = t.indexOf('\x1b[2m# ') === 0, isPrompt = t.indexOf('\x1b[32m$ ') === 0;
+      var prevNote = i > 0 && ev[i - 1][2].indexOf('\x1b[2m# ') === 0;
+      if (isNote || (isPrompt && !prevNote)) chap.push(i);
+    });
+    var term = h('pre', { class: 'term', tabindex: '0', role: 'log', 'aria-label': 'Terminal recording: ' + (cast.title || '') });
+    var bRestart = h('button', { type: 'button', text: 'Restart' });
+    var bPrev = h('button', { type: 'button', text: 'Previous command' });
+    var bPlay = h('button', { type: 'button', text: 'Play', class: 'primary' });
+    var bNext = h('button', { type: 'button', text: 'Next command' });
+    var sp = h('select', { 'aria-label': 'Playback speed' }, [h('option', { value: '1', text: '1x' }), h('option', { value: '2', text: '2x' }), h('option', { value: '4', text: '4x' })]);
+    var rng = h('input', { type: 'range', min: '0', max: String(n), value: '0', 'aria-label': 'Position' });
+    var tl = h('span', { class: 'small' });
+    root.appendChild(term);
+    root.appendChild(h('div', { class: 'controls' }, [bRestart, bPrev, bPlay, bNext, sp]));
+    root.appendChild(h('div', { class: 'controls' }, [rng, tl]));
+
+    function render() {
+      var st = { b: false, d: false, c: '' }, html = '';
+      for (var i = 0; i < idx; i++) html += ansi(ev[i][2], st);
+      term.innerHTML = html + '<span class="cur">&nbsp;</span>';
+      term.scrollTop = term.scrollHeight;
+      rng.value = String(idx);
+      var t = idx > 0 ? ev[Math.min(idx, n) - 1][0] : 0;
+      tl.textContent = t.toFixed(1) + ' s of ' + ev[n - 1][0].toFixed(1) + ' s (pauses shortened)';
+      bPrev.disabled = idx <= 0; bNext.disabled = idx >= n;
+    }
+    function stop() { if (timer) { clearTimeout(timer); timer = null; } bPlay.textContent = 'Play'; }
+    function tick() {
+      if (idx >= n) { stop(); return; }
+      var prev = idx > 0 ? ev[idx - 1][0] : 0;
+      var gap = Math.min(ev[idx][0] - prev, 1.5);
+      var wait = RM ? 0 : gap * 1000 / speed;
+      timer = setTimeout(function () { idx++; render(); tick(); }, wait);
+    }
+    function play() { if (idx >= n) idx = 0; bPlay.textContent = 'Pause'; tick(); }
+    bPlay.addEventListener('click', function () { if (timer) stop(); else play(); });
+    bRestart.addEventListener('click', function () { stop(); idx = 0; render(); });
+    bNext.addEventListener('click', function () {
+      stop();
+      var target = n;
+      for (var i = 0; i < chap.length; i++) if (chap[i] > idx) { target = chap[i]; break; }
+      idx = target; render();
+    });
+    bPrev.addEventListener('click', function () {
+      stop();
+      var t = 0;
+      for (var i = 0; i < chap.length; i++) if (chap[i] < idx) t = chap[i];
+      idx = t; render();
+    });
+    sp.addEventListener('change', function () { speed = parseFloat(sp.value); if (timer) { stop(); play(); } });
+    rng.addEventListener('input', function () { stop(); idx = parseInt(rng.value, 10); render(); });
+    render();
+    return { state: function () { return { index: idx, total: n }; }, seek: function (i) { stop(); idx = i; render(); }, play: play, stop: stop };
+  }
+
+  function loadCast(id) { return JSON.parse(document.getElementById(id).textContent); }
+
+  window.RK = { h: h, Stepper: Stepper, CastPlayer: CastPlayer, loadCast: loadCast, initTheme: initTheme, reducedMotion: RM };
+  document.addEventListener('DOMContentLoaded', initTheme);
+})();
+</script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var A = [
+    { id: 'snd', label: 'Sender', sub: 'session C, tool, or script' },
+    { id: 'api', label: 'POST /api/sessions/{id}/message', sub: 'checks, rate limit' },
+    { id: 'tgt', label: 'Target session', sub: 'settings.session_msg.enabled' }
+  ];
+  var scen = {
+    wait: { tab: 'With wait', title: 'Send and wait for the reply', steps: [
+      { from: 'snd', to: 'api', title: 'Request', text: '{"text": "...", "from_session_id": "C", "from_name": "session-c", "wait": true}', state: { wait: true } },
+      { from: 'api', to: 'api', title: 'Checks', text: 'Token (if the server has one), text size, then the pair limiter: this is try 1 of 6 in 30 s.', tone: 'ok', state: { 'pair tries': '1 of 6' } },
+      { from: 'api', to: 'tgt', title: 'Queued as a turn', text: 'The target opted in. The text is queued as a turn attributed to the other session. A running turn would not be interrupted.', tone: 'ok' },
+      { from: 'tgt', to: 'api', title: 'Turn finishes', text: 'The server was blocking for it (at most 120000 ms).', tone: 'ok' },
+      { from: 'api', to: 'snd', title: 'Reply inline', text: '200 {"status":"delivered","waited":true,"reply":"...","interrupted":false}. If the turn failed: "turn_error" is added.', tone: 'ok' }
+    ]},
+    nowait: { tab: 'Fire and forget', title: 'Send without waiting', steps: [
+      { from: 'snd', to: 'api', title: 'Request without wait', text: 'This is the default.' },
+      { from: 'api', to: 'tgt', title: 'Queued', text: 'Success means "queued", not "the agent replied".', tone: 'ok' },
+      { from: 'api', to: 'snd', title: 'Status only', text: '200 {"status":"delivered"}. The target answers later, as a new message into the sender\'s conversation if it chooses to reply.', tone: 'ok' }
+    ]},
+    refuse: { tab: 'Refused', title: 'Not opted in, unknown, or busy', steps: [
+      { from: 'snd', to: 'api', title: 'Message to session B', text: 'B has settings.session_msg.enabled false.' },
+      { from: 'api', to: 'snd', title: '403 rejected', text: '{"status":"rejected","error":"session does not accept messages (settings.session_msg.enabled is false)"}. No turn starts. This is why an inbound message can never remote-control a session that did not say yes.', tone: 'bad' },
+      { from: 'api', to: 'snd', title: '404 not found', text: 'Unknown id: {"status":"not_found",...}.', tone: 'bad' },
+      { from: 'api', to: 'snd', title: '409 busy', text: 'The target is mid-turn and one message already waits behind it.', tone: 'warn' }
+    ]},
+    limit: { tab: 'Loop guard', title: 'Pair rate limit', steps: [
+      { from: 'snd', to: 'api', title: 'Two agents answer each other', text: 'A sends to B, B replies to A, and so on. Neither side has to cooperate for the limit to work.' },
+      { from: 'api', to: 'api', title: 'Sliding window', text: 'At most 6 tries per 30 seconds for the same unordered pair of sessions. The check comes first, so busy and refused tries count too.', tone: 'warn', state: { limit: '6 per 30 s' } },
+      { from: 'api', to: 'snd', title: '429 rate_limited', text: '{"status":"rate_limited","error":"rate limited: too many messages between these two sessions recently - possible loop; wait and retry"}', tone: 'bad' },
+      { from: 'api', to: 'snd', title: 'After the window', text: 'Tries older than 30 s drop out of the window and sending works again.', tone: 'ok' }
+    ]}
+  };
+  RK.Stepper($('stepper'), { actors: A, scenarios: scen });
+
+  /* ---- simulation ---- */
+  var LIMIT = 6, WINDOW = 30;
+  var st;
+  function fresh() { st = { t: 0, pairs: {}, busy: false, queued: 0, lines: [] }; }
+  fresh();
+  var SESS = { A: { open: true }, B: { open: false }, C: { open: true } };
+  function pairKey(a, b) { return a < b ? a + '\u0000' + b : b + '\u0000' + a; }
+  function send(req) {
+    var out;
+    if (req.token) out = { code: 401, body: '{"error":"unauthorized"}' };
+    else if (req.text === 'empty') out = { code: 400, body: '{"error":"text is required"}' };
+    else if (req.text === 'big') out = { code: 413, body: '{"error":"text too large (16KB max)"}' };
+    else {
+      var k = pairKey(req.from, req.to);
+      var kept = (st.pairs[k] || []).filter(function (x) { return st.t - x < WINDOW; });
+      if (kept.length >= LIMIT) { st.pairs[k] = kept; out = { code: 429, body: '{"error":"rate limited: too many messages between these two sessions recently ...","status":"rate_limited"}' }; }
+      else {
+        kept.push(st.t); st.pairs[k] = kept;
+        if (req.to === 'N') out = { code: 404, body: '{"error":"no-such-session: session not found","status":"not_found"}' };
+        else if (!SESS[req.to].open) out = { code: 403, body: '{"error":"session does not accept messages (settings.session_msg.enabled is false)","status":"rejected"}' };
+        else if (req.to === 'A' && st.busy && st.queued >= 1) out = { code: 409, body: '{"status":"busy"}' };
+        else {
+          if (req.to === 'A' && st.busy) st.queued++;
+          if (!req.wait) out = { code: 200, body: '{"status":"delivered"}' };
+          else if (req.dur > 120 || (req.to === 'A' && st.busy)) out = { code: 200, body: '{"status":"delivered","waited":false,"note":"reply not received within timeout; poll GET /api/chat/{id}/tree"}' };
+          else out = { code: 200, body: '{"status":"delivered","waited":true,"reply":"...","interrupted":false}' };
+        }
+      }
+    }
+    return out;
+  }
+  function log(s) { st.lines.push(s); }
+  function render() {
+    var box = $('sess'); box.innerHTML = '';
+    [['A', 'Session A', 'opted in'], ['B', 'Session B', 'not opted in'], ['C', 'Session C', 'opted in']].forEach(function (x) {
+      var d = document.createElement('div'); d.className = 's ' + (SESS[x[0]].open ? 'open' : 'closed');
+      var s1 = document.createElement('b'); s1.textContent = x[1];
+      var s2 = document.createElement('div'); s2.className = 'small';
+      s2.textContent = x[2] + (x[0] === 'A' ? (st.busy ? ', busy' + (st.queued ? ', 1 queued' : '') : ', idle') : '');
+      d.appendChild(s1); d.appendChild(s2); box.appendChild(d);
+    });
+    $('p-clock').textContent = 'Clock: ' + st.t + ' s. Tries from C to A in the last 30 s: ' + (st.pairs[pairKey('A', 'C')] || []).filter(function (x) { return st.t - x < WINDOW; }).length + ' of 6.';
+    var l = $('p-log'); l.textContent = st.lines.join('\n'); l.scrollTop = l.scrollHeight;
+  }
+  function doSend(overrides) {
+    var req = { from: $('p-from').value === 'C' ? 'C' : '', to: $('p-to').value, wait: $('p-wait').checked, dur: parseInt($('p-dur').value, 10), text: $('p-text').value, token: $('p-token').checked };
+    for (var k in overrides || {}) req[k] = overrides[k];
+    var r = send(req);
+    log('t=' + st.t + 's  ' + (req.from || 'anon') + ' -> ' + req.to + (req.wait ? ' wait' : '') + '  HTTP ' + r.code + '  ' + r.body);
+    render();
+    return r;
+  }
+  $('p-send').addEventListener('click', function () { doSend(); });
+  $('p-burst').addEventListener('click', function () { for (var i = 0; i < 7; i++) doSend(); });
+  $('p-busy').addEventListener('click', function () { st.busy = true; st.queued = 0; log('A starts a long turn'); render(); });
+  $('p-fin').addEventListener('click', function () {
+    if (!st.busy) { log('A is idle'); } else if (st.queued) { st.queued--; log('A finished a turn and starts the queued one'); } else { st.busy = false; log('A finished its turn'); }
+    render();
+  });
+  $('p-t10').addEventListener('click', function () { st.t += 10; log('... 10 s pass'); render(); });
+  $('p-reset').addEventListener('click', function () { fresh(); render(); });
+  $('p-replay').addEventListener('click', function () {
+    fresh(); $('p-from').value = 'C';
+    log('--- cases from the recording ---');
+    doSend({ to: 'A', wait: true, text: 'ok', dur: 2, token: false });
+    doSend({ to: 'A', wait: false, text: 'ok', token: false });
+    st.busy = true; st.queued = 0; log('(A is still busy with the previous message)');
+    doSend({ to: 'B', wait: false, text: 'ok', token: false });
+    doSend({ to: 'N', from: '', wait: false, text: 'ok', token: false });
+    for (var i = 0; i < 7; i++) {
+      if (i === 1) { st.queued--; log('(A finished the first turn and started the queued one)'); }
+      doSend({ to: 'A', wait: false, text: 'ok', token: false });
+    }
+  });
+  render();
+
+  var cp = RK.CastPlayer($('player'), RK.loadCast('cast-msg'));
+  window.__page = { send: send, state: function () { return st; }, cast: cp, fresh: fresh, doSend: doSend };
+})();
+</script>
+</body>
+</html>

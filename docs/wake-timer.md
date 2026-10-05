@@ -68,7 +68,7 @@ settings:
 | `kill_switch_file` | string | ~/.rakitsu/wake/STOP | Path to kill-switch file; tick stops loop if present |
 | `heartbeat_stale_seconds` | int | 180 | Heartbeat older than this marks the session `stale` (status API and `/healthz` 503). The loop writes the heartbeat every `min(interval_seconds, heartbeat_stale_seconds/3)`, independent of backoff, so a healthy monitor never goes stale; a wedged loop does. Must be >= 15 |
 | `allow.paths` | []string | [] | Allowed file paths (relative or absolute; resolved within workdir) |
-| `allow.url_hosts` | []string | [] | Allowed URL hosts for http checks (validated at config load) |
+| `allow.url_hosts` | []string | [] | Allowed URL hosts for http checks (validated at config load). Match is on `host[:port]` as written in the URL. At request time the resolved address is also checked: loopback, private, link-local, CGNAT, multicast, unspecified and cloud-metadata addresses are refused unless the URL host is listed here (so `127.0.0.1:9113` works when listed). A listed hostname never unlocks metadata or multicast addresses; list the IP or a CIDR for those. Redirects are never followed, URLs with credentials (`user:pw@`) are rejected, and the whole request including the body read is bounded by the check timeout |
 | `secret_env` | []string | [] | Env var names (no values); verified at session start |
 | `max_tasks_per_hour` | int | 10 | Only with `allow.configs`. Rolling hour, persisted in the state file; not reset on resume or restart |
 | `max_concurrent_tasks` | int | 3 | Only with `allow.configs`. Overflow is refused, not queued |
@@ -103,23 +103,29 @@ settings:
 - Refused if config contains `cli`, `fs`, `mcp_server`, or `a2a` tools (v1 unattended-execution boundary)
 - File checks are read-only; max 64 KiB per check
 - HTTP checks are GET-only; max 64 KiB response; validated hosts only
+- HTTP check network rules (changed in v0.3.0-alpha.20; these can break a config that used to work):
+  - **A redirect is an error.** A 301/302/307/308 answer is never followed; the check reports `unknown`. Point the check at the final URL.
+  - **`HTTP_PROXY` / `HTTPS_PROXY` are not used.** The check always connects directly.
+  - **A URL with a user name or password (`http://user:pw@host/`) is rejected** when the config loads. Only `http` and `https` URLs with a host are accepted.
+  - The address that is dialed is the address that was checked (no DNS rebinding); private, loopback and metadata addresses need an `allow.url_hosts` entry.
 
 **Throttling:**
 - `max_turns_per_hour`: hard cap; excess turns suppressed with `hourly_cap` status
-- `single_flight`: consecutive alarms without state change are suppressed
+- `single_flight`: a turn already in flight suppresses new ones. In addition, a persistent alarm is escalated once, on the transition into the alarm (or into a different set of non-OK checks); ticks that repeat the same unchanged alarm are suppressed (reported as `single_flight`, audit `reason: alarm_unchanged`) until a quiet tick or a different alarm re-arms it. There is no timed re-notification, and a restart does not re-escalate an unchanged alarm
 - `backoff`: quiet ticks increase interval up to max_interval_seconds
 - Jitter ±% prevents thundering herd across multiple sessions
 
 **Lifecycle:**
 - Kill-switch file (`~/.rakitsu/wake/STOP`) stops the loop; session stays alive
-- Explicit resume via `POST /api/chat/{id}/wake/resume`
+- Singleton lock: one process holds `<session-id>.lock` (flock). Every tick re-checks that the lock path still refers to the file we locked. If it was removed or replaced (for example by wiping the wake state directory while a session runs), the loop stops at once: audit line `lock_replaced`, tick result `lock_replaced`, no state or heartbeat write, and resume is refused. The lock lives in the same directory as the state files, so a wipe is detected rather than prevented; the check is per tick, so a second holder could run for up to one interval before the first notices. On Windows an open handle already blocks delete and replace, so no check is needed
+- Explicit resume via `POST /api/chat/{id}/wake/resume`; returns 409 while the kill-switch file is still present
 - Restart with same `resume_id` resumes state (cap window survives)
 - ACP cannot resume sessions (sessions in-memory only; no persistence in ACP mode)
 
 **Visibility:**
 - Silent on quiet ticks (no event emission)
 - Non-quiet ticks, killed, degraded, and escalations emit events
-- Audit log at `~/.rakitsu/wake/<session-id>.audit.jsonl` tracks all ticks with counts
+- Audit log at `~/.rakitsu/wake/<session-id>.audit.jsonl` tracks all ticks with counts. Every record carries a `ts` field (RFC3339, UTC); records written by older versions lack it, so readers must treat it as optional. A tick that finds the kill-switch file is consumed (its number is not reused after resume)
 
 ## Files
 
@@ -167,8 +173,9 @@ settings:
 
 Rules:
 - **Allowlist only.** Anything not listed is refused. Paths must stay inside the workdir (symlinks resolved). At session start every listed file must exist and parse; otherwise the session does not start. The task configs may have their own tools (they are independent runs); the wake session itself still refuses `cli`/`fs`/`mcp_server`/`a2a`.
+- **Config snapshot.** At session start the sha256 of each listed file is recorded. On every `start_task` the file is re-read and hashed; if it was changed, replaced or removed since session start, the start is refused with reason `task_config_changed` (audit `task_refused`, no task slot used). The task runner still loads the file from disk (the config loader needs a path), so a small window remains between this check and the runner's load in which a writer with access to the workdir could still swap the file. Treat the workdir as trusted and keep task configs read-only for the server user.
 - **Fixed template.** The task prompt is your `task` text plus a fenced `key=value` block. Arguments must be exactly the declared params (extra or missing keys are refused). Values are enum members, safe relative paths, or bounded integers, so no free text, newline or fence marker can enter the prompt.
-- **Independent run.** A task runs under its own context (not tied to the wake turn), loads its config fresh from disk with the server process environment only (it does not inherit the wake session's env), has no `user_input` and no session messaging, and cannot start tasks (the tools are not offered to it and a call from inside a task is refused).
+- **Independent run.** A task runs under its own context (not tied to the wake turn), loads its config from disk (after the hash check above) with the server process environment only (it does not inherit the wake session's env), has no `user_input` and no session messaging, and cannot start tasks (the tools are not offered to it and a call from inside a task is refused).
 - **Results.** The full result is written to `~/.rakitsu/wake/<session-id>.tasks/<task-id>.log` (mode 0600). The wake session only sees a status and a summary of at most 300 characters.
 - **Caps.** `max_tasks_per_hour` is a rolling hour kept in the wake state file. `max_concurrent_tasks` refuses overflow. Both are separate from `max_turns_per_hour`. Refused calls do not use up the hourly allowance.
 - **Stop.** `POST /api/chat/{session-id}/wake/stop`, the kill-switch file, and closing the session block new starts and, unless `cancel_on_stop: false`, cancel running tasks. Resume re-allows starts. Cancel one task with `POST /api/chat/{session-id}/wake/tasks/{task-id}/cancel`.

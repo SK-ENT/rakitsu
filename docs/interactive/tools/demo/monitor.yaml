@@ -1,0 +1,19 @@
+# Serve config for the wake/monitor demo. Run from the demo directory:
+#   rakitsu serve --config monitor.yaml
+name: demo-monitor
+settings:
+  default_provider: fake
+  providers:
+    fake:
+      type: openai
+      api_key: demo-not-a-secret
+      base_url: http://127.0.0.1:4010/v1
+      default_model: fake-model
+monitors:
+  - id: log-watch                       # session id: monitor-log-watch
+    config: ./monitors/log-watch.yaml
+    workdir: ./monitors/log-watch
+    env_refs: [ALERT_WEBHOOK_URL, ALERT_NTFY_URL, ALERT_PAGER_URL]   # env var NAMES only
+healthz:
+  monitors_start_grace_seconds: 20
+  healthz_fail_on_stopped: true

@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wake timer: free ticks, one turn on change</title>
+<style>/*@CSS@*/
+.big{font-size:2.6rem;font-weight:700;line-height:1.1}
+.counters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:8px 0}
+.counters .c{background:var(--chip);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.counters .c small{display:block;color:var(--muted)}
+.counters .c.calls{border-color:var(--ok)}
+.counters .c.calls.hot{border-color:var(--bad)}
+.timeline{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0;min-height:34px}
+.tk{font-size:.75rem;border-radius:6px;padding:3px 6px;border:1px solid var(--line);background:var(--panel);color:var(--muted)}
+.tk.alarm{border-color:var(--bad);color:var(--bad)}
+.tk.turn{background:var(--bad);color:#fff;border-color:var(--bad)}
+.tk.supp{border-color:var(--warn);color:var(--warn)}
+.tk.kill{background:var(--ink);color:var(--bg)}
+.audit{background:var(--term-bg);color:var(--term-ink);border-radius:8px;padding:10px;height:220px;overflow:auto;font-size:12px;white-space:pre}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}
+.row label{display:flex;gap:6px;align-items:center;font-size:.9rem}
+.row input[type=number]{width:5.5em}
+.msg{min-height:1.4em;font-size:.92rem}
+</style>
+</head>
+<body>
+<header class="top">
+  <nav><a href="index.html">All demos</a> <a href="starttask.html">start_task</a> <a href="monitors.html">Monitors, healthz, alerts</a></nav>
+  <button id="theme-toggle" type="button">Dark mode</button>
+</header>
+<main>
+<h1>Wake timer</h1>
+<p class="lead">A clock inside <code>rakitsu serve</code> runs cheap checks on a schedule. While nothing is wrong it makes zero model calls. When a check raises an alarm, it injects one normal turn into the same chat session.</p>
+<p class="small">The timeline is a <span class="badge sim">simulation</span> of the rules in <code>internal/wake/engine.go</code> (the order of decisions is the same). The recording at the bottom is a <span class="badge real">real run</span> of the real binary with the same numbers (10 s base, factor 1.5, max 20 s, cap 2). The button "Replay the recorded run" feeds the simulation the same steps and you can compare the two audit logs.</p>
+
+<h2>Simulated timeline</h2>
+<div class="card" id="sim">
+  <div class="counters">
+    <div class="c calls" id="c-calls"><small>model calls</small><span class="big" id="v-calls">0</span></div>
+    <div class="c"><small>ticks</small><b id="v-ticks">0</b> (<span id="v-quiet">0</span> quiet)</div>
+    <div class="c"><small>turns this hour</small><b id="v-turns">0</b> of <span id="v-cap">2</span></div>
+    <div class="c"><small>next tick in</small><b id="v-next">-</b></div>
+    <div class="c"><small>interval after backoff</small><b id="v-int">-</b></div>
+    <div class="c"><small>loop / healthz</small><b id="v-loop">running</b></div>
+  </div>
+  <div class="timeline" id="timeline" aria-label="Ticks"></div>
+  <div class="row">
+    <button id="b-play" class="primary" type="button">Play</button>
+    <button id="b-step" type="button">Jump to next tick</button>
+    <label>Speed <select id="s-speed" aria-label="Virtual seconds per real second"><option value="1">1 s per s</option><option value="5" selected>5 s per s</option><option value="20">20 s per s</option><option value="120">120 s per s</option></select></label>
+    <button id="b-reset" type="button">Reset</button>
+  </div>
+  <div class="row">
+    <span class="small">The checked file:</span>
+    <button id="b-err" type="button">Add an ERROR line</button>
+    <button id="b-clr" type="button">Clear the file</button>
+    <span class="small">Kill switch:</span>
+    <button id="b-stop" type="button">Create STOP file</button>
+    <button id="b-rm" type="button">Remove STOP file</button>
+    <button id="b-resume" type="button">Resume</button>
+  </div>
+  <div class="row">
+    <label>Preset
+      <select id="s-preset"><option value="rec">Recording (10 s, x1.5, max 20 s, cap 2)</option><option value="def">Documented defaults (60 s, x1.5, max 600 s, cap 6)</option></select></label>
+    <button id="b-replay" type="button">Replay the recorded run</button>
+  </div>
+  <p class="msg" id="msg" aria-live="polite"></p>
+  <div class="audit mono" id="audit" role="log" aria-label="Simulated audit log" tabindex="0"></div>
+  <p class="small">Simplifications: no jitter (the default is 10 percent), and a turn finishes at once, so "a turn is already running" never happens here. One turn is counted as one model call; a real turn can use more (in the recording the one turn used 4 calls and its started task used 1 more). Quiet ticks never touch the model.</p>
+</div>
+
+<h2>The rules in one list</h2>
+<div class="card">
+<ol>
+<li>Every tick starts by looking for the kill-switch file. If it is there, the loop stops and the session stays open.</li>
+<li>Checks run (file, HTTP). They are read-only and free.</li>
+<li>All checks fine: this is a quiet tick. The next wait is multiplied by <code>backoff_factor</code>, up to <code>max_interval_seconds</code>. An audit line is written, no event is emitted, no model call.</li>
+<li>Anything not fine: the wait goes back to the base interval. If it is the same alarm as the last escalated one, it is suppressed (<code>single_flight</code>, reason <code>alarm_unchanged</code>) until a quiet tick or a different alarm re-arms it.</li>
+<li>If <code>max_turns_per_hour</code> turns already happened in the last hour: suppressed as <code>hourly_cap</code>.</li>
+<li>Otherwise one timer-sourced turn is injected into the session (<code>level: L2</code>).</li>
+</ol>
+<p class="small">Source: <a href="../wake-timer.md">docs/wake-timer.md</a>, <code>internal/wake/engine.go</code>.</p>
+</div>
+
+<h2>Real recording</h2>
+<p class="small">Recorded by <code>docs/interactive/tools/record_wake.py</code> (monitor started by <code>rakitsu serve --config monitor.yaml</code>, fake local model, local webhook). Waits are shortened; the output is not edited. The lines starting with <code>model calls so far</code> come from the fake model server's own counter.</p>
+<div class="card" id="player"></div>
+</main>
+<script type="application/json" id="cast-wake">/*@CAST:wake@*/</script>
+<script>/*@JS@*/</script>
+<script>
+(function () {
+  'use strict';
+  /* ---- pure simulation (no DOM) ---- */
+  function WakeSim(p) {
+    this.p = p; this.reset();
+  }
+  WakeSim.prototype.reset = function () {
+    this.t = 0; this.interval = this.p.base; this.nextAt = this.p.base; this.tick = 0;
+    this.sig = false; this.cap = []; this.calls = 0; this.turns = 0; this.quiet = 0;
+    this.alarmOn = false; this.stopFile = false; this.stopped = false; this.audit = []; this.ticks = [];
+  };
+  WakeSim.prototype.addAudit = function (o) { this.audit.push(JSON.stringify(o)); };
+  WakeSim.prototype.doTick = function () {
+    var p = this.p, n = this.tick + 1, rec;
+    if (this.stopFile) { // 1. kill switch
+      this.stopped = true; this.tick = n;
+      this.addAudit({ event: 'tick', outcome: 'quiet', result: 'killed', tick: n });
+      rec = { n: n, cls: 'kill', text: '#' + n + ' killed' }; this.ticks.push(rec); return rec;
+    }
+    var alarm = this.alarmOn; // 2. checks
+    if (!alarm) { // 3. quiet
+      this.interval = Math.min(this.interval * p.factor, p.max);
+      this.sig = false; this.tick = n; this.quiet++;
+      this.addAudit({ event: 'tick', outcome: 'quiet', tick: n });
+      rec = { n: n, cls: '', text: '#' + n + ' quiet' };
+    } else {
+      this.interval = p.base; this.tick = n;
+      if (this.sig) { // 4. same alarm again
+        this.addAudit({ event: 'tick', outcome: 'alarm', reason: 'alarm_unchanged', suppressed: 'single_flight', tick: n });
+        rec = { n: n, cls: 'supp', text: '#' + n + ' same alarm, no turn' };
+      } else {
+        var cutoff = this.t - 3600;
+        this.cap = this.cap.filter(function (x) { return x >= cutoff; });
+        if (this.cap.length >= p.cap) { // 5. hourly cap
+          this.addAudit({ event: 'tick', outcome: 'alarm', suppressed: 'hourly_cap', tick: n });
+          rec = { n: n, cls: 'supp', text: '#' + n + ' hourly cap' };
+        } else { // 6. one turn
+          this.cap.push(this.t); this.sig = true; this.turns++; this.calls++;
+          this.addAudit({ event: 'escalate', level: 'L2', reason: 'alarm: log-errors', tick: n });
+          rec = { n: n, cls: 'turn', text: '#' + n + ' TURN' };
+        }
+      }
+    }
+    this.ticks.push(rec);
+    this.nextAt = this.t + this.interval;
+    return rec;
+  };
+  WakeSim.prototype.advance = function (dt) { // move virtual time, firing ticks that fall due
+    if (this.stopped) { this.t += dt; return; }
+    var end = this.t + dt;
+    while (!this.stopped && this.nextAt <= end) { this.t = this.nextAt; this.doTick(); }
+    this.t = end;
+  };
+  WakeSim.prototype.stepToNext = function () {
+    if (this.stopped) return null;
+    this.t = this.nextAt; return this.doTick();
+  };
+  WakeSim.prototype.turnsLastHour = function () {
+    var c = this.t - 3600; return this.cap.filter(function (x) { return x >= c; }).length;
+  };
+  WakeSim.prototype.resume = function () {
+    if (this.stopFile) return { ok: false, code: 409 };
+    if (!this.stopped) return { ok: true, code: 200, note: 'already running' };
+    this.stopped = false; this.nextAt = this.t + this.interval; return { ok: true, code: 200 };
+  };
+
+  var PRESETS = { rec: { base: 10, factor: 1.5, max: 20, cap: 2 }, def: { base: 60, factor: 1.5, max: 600, cap: 6 } };
+
+  /* ---- the scripted replay of the real recording ---- */
+  var REPLAY = [
+    ['tick', 3], ['err'], ['tick', 2], ['clr'], ['tick', 1], ['err'], ['tick', 1],
+    ['clr'], ['tick', 1], ['err'], ['tick', 1], ['stop'], ['tick', 1]
+  ];
+
+  /* ---- UI ---- */
+  var $ = function (id) { return document.getElementById(id); };
+  var sim = new WakeSim(PRESETS.rec), timer = null, last = 0, replayTimer = null;
+  function msg(t) { $('msg').textContent = t || ''; }
+  function render() {
+    $('v-calls').textContent = sim.calls;
+    $('c-calls').classList.toggle('hot', sim.calls > 0);
+    $('v-ticks').textContent = sim.tick; $('v-quiet').textContent = sim.quiet;
+    $('v-turns').textContent = sim.turnsLastHour(); $('v-cap').textContent = sim.p.cap;
+    $('v-next').textContent = sim.stopped ? 'stopped' : Math.max(0, Math.ceil(sim.nextAt - sim.t)) + ' s';
+    $('v-int').textContent = Math.round(sim.interval * 10) / 10 + ' s';
+    $('v-loop').textContent = sim.stopped ? 'stopped, healthz 503' : 'running, healthz 200';
+    var tl = $('timeline'); tl.innerHTML = '';
+    sim.ticks.slice(-40).forEach(function (r) {
+      var s = document.createElement('span'); s.className = 'tk ' + r.cls; s.textContent = r.text; tl.appendChild(s);
+    });
+    var a = $('audit'); a.textContent = sim.audit.join('\n'); a.scrollTop = a.scrollHeight;
+    $('b-err').setAttribute('aria-pressed', String(sim.alarmOn));
+    $('b-stop').setAttribute('aria-pressed', String(sim.stopFile));
+  }
+  function stopPlay() { if (timer) { cancelAnimationFrame(timer); timer = null; } $('b-play').textContent = 'Play'; }
+  function loop(ts) {
+    if (!last) last = ts;
+    var dt = Math.min((ts - last) / 1000, 0.25); last = ts;
+    sim.advance(dt * parseFloat($('s-speed').value)); render();
+    timer = requestAnimationFrame(loop);
+  }
+  $('b-play').addEventListener('click', function () {
+    if (timer) { stopPlay(); return; }
+    $('b-play').textContent = 'Pause'; last = 0; timer = requestAnimationFrame(loop);
+  });
+  $('b-step').addEventListener('click', function () {
+    stopPlay();
+    var r = sim.stepToNext(); render();
+    msg(r ? '' : 'The loop is stopped: no more ticks until Resume.');
+  });
+  function setPreset() { stopPlay(); stopReplay(); sim = new WakeSim(PRESETS[$('s-preset').value]); msg(''); render(); }
+  $('s-preset').addEventListener('change', setPreset);
+  $('b-reset').addEventListener('click', setPreset);
+  $('b-err').addEventListener('click', function () { sim.alarmOn = true; msg('The file now contains ERROR. The next tick will see it.'); render(); });
+  $('b-clr').addEventListener('click', function () { sim.alarmOn = false; msg('The file is clear. The next tick is quiet and re-arms escalation.'); render(); });
+  $('b-stop').addEventListener('click', function () { sim.stopFile = true; msg('STOP file created. The loop stops at its next tick.'); render(); });
+  $('b-rm').addEventListener('click', function () { sim.stopFile = false; msg('STOP file removed. The loop stays stopped until you resume it.'); render(); });
+  $('b-resume').addEventListener('click', function () {
+    var r = sim.resume();
+    msg(r.ok ? 'Resumed (HTTP 200): {"status":"resumed"}' : 'Refused (HTTP 409): the STOP file still exists.'); render();
+  });
+
+  function stopReplay() { if (replayTimer) { clearTimeout(replayTimer); replayTimer = null; } }
+  function runReplay(fast) {
+    stopPlay(); stopReplay();
+    sim = new WakeSim(PRESETS.rec); $('s-preset').value = 'rec'; render();
+    var steps = []; REPLAY.forEach(function (s) { if (s[0] === 'tick') for (var i = 0; i < s[1]; i++) steps.push(['tick']); else steps.push(s); });
+    var i = 0;
+    function one() {
+      if (i >= steps.length) { msg('Replay finished. Compare the audit log above with the recording below.'); render(); return; }
+      var s = steps[i++];
+      if (s[0] === 'tick') sim.stepToNext(); else if (s[0] === 'err') sim.alarmOn = true; else if (s[0] === 'clr') sim.alarmOn = false; else if (s[0] === 'stop') sim.stopFile = true;
+      render();
+      if (fast) one(); else replayTimer = setTimeout(one, 650);
+    }
+    one();
+  }
+  $('b-replay').addEventListener('click', function () { runReplay(false); });
+
+  render();
+  var cp = RK.CastPlayer($('player'), RK.loadCast('cast-wake'));
+  window.__page = { sim: function () { return sim; }, replayFast: function () { runReplay(true); return sim.audit.slice(); }, cast: cp, WakeSim: WakeSim, PRESETS: PRESETS };
+})();
+</script>
+</body>
+</html>

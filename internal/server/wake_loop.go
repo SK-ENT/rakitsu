@@ -223,7 +223,7 @@ func (s *ChatSession) StopWake() error {
 		return nil // wake not configured with a kill-switch path
 	}
 	// Create the file (idempotent, okay if it already exists)
-	if err := os.WriteFile(killFile, nil, 0o600); err != nil {
+	if err := wake.CreateKillSwitch(killFile); err != nil {
 		return fmt.Errorf("create kill-switch file: %w", err)
 	}
 	// Emit audit event for the stop action
@@ -315,10 +315,14 @@ func (s *ChatSession) wakeLoop(r *wakeRunner, ctx context.Context, cancel contex
 			if r.tasks != nil {
 				r.tasks.Stop(s.cfg.Settings.Wake.CancelOnStopEnabled())
 			}
+			result := "killed"
+			if res.LockLost {
+				result = "lock_replaced"
+			}
 			s.eventBus.Emit(s.ID, telemetry.EventWakeTick, telemetry.WakeTickPayload{
 				Tick:         res.Tick,
 				Outcome:      string(res.Outcome),
-				Result:       "killed",
+				Result:       result,
 				SummaryChars: res.SummaryChars,
 				SummaryCap:   res.SummaryCap,
 			})

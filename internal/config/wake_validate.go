@@ -105,7 +105,9 @@ func (c *Config) validateWake(add func(field, message string)) {
 			c.validateWakePath(add, f+"path", ch.Path)
 		case "http_status", "http_json":
 			u, err := url.Parse(ch.URL)
-			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			if err == nil && u.User != nil {
+				add(f+"url", "must not contain credentials (userinfo)")
+			} else if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 				add(f+"url", "must be an http or https URL")
 			} else if !wakeHostAllowed(w.Allow.URLHosts, u.Host) {
 				add(f+"url", fmt.Sprintf("host %q is not in settings.wake.allow.url_hosts", u.Host))

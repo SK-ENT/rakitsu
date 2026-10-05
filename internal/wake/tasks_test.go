@@ -15,6 +15,8 @@ import (
 )
 
 type taskHarness struct {
+	t       *testing.T
+	cfgPath string
 	m       *TaskManager
 	e       *Engine
 	clk     *FakeClock
@@ -56,7 +58,7 @@ func newTaskHarness(t *testing.T) *taskHarness {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { e.Close() })
-	h := &taskHarness{e: e, clk: clk, dir: dir,
+	h := &taskHarness{t: t, e: e, clk: clk, dir: dir,
 		started: make(chan TaskSpec, 16), release: make(chan string, 16),
 		events: make(chan TaskEvent, 64), timer: make(chan time.Time, 16), ctxs: make(chan context.Context, 16)}
 	h.m = h.newManager(e, cfg)
@@ -67,8 +69,7 @@ func newTaskHarness(t *testing.T) *taskHarness {
 func (h *taskHarness) newManager(e *Engine, cfg config.WakeConfig) *TaskManager {
 	return NewTaskManager(TaskDeps{
 		Engine: e, Cfg: cfg,
-		Allow: map[string]ResolvedConfig{"alert-handler": {Name: "alert-handler", Path: "/abs/alert.yaml",
-			Task: cfg.Allow.Configs[0].Task, Params: cfg.Allow.Configs[0].Params}},
+		Allow: map[string]ResolvedConfig{"alert-handler": h.snap(cfg)},
 		Run: func(ctx context.Context, s TaskSpec) (string, error) {
 			h.ctxs <- ctx
 			h.started <- s
@@ -332,7 +333,7 @@ func TestTaskIndependentOfCallerContextAndEnv(t *testing.T) {
 	if taskCtx.Value(taskCtxKey{}) == nil {
 		t.Fatal("task ctx must carry the task marker")
 	}
-	if strings.Contains(spec.Prompt, "s3cret") || spec.ConfigPath != "/abs/alert.yaml" {
+	if strings.Contains(spec.Prompt, "s3cret") || spec.ConfigPath != h.cfgPath {
 		t.Fatalf("spec must carry only config path + fixed prompt: %+v", spec)
 	}
 }
@@ -394,7 +395,7 @@ func TestTaskManagersAndWakeLoopIndependent(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer e2.Close()
-	h2 := &taskHarness{started: make(chan TaskSpec, 4), release: make(chan string, 4), events: make(chan TaskEvent, 16), timer: make(chan time.Time, 4), ctxs: make(chan context.Context, 4)}
+	h2 := &taskHarness{t: t, started: make(chan TaskSpec, 4), release: make(chan string, 4), events: make(chan TaskEvent, 16), timer: make(chan time.Time, 4), ctxs: make(chan context.Context, 4)}
 	m2 := h2.newManager(e2, cfg)
 	defer m2.Close()
 
@@ -496,9 +497,8 @@ func newBareManager(t *testing.T, maxTerm int, run TaskRunFunc, after func(time.
 	t.Cleanup(func() { e.Close() })
 	n := 0
 	m := NewTaskManager(TaskDeps{Engine: e, Cfg: cfg, MaxTerminal: maxTerm,
-		Allow: map[string]ResolvedConfig{"alert-handler": {Name: "alert-handler", Path: "/abs/a.yaml",
-			Task: cfg.Allow.Configs[0].Task, Params: cfg.Allow.Configs[0].Params}},
-		Run: run, After: after, Emit: func(ev TaskEvent) {
+		Allow: map[string]ResolvedConfig{"alert-handler": snapEntry(t, cfg)},
+		Run:   run, After: after, Emit: func(ev TaskEvent) {
 			if emitHook != nil {
 				emitHook(ev)
 			}
@@ -623,4 +623,77 @@ func TestTaskCloseBoundedForStuckRunner(t *testing.T) {
 	}
 	close(stuck)
 	m.runWG.Wait()
+}
+
+const taskYAML = "name: t\nagents: []\n"
+
+// snapEntry writes a real task file and returns an allow-list entry with its hash.
+func snapEntry(t *testing.T, cfg config.WakeConfig) ResolvedConfig {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "alert.yaml")
+	if err := os.WriteFile(p, []byte(taskYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return ResolvedConfig{Name: "alert-handler", Path: p, SHA256: hashBytes([]byte(taskYAML)),
+		Task: cfg.Allow.Configs[0].Task, Params: cfg.Allow.Configs[0].Params}
+}
+
+func (h *taskHarness) snap(cfg config.WakeConfig) ResolvedConfig {
+	e := snapEntry(h.t, cfg)
+	h.cfgPath = e.Path
+	return e
+}
+
+func TestTaskRefusedWhenConfigFileSwapped(t *testing.T) {
+	h := newTaskHarness(t)
+	if err := os.WriteFile(h.cfgPath, []byte("name: evil\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.m.Start(context.Background(), "alert-handler", goodArgs()); !errors.Is(err, ErrTaskRefused) ||
+		!strings.Contains(err.Error(), "task_config_changed") {
+		t.Fatalf("swapped file must be refused with task_config_changed, got %v", err)
+	}
+	if ev := h.nextEvent(t); ev.Status != "refused" || ev.Reason != "task_config_changed" {
+		t.Fatalf("event: %+v", ev)
+	}
+	audit, _ := os.ReadFile(filepath.Join(h.dir, "s1.audit.jsonl"))
+	if !strings.Contains(string(audit), "task_config_changed") {
+		t.Fatalf("audit lacks reason:\n%s", audit)
+	}
+	if err := os.Remove(h.cfgPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.m.Start(context.Background(), "alert-handler", goodArgs()); !errors.Is(err, ErrTaskRefused) {
+		t.Fatalf("removed file must be refused, got %v", err)
+	}
+	select {
+	case s := <-h.started:
+		t.Fatalf("a refused task ran: %+v", s)
+	default:
+	}
+}
+
+func TestTaskRunsWhenConfigFileUnchanged(t *testing.T) {
+	h := newTaskHarness(t)
+	if _, err := h.m.Start(context.Background(), "alert-handler", goodArgs()); err != nil {
+		t.Fatal(err)
+	}
+	<-h.started
+	h.release <- "ok"
+}
+
+func TestResolveAllowlistRecordsHash(t *testing.T) {
+	wd := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(wd, "tasks"), 0o755)
+	body := "name: t\nagents: []\n"
+	_ = os.WriteFile(filepath.Join(wd, "tasks", "a.yaml"), []byte(body), 0o600)
+	w := config.WakeConfig{}
+	w.Allow.Configs = []config.WakeAllowConfig{{Name: "a", Path: "tasks/a.yaml"}}
+	got, err := ResolveAllowlist(w, wd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["a"].SHA256 != hashBytes([]byte(body)) {
+		t.Fatalf("hash not recorded: %q", got["a"].SHA256)
+	}
 }

@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Messaging between sessions</title>
+<style>/*@CSS@*/
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:6px 0}
+.row label{display:flex;gap:6px;align-items:center;font-size:.92rem}
+.sess{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:8px 0}
+.sess .s{border:2px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--panel)}
+.sess .s.open{border-color:var(--ok)}
+.sess .s.closed{border-color:var(--bad)}
+pre.out{background:var(--term-bg);color:var(--term-ink);border-radius:8px;padding:10px;height:220px;overflow:auto;font-size:12.5px;margin:6px 0;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<header class="top">
+  <nav><a href="index.html">All demos</a> <a href="ask.html">rakitsu-ask</a> <a href="wake.html">Wake timer</a></nav>
+  <button id="theme-toggle" type="button">Dark mode</button>
+</header>
+<main>
+<h1>Messaging between sessions</h1>
+<p class="lead">One live session can send a message into another. The target must have opted in, the message starts a normal turn there, and a pair of sessions cannot ping-pong forever.</p>
+<p class="small">The playground is a <span class="badge sim">simulation</span> of <code>deliverMessage</code> and <code>handleSessionMessage</code> in <code>internal/server/session_message.go</code> (same order of checks, same status names and HTTP codes). The recording at the bottom is a <span class="badge real">real run</span> against a local serve, and the playground can replay its main cases.</p>
+
+<h2>Step through</h2>
+<div class="card" id="stepper"></div>
+
+<h2>Playground</h2>
+<div class="card">
+  <div class="sess" id="sess"></div>
+  <div class="row">
+    <label>From <select id="p-from"><option value="C">session C</option><option value="X">no session id</option></select></label>
+    <label>To <select id="p-to"><option value="A">session A (opted in)</option><option value="B">session B (not opted in)</option><option value="N">no-such-session</option></select></label>
+    <label><input type="checkbox" id="p-wait"> wait for the reply</label>
+    <label>Target turn takes <select id="p-dur"><option value="2">2 s</option><option value="200">200 s</option></select></label>
+  </div>
+  <div class="row">
+    <label>Text <select id="p-text"><option value="ok">short text</option><option value="empty">empty text</option><option value="big">17 KiB of text</option></select></label>
+    <label><input type="checkbox" id="p-token"> server has an API token and the sender sends none</label>
+  </div>
+  <div class="row">
+    <button id="p-send" class="primary" type="button">Send</button>
+    <button id="p-burst" type="button">Send 7 quickly</button>
+    <button id="p-busy" type="button">Start a long turn in A</button>
+    <button id="p-fin" type="button">Finish A's turn</button>
+    <button id="p-t10" type="button">Wait 10 s</button>
+    <button id="p-reset" type="button">Reset</button>
+  </div>
+  <p class="small" id="p-clock" aria-live="polite"></p>
+  <pre class="out mono" id="p-log" role="log" aria-label="Simulated requests" tabindex="0"></pre>
+  <div class="row"><button id="p-replay" type="button">Replay the recorded cases</button></div>
+</div>
+
+<h2>Rules in order</h2>
+<div class="card">
+<ol>
+<li>Auth: if the server has <code>RAKITSU_API_TOKEN</code> (or <code>RAKITSU_SESSION_MSG_TOKEN</code>) set, the request needs that bearer token, else 401.</li>
+<li>Body: text is required (400) and at most 16 KiB (413). With <code>wait</code>, <code>timeout_ms</code> defaults to 30000 and is clamped to 120000.</li>
+<li>Rate limit: at most 6 tries per 30 seconds between the same pair of sessions, counted before any other check (429). Busy and refused tries count too.</li>
+<li>Target lookup: unknown id gives 404 (or "mailboxed" for a known external mailbox).</li>
+<li>Opt-in: the target config needs <code>settings.session_msg.enabled: true</code>, else rejected (403).</li>
+<li>Queue: a running turn is never interrupted. One message may wait behind it; if that slot is taken the answer is busy (409).</li>
+<li>With <code>wait</code> the server blocks for the turn and returns the reply; if the wait runs out it answers <code>waited: false</code> and the turn still finishes in the background.</li>
+</ol>
+<p class="small"><code>from_name</code> and <code>from_session_id</code> are claimed by the sender and not verified. In the receiving transcript the message is shown as coming from another session. Agents get the same ability through the <code>send_message</code> and <code>list_sessions</code> tools. See <a href="../native-subagent-bridge.md">the bridge doc</a> and <a href="../reference/">reference pages</a>.</p>
+</div>
+
+<h2>Real recording</h2>
+<p class="small">Recorded by <code>docs/interactive/tools/record_msg.py</code>. Three live chat sessions: A and C opted in, B did not. Note the 409 answers in the last burst: session A was still busy with the earlier fire-and-forget message, and those tries count toward the 6.</p>
+<div class="card" id="player"></div>
+</main>
+<script type="application/json" id="cast-msg">/*@CAST:msg@*/</script>
+<script>/*@JS@*/</script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var A = [
+    { id: 'snd', label: 'Sender', sub: 'session C, tool, or script' },
+    { id: 'api', label: 'POST /api/sessions/{id}/message', sub: 'checks, rate limit' },
+    { id: 'tgt', label: 'Target session', sub: 'settings.session_msg.enabled' }
+  ];
+  var scen = {
+    wait: { tab: 'With wait', title: 'Send and wait for the reply', steps: [
+      { from: 'snd', to: 'api', title: 'Request', text: '{"text": "...", "from_session_id": "C", "from_name": "session-c", "wait": true}', state: { wait: true } },
+      { from: 'api', to: 'api', title: 'Checks', text: 'Token (if the server has one), text size, then the pair limiter: this is try 1 of 6 in 30 s.', tone: 'ok', state: { 'pair tries': '1 of 6' } },
+      { from: 'api', to: 'tgt', title: 'Queued as a turn', text: 'The target opted in. The text is queued as a turn attributed to the other session. A running turn would not be interrupted.', tone: 'ok' },
+      { from: 'tgt', to: 'api', title: 'Turn finishes', text: 'The server was blocking for it (at most 120000 ms).', tone: 'ok' },
+      { from: 'api', to: 'snd', title: 'Reply inline', text: '200 {"status":"delivered","waited":true,"reply":"...","interrupted":false}. If the turn failed: "turn_error" is added.', tone: 'ok' }
+    ]},
+    nowait: { tab: 'Fire and forget', title: 'Send without waiting', steps: [
+      { from: 'snd', to: 'api', title: 'Request without wait', text: 'This is the default.' },
+      { from: 'api', to: 'tgt', title: 'Queued', text: 'Success means "queued", not "the agent replied".', tone: 'ok' },
+      { from: 'api', to: 'snd', title: 'Status only', text: '200 {"status":"delivered"}. The target answers later, as a new message into the sender\'s conversation if it chooses to reply.', tone: 'ok' }
+    ]},
+    refuse: { tab: 'Refused', title: 'Not opted in, unknown, or busy', steps: [
+      { from: 'snd', to: 'api', title: 'Message to session B', text: 'B has settings.session_msg.enabled false.' },
+      { from: 'api', to: 'snd', title: '403 rejected', text: '{"status":"rejected","error":"session does not accept messages (settings.session_msg.enabled is false)"}. No turn starts. This is why an inbound message can never remote-control a session that did not say yes.', tone: 'bad' },
+      { from: 'api', to: 'snd', title: '404 not found', text: 'Unknown id: {"status":"not_found",...}.', tone: 'bad' },
+      { from: 'api', to: 'snd', title: '409 busy', text: 'The target is mid-turn and one message already waits behind it.', tone: 'warn' }
+    ]},
+    limit: { tab: 'Loop guard', title: 'Pair rate limit', steps: [
+      { from: 'snd', to: 'api', title: 'Two agents answer each other', text: 'A sends to B, B replies to A, and so on. Neither side has to cooperate for the limit to work.' },
+      { from: 'api', to: 'api', title: 'Sliding window', text: 'At most 6 tries per 30 seconds for the same unordered pair of sessions. The check comes first, so busy and refused tries count too.', tone: 'warn', state: { limit: '6 per 30 s' } },
+      { from: 'api', to: 'snd', title: '429 rate_limited', text: '{"status":"rate_limited","error":"rate limited: too many messages between these two sessions recently - possible loop; wait and retry"}', tone: 'bad' },
+      { from: 'api', to: 'snd', title: 'After the window', text: 'Tries older than 30 s drop out of the window and sending works again.', tone: 'ok' }
+    ]}
+  };
+  RK.Stepper($('stepper'), { actors: A, scenarios: scen });
+
+  /* ---- simulation ---- */
+  var LIMIT = 6, WINDOW = 30;
+  var st;
+  function fresh() { st = { t: 0, pairs: {}, busy: false, queued: 0, lines: [] }; }
+  fresh();
+  var SESS = { A: { open: true }, B: { open: false }, C: { open: true } };
+  function pairKey(a, b) { return a < b ? a + '\u0000' + b : b + '\u0000' + a; }
+  function send(req) {
+    var out;
+    if (req.token) out = { code: 401, body: '{"error":"unauthorized"}' };
+    else if (req.text === 'empty') out = { code: 400, body: '{"error":"text is required"}' };
+    else if (req.text === 'big') out = { code: 413, body: '{"error":"text too large (16KB max)"}' };
+    else {
+      var k = pairKey(req.from, req.to);
+      var kept = (st.pairs[k] || []).filter(function (x) { return st.t - x < WINDOW; });
+      if (kept.length >= LIMIT) { st.pairs[k] = kept; out = { code: 429, body: '{"error":"rate limited: too many messages between these two sessions recently ...","status":"rate_limited"}' }; }
+      else {
+        kept.push(st.t); st.pairs[k] = kept;
+        if (req.to === 'N') out = { code: 404, body: '{"error":"no-such-session: session not found","status":"not_found"}' };
+        else if (!SESS[req.to].open) out = { code: 403, body: '{"error":"session does not accept messages (settings.session_msg.enabled is false)","status":"rejected"}' };
+        else if (req.to === 'A' && st.busy && st.queued >= 1) out = { code: 409, body: '{"status":"busy"}' };
+        else {
+          if (req.to === 'A' && st.busy) st.queued++;
+          if (!req.wait) out = { code: 200, body: '{"status":"delivered"}' };
+          else if (req.dur > 120 || (req.to === 'A' && st.busy)) out = { code: 200, body: '{"status":"delivered","waited":false,"note":"reply not received within timeout; poll GET /api/chat/{id}/tree"}' };
+          else out = { code: 200, body: '{"status":"delivered","waited":true,"reply":"...","interrupted":false}' };
+        }
+      }
+    }
+    return out;
+  }
+  function log(s) { st.lines.push(s); }
+  function render() {
+    var box = $('sess'); box.innerHTML = '';
+    [['A', 'Session A', 'opted in'], ['B', 'Session B', 'not opted in'], ['C', 'Session C', 'opted in']].forEach(function (x) {
+      var d = document.createElement('div'); d.className = 's ' + (SESS[x[0]].open ? 'open' : 'closed');
+      var s1 = document.createElement('b'); s1.textContent = x[1];
+      var s2 = document.createElement('div'); s2.className = 'small';
+      s2.textContent = x[2] + (x[0] === 'A' ? (st.busy ? ', busy' + (st.queued ? ', 1 queued' : '') : ', idle') : '');
+      d.appendChild(s1); d.appendChild(s2); box.appendChild(d);
+    });
+    $('p-clock').textContent = 'Clock: ' + st.t + ' s. Tries from C to A in the last 30 s: ' + (st.pairs[pairKey('A', 'C')] || []).filter(function (x) { return st.t - x < WINDOW; }).length + ' of 6.';
+    var l = $('p-log'); l.textContent = st.lines.join('\n'); l.scrollTop = l.scrollHeight;
+  }
+  function doSend(overrides) {
+    var req = { from: $('p-from').value === 'C' ? 'C' : '', to: $('p-to').value, wait: $('p-wait').checked, dur: parseInt($('p-dur').value, 10), text: $('p-text').value, token: $('p-token').checked };
+    for (var k in overrides || {}) req[k] = overrides[k];
+    var r = send(req);
+    log('t=' + st.t + 's  ' + (req.from || 'anon') + ' -> ' + req.to + (req.wait ? ' wait' : '') + '  HTTP ' + r.code + '  ' + r.body);
+    render();
+    return r;
+  }
+  $('p-send').addEventListener('click', function () { doSend(); });
+  $('p-burst').addEventListener('click', function () { for (var i = 0; i < 7; i++) doSend(); });
+  $('p-busy').addEventListener('click', function () { st.busy = true; st.queued = 0; log('A starts a long turn'); render(); });
+  $('p-fin').addEventListener('click', function () {
+    if (!st.busy) { log('A is idle'); } else if (st.queued) { st.queued--; log('A finished a turn and starts the queued one'); } else { st.busy = false; log('A finished its turn'); }
+    render();
+  });
+  $('p-t10').addEventListener('click', function () { st.t += 10; log('... 10 s pass'); render(); });
+  $('p-reset').addEventListener('click', function () { fresh(); render(); });
+  $('p-replay').addEventListener('click', function () {
+    fresh(); $('p-from').value = 'C';
+    log('--- cases from the recording ---');
+    doSend({ to: 'A', wait: true, text: 'ok', dur: 2, token: false });
+    doSend({ to: 'A', wait: false, text: 'ok', token: false });
+    st.busy = true; st.queued = 0; log('(A is still busy with the previous message)');
+    doSend({ to: 'B', wait: false, text: 'ok', token: false });
+    doSend({ to: 'N', from: '', wait: false, text: 'ok', token: false });
+    for (var i = 0; i < 7; i++) {
+      if (i === 1) { st.queued--; log('(A finished the first turn and started the queued one)'); }
+      doSend({ to: 'A', wait: false, text: 'ok', token: false });
+    }
+  });
+  render();
+
+  var cp = RK.CastPlayer($('player'), RK.loadCast('cast-msg'));
+  window.__page = { send: send, state: function () { return st; }, cast: cp, fresh: fresh, doSend: doSend };
+})();
+</script>
+</body>
+</html>

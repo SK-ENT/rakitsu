@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rakitsu v0.3.0: interactive demos</title>
+<style>/*@CSS@*/
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.cards a.card{display:block;text-decoration:none;color:inherit}
+.cards a.card:hover{border-color:var(--accent)}
+.cards h3{margin:.1em 0 .3em;font-size:1.05rem;color:var(--accent)}
+.cards p{margin:.2em 0;color:var(--muted);font-size:.93rem}
+</style>
+</head>
+<body>
+<header class="top">
+  <nav><a href="../reference/">Reference docs</a> <a href="README.md">How this is made</a></nav>
+  <button id="theme-toggle" type="button">Dark mode</button>
+</header>
+<main>
+<h1>Rakitsu v0.3.0: interactive demos</h1>
+<p class="lead">Step-through pages and real terminal recordings for the main v0.3.0 features. Every page works offline, in light and dark mode, and on a phone.</p>
+<p class="small">Two kinds of content, always labelled. <span class="badge real">real run</span> means the real binary (or the real script) ran against a local fake model and the output is shown as it was. <span class="badge sim">simulation</span> means a small model of the documented rules, checked against a real run where one is available.</p>
+
+<div class="cards">
+  <a class="card" href="ask.html"><h3>rakitsu-ask</h3><p>A native Claude Code subagent talks to a serve chat session: session reuse, <code>--no-wait</code>, the depth guard, exit codes, untrusted replies.</p><span class="badge real">real run</span> <span class="badge">diagram</span></a>
+  <a class="card" href="wake.html"><h3>Wake timer</h3><p>Free ticks, a live "model calls: 0" counter, one turn on an alarm, the hourly cap, backoff and the kill switch.</p><span class="badge real">real run</span> <span class="badge sim">simulation</span></a>
+  <a class="card" href="starttask.html"><h3>start_task allow-list</h3><p>Try tool calls against the gates: allow-list, exact arguments, config snapshot, caps.</p><span class="badge real">real run</span> <span class="badge sim">checker</span></a>
+  <a class="card" href="monitors.html"><h3>Monitors, /healthz, alerts</h3><p>Monitor states and the health check, <code>rakitsu healthcheck</code>, <code>send_alert</code> to ntfy and webhook, redaction, caps and retry.</p><span class="badge real">real run</span> <span class="badge sim">simulation</span></a>
+  <a class="card" href="messaging.html"><h3>Session messaging</h3><p>One session messages another: opt-in, wait or not, busy, the 6-per-30-seconds pair limit.</p><span class="badge real">real run</span> <span class="badge sim">simulation</span></a>
+  <a class="card" href="webui.html"><h3>Web UI</h3><p>Screenshots and a short clip of the real UI: a monitor session after an alarm, the builder, a chat.</p><span class="badge real">real run</span></a>
+</div>
+
+<h2>Text documentation</h2>
+<ul>
+<li><a href="../reference/">Reference pages</a> (the written reference for these features)</li>
+<li><a href="../wake-timer.md">Wake timer</a> and <a href="../monitor-autostart.md">monitor autostart</a></li>
+<li><a href="../native-subagent-bridge.md">Native subagent bridge</a> (rakitsu-ask)</li>
+<li><a href="../WEBUI.md">Web UI manual</a></li>
+</ul>
+
+<h2>About the recordings</h2>
+<p>The terminal recordings in <code>casts/</code> are plain JSON files (<code>casts/ask.json</code>, <code>wake.json</code>, <code>monitor.json</code>, <code>msg.json</code>). They were made by running the real <code>rakitsu</code> binary against a tiny fake model server on the local machine. No API key, no private host and no home path is in them. The player is about 60 lines of JavaScript in each page. Waits are shortened; output is not edited. <a href="README.md">README</a> explains how to regenerate everything.</p>
+</main>
+<script>/*@JS@*/</script>
+</body>
+</html>

@@ -690,7 +690,7 @@ func (s *SSEServer) handleChatByID(w http.ResponseWriter, r *http.Request) {
 			case "resume":
 				if err := sess.ResumeWake(); err != nil {
 					status := http.StatusInternalServerError
-					if strings.Contains(err.Error(), "kill file") {
+					if errors.Is(err, wake.ErrKillSwitchPresent) {
 						status = http.StatusConflict
 					}
 					jsonErrorResponse(w, err.Error(), status)
@@ -823,7 +823,11 @@ func (s *SSEServer) handleChatWakeResume(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := sess.ResumeWake(); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"%v"}`, err), http.StatusInternalServerError)
+		status := http.StatusInternalServerError
+		if errors.Is(err, wake.ErrKillSwitchPresent) {
+			status = http.StatusConflict
+		}
+		jsonErrorResponse(w, err.Error(), status)
 		return
 	}
 

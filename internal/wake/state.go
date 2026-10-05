@@ -18,6 +18,7 @@ type persisted struct {
 	TaskWindow []int64                `json:"task_window,omitempty"` // unix nanos of start_task launches (rolling hour)
 	OwnerPID   int                    `json:"owner_pid"`
 	Stopped    bool                   `json:"stopped"`
+	AlarmSig   string                 `json:"alarm_sig,omitempty"` // non-OK check set at the last escalation; repeats are suppressed
 }
 
 func loadState(dir, sessionID string) (*persisted, error) {

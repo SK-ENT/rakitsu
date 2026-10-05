@@ -651,6 +651,42 @@ func TestWakeResumeHTTPHandler(t *testing.T) {
 	}
 }
 
+func TestWakeResumeHTTPHandlerKillFilePresentIs409(t *testing.T) {
+	dir := t.TempDir()
+	sess := startWakeSession(t, wakeTestCfg(dir, true), makeFakeChatBuildFunc("a1", nil, nil))
+	after, fire := manualAfter()
+	ts := newTickSync()
+	probe := func(context.Context, config.WakeCheck) wake.Observation { return wake.Observation{Exists: true} }
+	if err := sess.StartWake(WakeOptions{Dir: dir, Checks: probe, After: after, Clock: wake.NewFakeClock(time.Unix(1_700_000_000, 0)), TickDone: func() { ts.done <- struct{}{} }}); err != nil {
+		t.Fatal(err)
+	}
+	fire()
+	ts.wait(1)
+	if err := os.WriteFile(filepath.Join(dir, "STOP"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fire()
+	ts.wait(1)
+
+	bus := telemetry.NewEventBus(1024)
+	server := NewSSEServer(bus, "localhost", 9100)
+	manager := NewChatManager(bus, nil, nil, makeFakeChatBuildFunc("a1", nil, nil))
+	manager.mu.Lock()
+	manager.sessions[sess.ID] = sess
+	manager.mu.Unlock()
+	server.chatManager = manager
+
+	req := httptest.NewRequest("POST", "/api/chat/"+sess.ID+"/wake/resume", nil)
+	w := httptest.NewRecorder()
+	server.handleChatWakeResume(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "kill-switch file") {
+		t.Fatalf("message must name the kill-switch file: %s", w.Body.String())
+	}
+}
+
 func TestWakeStopHTTPHandlerNotFound(t *testing.T) {
 	bus := telemetry.NewEventBus(1024)
 	server := NewSSEServer(bus, "localhost", 9100)
@@ -788,5 +824,40 @@ func TestResumeWakeRefusedAfterStopWakeAndWait(t *testing.T) {
 	}
 	if sess.WakeRunning() {
 		t.Fatal("no loop may run after StopWakeAndWait")
+	}
+}
+
+func TestStopWakeExpandsTildeKillPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	dir := t.TempDir()
+	cfg := wakeTestCfg(dir, true)
+	cfg.Settings.Wake.KillSwitchFile = "~/x/KILL"
+	sess := startWakeSession(t, cfg, makeFakeChatBuildFunc("a1", nil, nil))
+	after, fire := manualAfter()
+	ts := newTickSync()
+	probe := func(context.Context, config.WakeCheck) wake.Observation { return wake.Observation{Exists: true} }
+	if err := sess.StartWake(WakeOptions{Dir: dir, Checks: probe, After: after, Clock: wake.NewFakeClock(time.Unix(1_700_000_000, 0)), TickDone: func() { ts.done <- struct{}{} }}); err != nil {
+		t.Fatal(err)
+	}
+	fire()
+	ts.wait(1)
+	if err := sess.StopWake(); err != nil {
+		t.Fatalf("StopWake: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "x", "KILL")); err != nil {
+		t.Fatalf("kill file not at expanded path: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(".", "~")); err == nil {
+		t.Fatal("literal ~ directory must not be created")
+	}
+	fire()
+	ts.wait(1)
+	for i := 0; i < 200 && sess.WakeRunning(); i++ {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if sess.WakeRunning() {
+		t.Fatal("engine did not see the kill file on next tick")
 	}
 }

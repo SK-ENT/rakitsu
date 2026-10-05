@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 func appendAudit(dir, sessionID string, rec map[string]any, maxBytes int64) error {
@@ -29,7 +30,14 @@ func appendAudit(dir, sessionID string, rec map[string]any, maxBytes int64) erro
 	}
 	defer file.Close()
 
-	data, err := json.Marshal(rec)
+	out := make(map[string]any, len(rec)+1)
+	for k, v := range rec {
+		out[k] = v
+	}
+	if _, ok := out["ts"]; !ok {
+		out["ts"] = time.Now().UTC().Format(time.RFC3339)
+	}
+	data, err := json.Marshal(out)
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}

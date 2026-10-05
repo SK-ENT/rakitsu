@@ -20,3 +20,7 @@ func tryLock(f *os.File) error {
 func unlock(f *os.File) {
 	_ = windows.UnlockFileEx(windows.Handle(f.Fd()), 0, 1, 0, new(windows.Overlapped))
 }
+
+// verifyLockPath is a no-op on windows: an open handle without FILE_SHARE_DELETE
+// prevents the path from being deleted or replaced while it is held.
+func verifyLockPath(path string, f *os.File) error { return nil }

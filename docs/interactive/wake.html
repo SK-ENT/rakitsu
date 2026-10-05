@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wake timer: free ticks, one turn on change</title>
+<style>:root{
+  --bg:#f7f8fa;--panel:#fff;--ink:#1b1f27;--muted:#5b6475;--line:#d9dde5;
+  --accent:#2f5fd0;--accent-ink:#fff;--ok:#1f8a4c;--warn:#a86a00;--bad:#c0322b;--info:#2f5fd0;
+  --term-bg:#12141a;--term-ink:#d7dbe4;--term-dim:#7b8496;--term-green:#5fd08a;--term-cyan:#6cc6e8;--term-red:#ff7b72;
+  --chip:#eef1f6;
+}
+html[data-theme="dark"]{
+  --bg:#0f1218;--panel:#171b24;--ink:#e6e9ef;--muted:#9aa3b5;--line:#2a3140;
+  --accent:#6b94ff;--accent-ink:#0b1020;--ok:#4cc27d;--warn:#e0a53a;--bad:#ff7b72;--info:#6b94ff;
+  --term-bg:#0a0c10;--chip:#202636;
+}
+@media (prefers-color-scheme: dark){
+  html:not([data-theme="light"]){
+    --bg:#0f1218;--panel:#171b24;--ink:#e6e9ef;--muted:#9aa3b5;--line:#2a3140;
+    --accent:#6b94ff;--accent-ink:#0b1020;--ok:#4cc27d;--warn:#e0a53a;--bad:#ff7b72;--info:#6b94ff;
+    --term-bg:#0a0c10;--chip:#202636;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--accent)}
+code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+code{background:var(--chip);padding:.05em .35em;border-radius:4px;font-size:.92em}
+header.top{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+header.top nav{display:flex;gap:14px;flex-wrap:wrap;font-size:.95rem}
+main{max-width:980px;margin:0 auto;padding:16px}
+h1{font-size:1.6rem;margin:.4em 0 .2em}
+h2{font-size:1.2rem;margin:1.6em 0 .4em}
+p.lead{color:var(--muted);margin:.2em 0 1em}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin:12px 0}
+.badge{display:inline-block;font-size:.75rem;padding:.1em .55em;border-radius:99px;border:1px solid var(--line);color:var(--muted);background:var(--chip)}
+.badge.sim{color:var(--warn);border-color:var(--warn)}
+.badge.real{color:var(--ok);border-color:var(--ok)}
+button,select,input[type=number],input[type=text]{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:.4em .8em;min-height:40px}
+button{cursor:pointer}
+button:hover:not(:disabled){border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:default}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button[aria-pressed="true"],button.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.actors{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.actor{flex:1 1 130px;min-width:120px;border:2px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--panel);transition:border-color .25s,background .25s}
+.actor b{display:block;font-size:.92rem}
+.actor small{color:var(--muted)}
+.actor.from{border-color:var(--warn)}
+.actor.to{border-color:var(--ok)}
+.actor.from.to{border-color:var(--accent)}
+.steps{list-style:none;margin:8px 0;padding:0}
+.steps li{border-left:4px solid var(--line);padding:6px 10px;margin:6px 0;background:var(--panel);border-radius:0 8px 8px 0}
+.steps li.current{border-left-color:var(--accent);background:var(--chip)}
+.steps li.ok{border-left-color:var(--ok)}
+.steps li.warn{border-left-color:var(--warn)}
+.steps li.bad{border-left-color:var(--bad)}
+.steps .route{font-size:.8rem;color:var(--muted)}
+.steps .t{font-weight:600}
+.steps .d{color:var(--muted);font-size:.93rem;margin-top:2px;overflow-wrap:anywhere}
+.state{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.state span{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:2px 9px;font-size:.88rem}
+.state span b{font-weight:600}
+.caption{min-height:1.5em;color:var(--muted);font-size:.93rem}
+table{border-collapse:collapse;width:100%;font-size:.93rem}
+th,td{border-bottom:1px solid var(--line);text-align:left;padding:6px 8px;vertical-align:top}
+.tablewrap{overflow-x:auto}
+.term{background:var(--term-bg);color:var(--term-ink);border-radius:8px;padding:12px;margin:8px 0;height:360px;overflow:auto;font-size:12.5px;line-height:1.45;white-space:pre;tab-size:4}
+.term .dim{color:var(--term-dim)}
+.term .grn{color:var(--term-green)}
+.term .cyn{color:var(--term-cyan)}
+.term .red{color:var(--term-red)}
+.term .bld{font-weight:700}
+.term .cur{display:inline-block;width:.6em;background:var(--term-ink);opacity:.8;animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+input[type=range]{flex:1 1 160px;min-width:120px;min-height:28px}
+.small{font-size:.88rem;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:640px){
+  main{padding:12px}
+  .grid2{grid-template-columns:1fr}
+  .term{height:300px;font-size:11.5px}
+  .actor{flex:1 1 44%;min-width:0}
+  label{display:block;max-width:100%;min-width:0}
+  select,input[type=number],input[type=text]{max-width:100%;width:100%;box-sizing:border-box}
+  pre,code,.actor b,.actor small{overflow-wrap:anywhere}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+.sr{position:absolute;left:-9999px}
+
+.big{font-size:2.6rem;font-weight:700;line-height:1.1}
+.counters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:8px 0}
+.counters .c{background:var(--chip);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.counters .c small{display:block;color:var(--muted)}
+.counters .c.calls{border-color:var(--ok)}
+.counters .c.calls.hot{border-color:var(--bad)}
+.timeline{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0;min-height:34px}
+.tk{font-size:.75rem;border-radius:6px;padding:3px 6px;border:1px solid var(--line);background:var(--panel);color:var(--muted)}
+.tk.alarm{border-color:var(--bad);color:var(--bad)}
+.tk.turn{background:var(--bad);color:#fff;border-color:var(--bad)}
+.tk.supp{border-color:var(--warn);color:var(--warn)}
+.tk.kill{background:var(--ink);color:var(--bg)}
+.audit{background:var(--term-bg);color:var(--term-ink);border-radius:8px;padding:10px;height:220px;overflow:auto;font-size:12px;white-space:pre}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}
+.row label{display:flex;gap:6px;align-items:center;font-size:.9rem}
+.row input[type=number]{width:5.5em}
+.msg{min-height:1.4em;font-size:.92rem}
+</style>
+</head>
+<body>
+<header class="top">
+  <nav><a href="index.html">All demos</a> <a href="starttask.html">start_task</a> <a href="monitors.html">Monitors, healthz, alerts</a></nav>
+  <button id="theme-toggle" type="button">Dark mode</button>
+</header>
+<main>
+<h1>Wake timer</h1>
+<p class="lead">A clock inside <code>rakitsu serve</code> runs cheap checks on a schedule. While nothing is wrong it makes zero model calls. When a check raises an alarm, it injects one normal turn into the same chat session.</p>
+<p class="small">The timeline is a <span class="badge sim">simulation</span> of the rules in <code>internal/wake/engine.go</code> (the order of decisions is the same). The recording at the bottom is a <span class="badge real">real run</span> of the real binary with the same numbers (10 s base, factor 1.5, max 20 s, cap 2). The button "Replay the recorded run" feeds the simulation the same steps and you can compare the two audit logs.</p>
+
+<h2>Simulated timeline</h2>
+<div class="card" id="sim">
+  <div class="counters">
+    <div class="c calls" id="c-calls"><small>model calls</small><span class="big" id="v-calls">0</span></div>
+    <div class="c"><small>ticks</small><b id="v-ticks">0</b> (<span id="v-quiet">0</span> quiet)</div>
+    <div class="c"><small>turns this hour</small><b id="v-turns">0</b> of <span id="v-cap">2</span></div>
+    <div class="c"><small>next tick in</small><b id="v-next">-</b></div>
+    <div class="c"><small>interval after backoff</small><b id="v-int">-</b></div>
+    <div class="c"><small>loop / healthz</small><b id="v-loop">running</b></div>
+  </div>
+  <div class="timeline" id="timeline" aria-label="Ticks"></div>
+  <div class="row">
+    <button id="b-play" class="primary" type="button">Play</button>
+    <button id="b-step" type="button">Jump to next tick</button>
+    <label>Speed <select id="s-speed" aria-label="Virtual seconds per real second"><option value="1">1 s per s</option><option value="5" selected>5 s per s</option><option value="20">20 s per s</option><option value="120">120 s per s</option></select></label>
+    <button id="b-reset" type="button">Reset</button>
+  </div>
+  <div class="row">
+    <span class="small">The checked file:</span>
+    <button id="b-err" type="button">Add an ERROR line</button>
+    <button id="b-clr" type="button">Clear the file</button>
+    <span class="small">Kill switch:</span>
+    <button id="b-stop" type="button">Create STOP file</button>
+    <button id="b-rm" type="button">Remove STOP file</button>
+    <button id="b-resume" type="button">Resume</button>
+  </div>
+  <div class="row">
+    <label>Preset
+      <select id="s-preset"><option value="rec">Recording (10 s, x1.5, max 20 s, cap 2)</option><option value="def">Documented defaults (60 s, x1.5, max 600 s, cap 6)</option></select></label>
+    <button id="b-replay" type="button">Replay the recorded run</button>
+  </div>
+  <p class="msg" id="msg" aria-live="polite"></p>
+  <div class="audit mono" id="audit" role="log" aria-label="Simulated audit log" tabindex="0"></div>
+  <p class="small">Simplifications: no jitter (the default is 10 percent), and a turn finishes at once, so "a turn is already running" never happens here. One turn is counted as one model call; a real turn can use more (in the recording the one turn used 4 calls and its started task used 1 more). Quiet ticks never touch the model.</p>
+</div>
+
+<h2>The rules in one list</h2>
+<div class="card">
+<ol>
+<li>Every tick starts by looking for the kill-switch file. If it is there, the loop stops and the session stays open.</li>
+<li>Checks run (file, HTTP). They are read-only and free.</li>
+<li>All checks fine: this is a quiet tick. The next wait is multiplied by <code>backoff_factor</code>, up to <code>max_interval_seconds</code>. An audit line is written, no event is emitted, no model call.</li>
+<li>Anything not fine: the wait goes back to the base interval. If it is the same alarm as the last escalated one, it is suppressed (<code>single_flight</code>, reason <code>alarm_unchanged</code>) until a quiet tick or a different alarm re-arms it.</li>
+<li>If <code>max_turns_per_hour</code> turns already happened in the last hour: suppressed as <code>hourly_cap</code>.</li>
+<li>Otherwise one timer-sourced turn is injected into the session (<code>level: L2</code>).</li>
+</ol>
+<p class="small">Source: <a href="../wake-timer.md">docs/wake-timer.md</a>, <code>internal/wake/engine.go</code>.</p>
+</div>
+
+<h2>Real recording</h2>
+<p class="small">Recorded by <code>docs/interactive/tools/record_wake.py</code> (monitor started by <code>rakitsu serve --config monitor.yaml</code>, fake local model, local webhook). Waits are shortened; the output is not edited. The lines starting with <code>model calls so far</code> come from the fake model server's own counter.</p>
+<div class="card" id="player"></div>
+</main>
+<script type="application/json" id="cast-wake">{"version":1,"title":"wake timer: free ticks, one turn on an alarm, caps, kill switch","width":100,"height":28,"events":[[0.5,"o","\u001b[2m# serve autostarts the monitor from monitor.yaml: session monitor-log-watch\u001b[0m\r\n"],[0.9,"o","\u001b[32m$ \u001b[0m"],[0.925,"o","c"],[0.95,"o","u"],[0.975,"o","r"],[1.0,"o","l"],[1.025,"o"," "],[1.05,"o","-"],[1.075,"o","s"],[1.1,"o"," "],[1.125,"o","-"],[1.15,"o","w"],[1.175,"o"," "],[1.2,"o","'"],[1.225,"o"," "],[1.25,"o","("],[1.275,"o","H"],[1.3,"o","T"],[1.325,"o","T"],[1.35,"o","P"],[1.375,"o"," "],[1.4,"o","%"],[1.425,"o","{"],[1.45,"o","h"],[1.475,"o","t"],[1.5,"o","t"],[1.525,"o","p"],[1.55,"o","_"],[1.575,"o","c"],[1.6,"o","o"],[1.625,"o","d"],[1.65,"o","e"],[1.675,"o","}"],[1.7,"o",")"],[1.725,"o","\\"],[1.75,"o","n"],[1.775,"o","'"],[1.8,"o"," "],[1.825,"o","h"],[1.85,"o","t"],[1.875,"o","t"],[1.9,"o","p"],[1.925,"o",":"],[1.95,"o","/"],[1.975,"o","/"],[2.0,"o","1"],[2.025,"o","2"],[2.05,"o","7"],[2.075,"o","."],[2.1,"o","0"],[2.125,"o","."],[2.15,"o","0"],[2.175,"o","."],[2.2,"o","1"],[2.225,"o",":"],[2.25,"o","9"],[2.275,"o","1"],[2.3,"o","0"],[2.325,"o","2"],[2.35,"o","/"],[2.375,"o","h"],[2.4,"o","e"],[2.425,"o","a"],[2.45,"o","l"],[2.475,"o","t"],[2.5,"o","h"],[2.525,"o","z"],[2.825,"o","\r\n"],[3.275,"o","{\"status\":\"ok\",\"monitors\":{\"log-watch\":\"ok\"}}\r\n"],[3.305,"o"," (HTTP 200)\r\n"],[3.805,"o","\u001b[2m# the log is quiet. Ticks run free checks only; watch the model call count\u001b[0m\r\n"],[4.205,"o","\u001b[32m$ \u001b[0m"],[4.23,"o","c"],[4.255,"o","a"],[4.28,"o","t"],[4.305,"o"," "],[4.33,"o","~"],[4.355,"o","/"],[4.38,"o","."],[4.405,"o","r"],[4.43,"o","a"],[4.455,"o","k"],[4.48,"o","i"],[4.505,"o","t"],[4.53,"o","s"],[4.555,"o","u"],[4.58,"o","/"],[4.605,"o","w"],[4.63,"o","a"],[4.655,"o","k"],[4.68,"o","e"],[4.705,"o","/"],[4.73,"o","m"],[4.755,"o","o"],[4.78,"o","n"],[4.805,"o","i"],[4.83,"o","t"],[4.855,"o","o"],[4.88,"o","r"],[4.905,"o","-"],[4.93,"o","l"],[4.955,"o","o"],[4.98,"o","g"],[5.005,"o","-"],[5.03,"o","w"],[5.055,"o","a"],[5.08,"o","t"],[5.105,"o","c"],[5.13,"o","h"],[5.155,"o","."],[5.18,"o","a"],[5.205,"o","u"],[5.23,"o","d"],[5.255,"o","i"],[5.28,"o","t"],[5.305,"o","."],[5.33,"o","j"],[5.355,"o","s"],[5.38,"o","o"],[5.405,"o","n"],[5.43,"o","l"],[5.73,"o","\r\n"],[5.78,"o","{\"event\":\"tick\",\"outcome\":\"quiet\",\"tick\":1}\r\n"],[5.83,"o","{\"event\":\"tick\",\"outcome\":\"quiet\",\"tick\":2}\r\n"],[5.88,"o","{\"event\":\"tick\",\"outcome\":\"quiet\",\"tick\":3}\r\n"],[6.28,"o","\u001b[32m$ \u001b[0m"],[6.305,"o","c"],[6.33,"o","u"],[6.355,"o","r"],[6.38,"o","l"],[6.405,"o"," "],[6.43,"o","-"],[6.455,"o","s"],[6.48,"o"," "],[6.505,"o","h"],[6.53,"o","t"],[6.555,"o","t"],[6.58,"o","p"],[6.605,"o",":"],[6.63,"o","/"],[6.655,"o","/"],[6.68,"o","1"],[6.705,"o","2"],[6.73,"o","7"],[6.755,"o","."],[6.78,"o","0"],[6.805,"o","."],[6.83,"o","0"],[6.855,"o","."],[6.88,"o","1"],[6.905,"o",":"],[6.93,"o","4"],[6.955,"o","0"],[6.98,"o","1"],[7.005,"o","0"],[7.03,"o","/"],[7.055,"o","c"],[7.08,"o","o"],[7.105,"o","u"],[7.13,"o","n"],[7.155,"o","t"],[7.455,"o","\r\n"],[7.755,"o","model calls so far: 0\r\n"],[8.255,"o","\u001b[2m# quiet ticks back off: next_tick_in_seconds is 20 although the base interval is 10 (x1.5 per quiet tick, max 20 here)\u001b[0m\r\n"],[8.655,"o","\u001b[32m$ \u001b[0m"],[8.68,"o","c"],[8.705,"o","u"],[8.73,"o","r"],[8.755,"o","l"],[8.78,"o"," "],[8.805,"o","-"],[8.83,"o","s"],[8.855,"o"," "],[8.88,"o","h"],[8.905,"o","t"],[8.93,"o","t"],[8.955,"o","p"],[8.98,"o",":"],[9.005,"o","/"],[9.03,"o","/"],[9.055,"o","1"],[9.08,"o","2"],[9.105,"o","7"],[9.13,"o","."],[9.155,"o","0"],[9.18,"o","."],[9.205,"o","0"],[9.23,"o","."],[9.255,"o","1"],[9.28,"o",":"],[9.305,"o","9"],[9.33,"o","1"],[9.355,"o","0"],[9.38,"o","2"],[9.405,"o","/"],[9.43,"o","a"],[9.455,"o","p"],[9.48,"o","i"],[9.505,"o","/"],[9.53,"o","c"],[9.555,"o","h"],[9.58,"o","a"],[9.605,"o","t"],[9.63,"o","/"],[9.655,"o","m"],[9.68,"o","o"],[9.705,"o","n"],[9.73,"o","i"],[9.755,"o","t"],[9.78,"o","o"],[9.805,"o","r"],[9.83,"o","-"],[9.855,"o","l"],[9.88,"o","o"],[9.905,"o","g"],[9.93,"o","-"],[9.955,"o","w"],[9.98,"o","a"],[10.005,"o","t"],[10.03,"o","c"],[10.055,"o","h"],[10.08,"o","/"],[10.105,"o","w"],[10.13,"o","a"],[10.155,"o","k"],[10.18,"o","e"],[10.205,"o","/"],[10.23,"o","s"],[10.255,"o","t"],[10.28,"o","a"],[10.305,"o","t"],[10.33,"o","u"],[10.355,"o","s"],[10.655,"o","\r\n"],[11.105,"o","{\"id\":\"monitor-log-watch\",\"state\":\"ok\",\"label\":\"log-watch\",\"last_tick\":\"2026-10-04T13:36:02+09:00\",\"turns_last_hour\":0,\"max_turns_per_hour\":2,\"running_tasks\":0,\"next_tick_in_seconds\":20,\"interval_seconds\":10}\r\n"],[11.605,"o","\u001b[2m# now the log gets an ERROR line\u001b[0m\r\n"],[12.005,"o","\u001b[32m$ \u001b[0m"],[12.03,"o","e"],[12.055,"o","c"],[12.08,"o","h"],[12.105,"o","o"],[12.13,"o"," "],[12.155,"o","'"],[12.18,"o","E"],[12.205,"o","R"],[12.23,"o","R"],[12.255,"o","O"],[12.28,"o","R"],[12.305,"o"," "],[12.33,"o","d"],[12.355,"o","i"],[12.38,"o","s"],[12.405,"o","k"],[12.43,"o"," "],[12.455,"o","f"],[12.48,"o","u"],[12.505,"o","l"],[12.53,"o","l"],[12.555,"o","'"],[12.58,"o"," "],[12.605,"o",">"],[12.63,"o",">"],[12.655,"o"," "],[12.68,"o","m"],[12.705,"o","o"],[12.73,"o","n"],[12.755,"o","i"],[12.78,"o","t"],[12.805,"o","o"],[12.83,"o","r"],[12.855,"o","s"],[12.88,"o","/"],[12.905,"o","l"],[12.93,"o","o"],[12.955,"o","g"],[12.98,"o","-"],[13.005,"o","w"],[13.03,"o","a"],[13.055,"o","t"],[13.08,"o","c"],[13.105,"o","h"],[13.13,"o","/"],[13.155,"o","l"],[13.18,"o","o"],[13.205,"o","g"],[13.23,"o","s"],[13.255,"o","/"],[13.28,"o","a"],[13.305,"o","p"],[13.33,"o","p"],[13.355,"o","."],[13.38,"o","l"],[13.405,"o","o"],[13.43,"o","g"],[13.73,"o","\r\n"],[15.13,"o","\u001b[32m$ \u001b[0m"],[15.155,"o","c"],[15.18,"o","a"],[15.205,"o","t"],[15.23,"o"," "],[15.255,"o","~"],[15.28,"o","/"],[15.305,"o","."],[15.33,"o","r"],[15.355,"o","a"],[15.38,"o","k"],[15.405,"o","i"],[15.43,"o","t"],[15.455,"o","s"],[15.48,"o","u"],[15.505,"o","/"],[15.53,"o","w"],[15.555,"o","a"],[15.58,"o","k"],[15.605,"o","e"],[15.63,"o","/"],[15.655,"o","m"],[15.68,"o","o"],[15.705,"o","n"],[15.73,"o","i"],[15.755,"o","t"],[15.78,"o","o"],[15.805,"o","r"],[15.83,"o","-"],[15.855,"o","l"],[15.88,"o","o"],[15.905,"o","g"],[15.93,"o","-"],[15.955,"o","w"],[15.98,"o","a"],[16.005,"o","t"],[16.03,"o","c"],[16.055,"o","h"],[16.08,"o","."],[16.105,"o","a"],[16.13,"o","u"],[16.155,"o","d"],[16.18,"o","i"],[16.205,"o","t"],[16.23,"o","."],[16.255,"o","j"],[16.28,"o","s"],[16.305,"o","o"],[16.33,"o","n"],[16.355,"o","l"],[16.655,"o","\r\n"],[16.705,"o","{\"event\":\"tick\",\"outcome\":\"quiet\",\"tick\":1}\r\n"],[16.755,"o","{\"event\":\"tick\",\"outcome\":\"quiet\",\"tick\":2}\r\n"],[16.805,"o","{\"event\":\"tick\",\"outcome\":\"quiet\",\"tick\":3}\r\n"],[16.855,"o","{\"event\":\"escalate\",\"level\":\"L2\",\"reason\":\"alarm: log-errors\",\"tick\":4}\r\n"],[16.905,"o","{\"config\":\"summary-note\",\"event\":\"task_start\",\"task_id\":\"task-69b0f20ad67cb447\"}\r\n"],[16.955,"o","{\"config\":\"not-on-the-list\",\"event\":\"task_refused\",\"reason\":\"config is not in settings.wake.allow.configs\"}\r\n"],[17.005,"o","{\"config\":\"summary-note\",\"event\":\"task_end\",\"status\":\"done\",\"task_id\":\"task-69b0f20ad67cb447\"}\r\n"],[17.405,"o","\u001b[32m$ \u001b[0m"],[17.43,"o","c"],[17.455,"o","u"],[17.48,"o","r"],[17.505,"o","l"],[17.53,"o"," "],[17.555,"o","-"],[17.58,"o","s"],[17.605,"o"," "],[17.63,"o","h"],[17.655,"o","t"],[17.68,"o","t"],[17.705,"o","p"],[17.73,"o",":"],[17.755,"o","/"],[17.78,"o","/"],[17.805,"o","1"],[17.83,"o","2"],[17.855,"o","7"],[17.88,"o","."],[17.905,"o","0"],[17.93,"o","."],[17.955,"o","0"],[17.98,"o","."],[18.005,"o","1"],[18.03,"o",":"],[18.055,"o","4"],[18.08,"o","0"],[18.105,"o","1"],[18.13,"o","0"],[18.155,"o","/"],[18.18,"o","c"],[18.205,"o","o"],[18.23,"o","u"],[18.255,"o","n"],[18.28,"o","t"],[18.58,"o","\r\n"],[18.88,"o","model calls so far: 5\r\n"],[19.38,"o","\u001b[2m# the alert reached the webhook (path redaction: /Users/... became ~)\u001b[0m\r\n"],[19.78,"o","\u001b[32m$ \u001b[0m"],[19.805,"o","c"],[19.83,"o","a"],[19.855,"o","t"],[19.88,"o"," "],[19.905,"o","w"],[19.93,"o","e"],[19.955,"o","b"],[19.98,"o","h"],[20.005,"o","o"],[20.03,"o","o"],[20.055,"o","k"],[20.08,"o","."],[20.105,"o","j"],[20.13,"o","s"],[20.155,"o","o"],[20.18,"o","n"],[20.205,"o","l"],[20.505,"o","\r\n"],[20.955,"o","{\"path\": \"/hook\", \"content_type\": \"application/json\", \"body\": \"{\\\"severity\\\":\\\"warn\\\",\\\"title\\\":\\\"log-watch alarm\\\",\\\"body\\\":\\\"The timer saw ERROR in the log. Home is ~ Header was Authorization: Bearer [redacted] and key [redacted].\\\",\\\"time\\\":\\\"2026-10-04T13:36:22.570581+09:00\\\"}\"}\r\n"],[20.985,"o","{\"path\": \"/ntfy\", \"content_type\": \"text/plain; charset=utf-8\", \"body\": \"The timer saw ERROR in the log. Home is ~ Header was Authorization: Bearer [redacted] and key [redacted].\", \"title\": \"log-watch alarm\", \"priority\": \"4\"}\r\n"],[21.485,"o","\u001b[2m# the alarm is still there on the next tick: same alarm, no new turn\u001b[0m\r\n"],[21.885,"o","\u001b[32m$ \u001b[0m"],[21.91,"o","c"],[21.935,"o","a"],[21.96,"o","t"],[21.985,"o"," "],[22.01,"o","~"],[22.035,"o","/"],[22.06,"o","."],[22.085,"o","r"],[22.11,"o","a"],[22.135,"o","k"],[22.16,"o","i"],[22.185,"o","t"],[22.21,"o","s"],[22.235,"o","u"],[22.26,"o","/"],[22.285,"o","w"],[22.31,"o","a"],[22.335,"o","k"],[22.36,"o","e"],[22.385,"o","/"],[22.41,"o","m"],[22.435,"o","o"],[22.46,"o","n"],[22.485,"o","i"],[22.51,"o","t"],[22.535,"o","o"],[22.56,"o","r"],[22.585,"o","-"],[22.61,"o","l"],[22.635,"o","o"],[22.66,"o","g"],[22.685,"o","-"],[22.71,"o","w"],[22.735,"o","a"],[22.76,"o","t"],[22.785,"o","c"],[22.81,"o","h"],[22.835,"o","."],[22.86,"o","a"],[22.885,"o","u"],[22.91,"o","d"],[22.935,"o","i"],[22.96,"o","t"],[22.985,"o","."],[23.01,"o","j"],[23.035,"o","s"],[23.06,"o","o"],[23.085,"o","n"],[23.11,"o","l"],[23.41,"o","\r\n"],[23.46,"o","{\"event\":\"tick\",\"outcome\":\"quiet\",\"tick\":1}\r\n"],[23.51,"o","{\"event\":\"tick\",\"outcome\":\"quiet\",\"tick\":2}\r\n"],[23.56,"o","{\"event\":\"tick\",\"outcome\":\"quiet\",\"tick\":3}\r\n"],[23.61,"o","{\"event\":\"escalate\",\"level\":\"L2\",\"reason\":\"alarm: log-errors\",\"tick\":4}\r\n"],[23.66,"o","{\"config\":\"summary-note\",\"event\":\"task_start\",\"task_id\":\"task-69b0f20ad67cb447\"}\r\n"],[23.71,"o","{\"config\":\"not-on-the-list\",\"event\":\"task_refused\",\"reason\":\"config is not in settings.wake.allow.configs\"}\r\n"],[23.76,"o","{\"config\":\"summary-note\",\"event\":\"task_end\",\"status\":\"done\",\"task_id\":\"task-69b0f20ad67cb447\"}\r\n"],[23.81,"o","{\"event\":\"tick\",\"outcome\":\"alarm\",\"reason\":\"alarm_unchanged\",\"suppressed\":\"single_flight\",\"tick\":5}\r\n"],[24.21,"o","\u001b[32m$ \u001b[0m"],[24.235,"o","c"],[24.26,"o","u"],[24.285,"o","r"],[24.31,"o","l"],[24.335,"o"," "],[24.36,"o","-"],[24.385,"o","s"],[24.41,"o"," "],[24.435,"o","h"],[24.46,"o","t"],[24.485,"o","t"],[24.51,"o","p"],[24.535,"o",":"],[24.56,"o","/"],[24.585,"o","/"],[24.61,"o","1"],[24.635,"o","2"],[24.66,"o","7"],[24.685,"o","."],[24.71,"o","0"],[24.735,"o","."],[24.76,"o","0"],[24.785,"o","."],[24.81,"o","1"],[24.835,"o",":"],[24.86,"o","4"],[24.885,"o","0"],[24.91,"o","1"],[24.935,"o","0"],[24.96,"o","/"],[24.985,"o","c"],[25.01,"o","o"],[25.035,"o","u"],[25.06,"o","n"],[25.085,"o","t"],[25.385,"o","\r\n"],[25.685,"o","model calls so far: 5\r\n"],[26.185,"o","\u001b[2m# status after the alarm: interval is back to the base, 1 of 2 turns used this hour\u001b[0m\r\n"],[26.585,"o","\u001b[32m$ \u001b[0m"],[26.61,"o","c"],[26.635,"o","u"],[26.66,"o","r"],[26.685,"o","l"],[26.71,"o"," "],[26.735,"o","-"],[26.76,"o","s"],[26.785,"o"," "],[26.81,"o","h"],[26.835,"o","t"],[26.86,"o","t"],[26.885,"o","p"],[26.91,"o",":"],[26.935,"o","/"],[26.96,"o","/"],[26.985,"o","1"],[27.01,"o","2"],[27.035,"o","7"],[27.06,"o","."],[27.085,"o","0"],[27.11,"o","."],[27.135,"o","0"],[27.16,"o","."],[27.185,"o","1"],[27.21,"o",":"],[27.235,"o","9"],[27.26,"o","1"],[27.285,"o","0"],[27.31,"o","2"],[27.335,"o","/"],[27.36,"o","a"],[27.385,"o","p"],[27.41,"o","i"],[27.435,"o","/"],[27.46,"o","c"],[27.485,"o","h"],[27.51,"o","a"],[27.535,"o","t"],[27.56,"o","/"],[27.585,"o","m"],[27.61,"o","o"],[27.635,"o","n"],[27.66,"o","i"],[27.685,"o","t"],[27.71,"o","o"],[27.735,"o","r"],[27.76,"o","-"],[27.785,"o","l"],[27.81,"o","o"],[27.835,"o","g"],[27.86,"o","-"],[27.885,"o","w"],[27.91,"o","a"],[27.935,"o","t"],[27.96,"o","c"],[27.985,"o","h"],[28.01,"o","/"],[28.035,"o","w"],[28.06,"o","a"],[28.085,"o","k"],[28.11,"o","e"],[28.135,"o","/"],[28.16,"o","s"],[28.185,"o","t"],[28.21,"o","a"],[28.235,"o","t"],[28.26,"o","u"],[28.285,"o","s"],[28.585,"o","\r\n"],[29.035,"o","{\"id\":\"monitor-log-watch\",\"state\":\"ok\",\"label\":\"log-watch\",\"last_tick\":\"2026-10-04T13:36:32+09:00\",\"last_alarm\":\"2026-10-04T13:36:22.53996+09:00\",\"turns_last_hour\":1,\"max_turns_per_hour\":2,\"running_tasks\":0,\"next_tick_in_seconds\":10,\"interval_seconds\":10}\r\n"],[29.535,"o","\u001b[2m# clear the log: one quiet tick re-arms escalation\u001b[0m\r\n"],[29.935,"o","\u001b[32m$ \u001b[0m"],[29.96,"o",":"],[29.985,"o"," "],[30.01,"o",">"],[30.035,"o"," "],[30.06,"o","m"],[30.085,"o","o"],[30.11,"o","n"],[30.135,"o","i"],[30.16,"o","t"],[30.185,"o","o"],[30.21,"o","r"],[30.235,"o","s"],[30.26,"o","/"],[30.285,"o","l"],[30.31,"o","o"],[30.335,"o","g"],[30.36,"o","-"],[30.385,"o","w"],[30.41,"o","a"],[30.435,"o","t"],[30.46,"o","c"],[30.485,"o","h"],[30.51,"o","/"],[30.535,"o","l"],[30.56,"o","o"],[30.585,"o","g"],[30.61,"o","s"],[30.635,"o","/"],[30.66,"o","a"],[30.685,"o","p"],[30.71,"o","p"],[30.735,"o","."],[30.76,"o","l"],[30.785,"o","o"],[30.81,"o","g"],[31.11,"o","\r\n"],[31.61,"o","\u001b[2m# a NEW alarm: second turn of the hour\u001b[0m\r\n"],[32.01,"o","\u001b[32m$ \u001b[0m"],[32.035,"o","e"],[32.06,"o","c"],[32.085,"o","h"],[32.11,"o","o"],[32.135,"o"," "],[32.16,"o","'"],[32.185,"o","E"],[32.21,"o","R"],[32.235,"o","R"],[32.26,"o","O"],[32.285,"o","R"],[32.31,"o"," "],[32.335,"o","t"],[32.36,"o","i"],[32.385,"o","m"],[32.41,"o","e"],[32.435,"o","o"],[32.46,"o","u"],[32.485,"o","t"],[32.51,"o","'"],[32.535,"o"," "],[32.56,"o",">"],[32.585,"o",">"],[32.61,"o"," "],[32.635,"o","m"],[32.66,"o","o"],[32.685,"o","n"],[32.71,"o","i"],[32.735,"o","t"],[32.76,"o","o"],[32.785,"o","r"],[32.81,"o","s"],[32.835,"o","/"],[32.86,"o","l"],[32.885,"o","o"],[32.91,"o","g"],[32.935,"o","-"],[32.96,"o","w"],[32.985,"o","a"],[33.01,"o","t"],[33.035,"o","c"],[33.06,"o","h"],[33.085,"o","/"],[33.11,"o","l"],[33.135,"o","o"],[33.16,"o","g"],[33.185,"o","s"],[33.21,"o","/"],[33.235,"o","a"],[33.26,"o","p"],[33.285,"o","p"],[33.31,"o","."],[33.335,"o","l"],[33.36,"o","o"],[33.385,"o","g"],[33.685,"o","\r\n"],[34.185,"o","\u001b[2m# clear again, then a third alarm: the hourly cap (2) blocks it, no model call\u001b[0m\r\n"],[34.585,"o","\u001b[32m$ \u001b[0m"],[34.61,"o",":"],[34.635,"o"," "],[34.66,"o",">"],[34.685,"o"," "],[34.71,"o","m"],[34.735,"o","o"],[34.76,"o","n"],[34.785,"o","i"],[34.81,"o","t"],[34.835,"o","o"],[34.86,"o","r"],[34.885,"o","s"],[34.91,"o","/"],[34.935,"o","l"],[34.96,"o","o"],[34.985,"o","g"],[35.01,"o","-"],[35.035,"o","w"],[35.06,"o","a"],[35.085,"o","t"],[35.11,"o","c"],[35.135,"o","h"],[35.16,"o","/"],[35.185,"o","l"],[35.21,"o","o"],[35.235,"o","g"],[35.26,"o","s"],[35.285,"o","/"],[35.31,"o","a"],[35.335,"o","p"],[35.36,"o","p"],[35.385,"o","."],[35.41,"o","l"],[35.435,"o","o"],[35.46,"o","g"],[35.76,"o","\r\n"],[36.16,"o","\u001b[32m$ \u001b[0m"],[36.185,"o","e"],[36.21,"o","c"],[36.235,"o","h"],[36.26,"o","o"],[36.285,"o"," "],[36.31,"o","'"],[36.335,"o","E"],[36.36,"o","R"],[36.385,"o","R"],[36.41,"o","O"],[36.435,"o","R"],[36.46,"o"," "],[36.485,"o","a"],[36.51,"o","g"],[36.535,"o","a"],[36.56,"o","i"],[36.585,"o","n"],[36.61,"o","'"],[36.635,"o"," "],[36.66,"o",">"],[36.685,"o",">"],[36.71,"o"," "],[36.735,"o","m"],[36.76,"o","o"],[36.785,"o","n"],[36.81,"o","i"],[36.835,"o","t"],[36.86,"o","o"],[36.885,"o","r"],[36.91,"o","s"],[36.935,"o","/"],[36.96,"o","l"],[36.985,"o","o"],[37.01,"o","g"],[37.035,"o","-"],[37.06,"o","w"],[37.085,"o","a"],[37.11,"o","t"],[37.135,"o","c"],[37.16,"o","h"],[37.185,"o","/"],[37.21,"o","l"],[37.235,"o","o"],[37.26,"o","g"],[37.285,"o","s"],[37.31,"o","/"],[37.335,"o","a"],[37.36,"o","p"],[37.385,"o","p"],[37.41,"o","."],[37.435,"o","l"],[37.46,"o","o"],[37.485,"o","g"],[37.785,"o","\r\n"],[38.185,"o","\u001b[32m$ \u001b[0m"],[38.21,"o","c"],[38.235,"o","a"],[38.26,"o","t"],[38.285,"o"," "],[38.31,"o","~"],[38.335,"o","/"],[38.36,"o","."],[38.385,"o","r"],[38.41,"o","a"],[38.435,"o","k"],[38.46,"o","i"],[38.485,"o","t"],[38.51,"o","s"],[38.535,"o","u"],[38.56,"o","/"],[38.585,"o","w"],[38.61,"o","a"],[38.635,"o","k"],[38.66,"o","e"],[38.685,"o","/"],[38.71,"o","m"],[38.735,"o","o"],[38.76,"o","n"],[38.785,"o","i"],[38.81,"o","t"],[38.835,"o","o"],[38.86,"o","r"],[38.885,"o","-"],[38.91,"o","l"],[38.935,"o","o"],[38.96,"o","g"],[38.985,"o","-"],[39.01,"o","w"],[39.035,"o","a"],[39.06,"o","t"],[39.085,"o","c"],[39.11,"o","h"],[39.135,"o","."],[39.16,"o","a"],[39.185,"o","u"],[39.21,"o","d"],[39.235,"o","i"],[39.26,"o","t"],[39.285,"o","."],[39.31,"o","j"],[39.335,"o","s"],[39.36,"o","o"],[39.385,"o","n"],[39.41,"o","l"],[39.71,"o","\r\n"],[39.76,"o","{\"event\":\"tick\",\"outcome\":\"quiet\",\"tick\":1}\r\n"],[39.81,"o","{\"event\":\"tick\",\"outcome\":\"quiet\",\"tick\":2}\r\n"],[39.86,"o","{\"event\":\"tick\",\"outcome\":\"quiet\",\"tick\":3}\r\n"],[39.91,"o","{\"event\":\"escalate\",\"level\":\"L2\",\"reason\":\"alarm: log-errors\",\"tick\":4}\r\n"],[39.96,"o","{\"config\":\"summary-note\",\"event\":\"task_start\",\"task_id\":\"task-69b0f20ad67cb447\"}\r\n"],[40.01,"o","{\"config\":\"not-on-the-list\",\"event\":\"task_refused\",\"reason\":\"config is not in settings.wake.allow.configs\"}\r\n"],[40.06,"o","{\"config\":\"summary-note\",\"event\":\"task_end\",\"status\":\"done\",\"task_id\":\"task-69b0f20ad67cb447\"}\r\n"],[40.11,"o","{\"event\":\"tick\",\"outcome\":\"alarm\",\"reason\":\"alarm_unchanged\",\"suppressed\":\"single_flight\",\"tick\":5}\r\n"],[40.16,"o","{\"event\":\"tick\",\"outcome\":\"quiet\",\"tick\":6}\r\n"],[40.21,"o","{\"event\":\"escalate\",\"level\":\"L2\",\"reason\":\"alarm: log-errors\",\"tick\":7}\r\n"],[40.26,"o","{\"config\":\"summary-note\",\"event\":\"task_start\",\"task_id\":\"task-8939862c718c71aa\"}\r\n"],[40.31,"o","{\"config\":\"not-on-the-list\",\"event\":\"task_refused\",\"reason\":\"config is not in settings.wake.allow.configs\"}\r\n"],[40.36,"o","{\"config\":\"summary-note\",\"event\":\"task_end\",\"status\":\"done\",\"task_id\":\"task-8939862c718c71aa\"}\r\n"],[40.41,"o","{\"event\":\"tick\",\"outcome\":\"quiet\",\"tick\":8}\r\n"],[40.46,"o","{\"event\":\"tick\",\"outcome\":\"alarm\",\"suppressed\":\"hourly_cap\",\"tick\":9}\r\n"],[40.86,"o","\u001b[32m$ \u001b[0m"],[40.885,"o","c"],[40.91,"o","u"],[40.935,"o","r"],[40.96,"o","l"],[40.985,"o"," "],[41.01,"o","-"],[41.035,"o","s"],[41.06,"o"," "],[41.085,"o","h"],[41.11,"o","t"],[41.135,"o","t"],[41.16,"o","p"],[41.185,"o",":"],[41.21,"o","/"],[41.235,"o","/"],[41.26,"o","1"],[41.285,"o","2"],[41.31,"o","7"],[41.335,"o","."],[41.36,"o","0"],[41.385,"o","."],[41.41,"o","0"],[41.435,"o","."],[41.46,"o","1"],[41.485,"o",":"],[41.51,"o","4"],[41.535,"o","0"],[41.56,"o","1"],[41.585,"o","0"],[41.61,"o","/"],[41.635,"o","c"],[41.66,"o","o"],[41.685,"o","u"],[41.71,"o","n"],[41.735,"o","t"],[42.035,"o","\r\n"],[42.335,"o","model calls so far: 10\r\n"],[42.835,"o","\u001b[2m# kill switch: create the STOP file; the loop stops at its next tick, the session stays\u001b[0m\r\n"],[43.235,"o","\u001b[32m$ \u001b[0m"],[43.26,"o","t"],[43.285,"o","o"],[43.31,"o","u"],[43.335,"o","c"],[43.36,"o","h"],[43.385,"o"," "],[43.41,"o","~"],[43.435,"o","/"],[43.46,"o","."],[43.485,"o","r"],[43.51,"o","a"],[43.535,"o","k"],[43.56,"o","i"],[43.585,"o","t"],[43.61,"o","s"],[43.635,"o","u"],[43.66,"o","/"],[43.685,"o","w"],[43.71,"o","a"],[43.735,"o","k"],[43.76,"o","e"],[43.785,"o","/"],[43.81,"o","S"],[43.835,"o","T"],[43.86,"o","O"],[43.885,"o","P"],[44.185,"o","\r\n"],[45.585,"o","\u001b[32m$ \u001b[0m"],[45.61,"o","t"],[45.635,"o","a"],[45.66,"o","i"],[45.685,"o","l"],[45.71,"o"," "],[45.735,"o","-"],[45.76,"o","n"],[45.785,"o"," "],[45.81,"o","1"],[45.835,"o"," "],[45.86,"o","~"],[45.885,"o","/"],[45.91,"o","."],[45.935,"o","r"],[45.96,"o","a"],[45.985,"o","k"],[46.01,"o","i"],[46.035,"o","t"],[46.06,"o","s"],[46.085,"o","u"],[46.11,"o","/"],[46.135,"o","w"],[46.16,"o","a"],[46.185,"o","k"],[46.21,"o","e"],[46.235,"o","/"],[46.26,"o","m"],[46.285,"o","o"],[46.31,"o","n"],[46.335,"o","i"],[46.36,"o","t"],[46.385,"o","o"],[46.41,"o","r"],[46.435,"o","-"],[46.46,"o","l"],[46.485,"o","o"],[46.51,"o","g"],[46.535,"o","-"],[46.56,"o","w"],[46.585,"o","a"],[46.61,"o","t"],[46.635,"o","c"],[46.66,"o","h"],[46.685,"o","."],[46.71,"o","a"],[46.735,"o","u"],[46.76,"o","d"],[46.785,"o","i"],[46.81,"o","t"],[46.835,"o","."],[46.86,"o","j"],[46.885,"o","s"],[46.91,"o","o"],[46.935,"o","n"],[46.96,"o","l"],[47.26,"o","\r\n"],[47.71,"o","{\"event\":\"tick\",\"outcome\":\"quiet\",\"result\":\"killed\",\"tick\":10,\"ts\":\"2026-10-04T04:37:32Z\"}\r\n"],[48.11,"o","\u001b[32m$ \u001b[0m"],[48.135,"o","c"],[48.16,"o","u"],[48.185,"o","r"],[48.21,"o","l"],[48.235,"o"," "],[48.26,"o","-"],[48.285,"o","s"],[48.31,"o"," "],[48.335,"o","-"],[48.36,"o","w"],[48.385,"o"," "],[48.41,"o","'"],[48.435,"o"," "],[48.46,"o","("],[48.485,"o","H"],[48.51,"o","T"],[48.535,"o","T"],[48.56,"o","P"],[48.585,"o"," "],[48.61,"o","%"],[48.635,"o","{"],[48.66,"o","h"],[48.685,"o","t"],[48.71,"o","t"],[48.735,"o","p"],[48.76,"o","_"],[48.785,"o","c"],[48.81,"o","o"],[48.835,"o","d"],[48.86,"o","e"],[48.885,"o","}"],[48.91,"o",")"],[48.935,"o","\\"],[48.96,"o","n"],[48.985,"o","'"],[49.01,"o"," "],[49.035,"o","h"],[49.06,"o","t"],[49.085,"o","t"],[49.11,"o","p"],[49.135,"o",":"],[49.16,"o","/"],[49.185,"o","/"],[49.21,"o","1"],[49.235,"o","2"],[49.26,"o","7"],[49.285,"o","."],[49.31,"o","0"],[49.335,"o","."],[49.36,"o","0"],[49.385,"o","."],[49.41,"o","1"],[49.435,"o",":"],[49.46,"o","9"],[49.485,"o","1"],[49.51,"o","0"],[49.535,"o","2"],[49.56,"o","/"],[49.585,"o","h"],[49.61,"o","e"],[49.635,"o","a"],[49.66,"o","l"],[49.685,"o","t"],[49.71,"o","h"],[49.735,"o","z"],[50.035,"o","\r\n"],[50.485,"o","{\"status\":\"fail\",\"monitors\":{\"log-watch\":\"stopped\"}}\r\n"],[50.515,"o"," (HTTP 503)\r\n"],[51.015,"o","\u001b[2m# resume is refused (409) while the file exists\u001b[0m\r\n"],[51.415,"o","\u001b[32m$ \u001b[0m"],[51.44,"o","c"],[51.465,"o","u"],[51.49,"o","r"],[51.515,"o","l"],[51.54,"o"," "],[51.565,"o","-"],[51.59,"o","s"],[51.615,"o"," "],[51.64,"o","-"],[51.665,"o","o"],[51.69,"o"," "],[51.715,"o","/"],[51.74,"o","d"],[51.765,"o","e"],[51.79,"o","v"],[51.815,"o","/"],[51.84,"o","n"],[51.865,"o","u"],[51.89,"o","l"],[51.915,"o","l"],[51.94,"o"," "],[51.965,"o","-"],[51.99,"o","w"],[52.015,"o"," "],[52.04,"o","'"],[52.065,"o","H"],[52.09,"o","T"],[52.115,"o","T"],[52.14,"o","P"],[52.165,"o"," "],[52.19,"o","%"],[52.215,"o","{"],[52.24,"o","h"],[52.265,"o","t"],[52.29,"o","t"],[52.315,"o","p"],[52.34,"o","_"],[52.365,"o","c"],[52.39,"o","o"],[52.415,"o","d"],[52.44,"o","e"],[52.465,"o","}"],[52.49,"o","\\"],[52.515,"o","n"],[52.54,"o","'"],[52.565,"o"," "],[52.59,"o","-"],[52.615,"o","X"],[52.64,"o"," "],[52.665,"o","P"],[52.69,"o","O"],[52.715,"o","S"],[52.74,"o","T"],[52.765,"o"," "],[52.79,"o","h"],[52.815,"o","t"],[52.84,"o","t"],[52.865,"o","p"],[52.89,"o",":"],[52.915,"o","/"],[52.94,"o","/"],[52.965,"o","1"],[52.99,"o","2"],[53.015,"o","7"],[53.04,"o","."],[53.065,"o","0"],[53.09,"o","."],[53.115,"o","0"],[53.14,"o","."],[53.165,"o","1"],[53.19,"o",":"],[53.215,"o","9"],[53.24,"o","1"],[53.265,"o","0"],[53.29,"o","2"],[53.315,"o","/"],[53.34,"o","a"],[53.365,"o","p"],[53.39,"o","i"],[53.415,"o","/"],[53.44,"o","c"],[53.465,"o","h"],[53.49,"o","a"],[53.515,"o","t"],[53.54,"o","/"],[53.565,"o","m"],[53.59,"o","o"],[53.615,"o","n"],[53.64,"o","i"],[53.665,"o","t"],[53.69,"o","o"],[53.715,"o","r"],[53.74,"o","-"],[53.765,"o","l"],[53.79,"o","o"],[53.815,"o","g"],[53.84,"o","-"],[53.865,"o","w"],[53.89,"o","a"],[53.915,"o","t"],[53.94,"o","c"],[53.965,"o","h"],[53.99,"o","/"],[54.015,"o","w"],[54.04,"o","a"],[54.065,"o","k"],[54.09,"o","e"],[54.115,"o","/"],[54.14,"o","r"],[54.165,"o","e"],[54.19,"o","s"],[54.215,"o","u"],[54.24,"o","m"],[54.265,"o","e"],[54.565,"o","\r\n"],[55.015,"o","HTTP 409\r\n"],[55.415,"o","\u001b[32m$ \u001b[0m"],[55.44,"o","r"],[55.465,"o","m"],[55.49,"o"," "],[55.515,"o","~"],[55.54,"o","/"],[55.565,"o","."],[55.59,"o","r"],[55.615,"o","a"],[55.64,"o","k"],[55.665,"o","i"],[55.69,"o","t"],[55.715,"o","s"],[55.74,"o","u"],[55.765,"o","/"],[55.79,"o","w"],[55.815,"o","a"],[55.84,"o","k"],[55.865,"o","e"],[55.89,"o","/"],[55.915,"o","S"],[55.94,"o","T"],[55.965,"o","O"],[55.99,"o","P"],[56.29,"o","\r\n"],[56.69,"o","\u001b[32m$ \u001b[0m"],[56.715,"o","c"],[56.74,"o","u"],[56.765,"o","r"],[56.79,"o","l"],[56.815,"o"," "],[56.84,"o","-"],[56.865,"o","s"],[56.89,"o"," "],[56.915,"o","-"],[56.94,"o","X"],[56.965,"o"," "],[56.99,"o","P"],[57.015,"o","O"],[57.04,"o","S"],[57.065,"o","T"],[57.09,"o"," "],[57.115,"o","h"],[57.14,"o","t"],[57.165,"o","t"],[57.19,"o","p"],[57.215,"o",":"],[57.24,"o","/"],[57.265,"o","/"],[57.29,"o","1"],[57.315,"o","2"],[57.34,"o","7"],[57.365,"o","."],[57.39,"o","0"],[57.415,"o","."],[57.44,"o","0"],[57.465,"o","."],[57.49,"o","1"],[57.515,"o",":"],[57.54,"o","9"],[57.565,"o","1"],[57.59,"o","0"],[57.615,"o","2"],[57.64,"o","/"],[57.665,"o","a"],[57.69,"o","p"],[57.715,"o","i"],[57.74,"o","/"],[57.765,"o","c"],[57.79,"o","h"],[57.815,"o","a"],[57.84,"o","t"],[57.865,"o","/"],[57.89,"o","m"],[57.915,"o","o"],[57.94,"o","n"],[57.965,"o","i"],[57.99,"o","t"],[58.015,"o","o"],[58.04,"o","r"],[58.065,"o","-"],[58.09,"o","l"],[58.115,"o","o"],[58.14,"o","g"],[58.165,"o","-"],[58.19,"o","w"],[58.215,"o","a"],[58.24,"o","t"],[58.265,"o","c"],[58.29,"o","h"],[58.315,"o","/"],[58.34,"o","w"],[58.365,"o","a"],[58.39,"o","k"],[58.415,"o","e"],[58.44,"o","/"],[58.465,"o","r"],[58.49,"o","e"],[58.515,"o","s"],[58.54,"o","u"],[58.565,"o","m"],[58.59,"o","e"],[58.89,"o","\r\n"],[59.34,"o","{\"status\":\"resumed\"}\r\n"]]}</script>
+<script>/* Shared helpers: theme toggle, step-through diagrams, cast player. No dependencies. */
+(function () {
+  'use strict';
+  var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function h(tag, attrs, kids) {
+    var e = document.createElement(tag);
+    if (attrs) for (var k in attrs) {
+      if (k === 'text') e.textContent = attrs[k];
+      else if (k === 'class') e.className = attrs[k];
+      else e.setAttribute(k, attrs[k]);
+    }
+    (kids || []).forEach(function (c) { e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    return e;
+  }
+
+  /* ---------- theme ---------- */
+  function initTheme() {
+    var btn = document.getElementById('theme-toggle');
+    var saved = null;
+    try { saved = localStorage.getItem('rk-theme'); } catch (e) {}
+    if (saved) document.documentElement.setAttribute('data-theme', saved);
+    function cur() {
+      var t = document.documentElement.getAttribute('data-theme');
+      if (t) return t;
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    function label() { if (btn) btn.textContent = cur() === 'dark' ? 'Light mode' : 'Dark mode'; }
+    if (btn) btn.addEventListener('click', function () {
+      var n = cur() === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', n);
+      try { localStorage.setItem('rk-theme', n); } catch (e) {}
+      label();
+    });
+    label();
+  }
+
+  /* ---------- step-through diagram ---------- */
+  function Stepper(root, cfg) {
+    var actors = cfg.actors, scen = cfg.scenarios, order = Object.keys(scen);
+    var sid = order[0], idx = -1, timer = null, speed = 1;
+    var tabs = h('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Scenario' });
+    var title = h('p', { class: 'caption' });
+    var actorBox = h('div', { class: 'actors' });
+    var steps = h('ol', { class: 'steps', 'aria-live': 'polite' });
+    var state = h('div', { class: 'state', 'aria-label': 'State' });
+    var bReset = h('button', { text: 'Reset', type: 'button' });
+    var bPrev = h('button', { text: 'Back', type: 'button' });
+    var bPlay = h('button', { text: 'Play', type: 'button', class: 'primary' });
+    var bNext = h('button', { text: 'Step', type: 'button' });
+    var sp = h('select', { 'aria-label': 'Speed' }, [h('option', { value: '1', text: '1x' }), h('option', { value: '2', text: '2x' }), h('option', { value: '0.5', text: '0.5x' })]);
+    var pos = h('span', { class: 'small' });
+    var controls = h('div', { class: 'controls' }, [bReset, bPrev, bPlay, bNext, sp, pos]);
+    root.appendChild(tabs); root.appendChild(title); root.appendChild(actorBox);
+    root.appendChild(controls); root.appendChild(steps); root.appendChild(state);
+    var actorEls = {};
+    actors.forEach(function (a) {
+      var e = h('div', { class: 'actor' }, [h('b', { text: a.label }), h('small', { text: a.sub || '' })]);
+      actorEls[a.id] = e; actorBox.appendChild(e);
+    });
+    var tabEls = {};
+    function buildTabs() {
+      tabs.innerHTML = ''; tabEls = {};
+      order.forEach(function (k) {
+        var b = h('button', { type: 'button', role: 'tab', text: scen[k].tab, 'aria-selected': 'false' });
+        b.addEventListener('click', function () { choose(k); });
+        tabEls[k] = b; tabs.appendChild(b);
+      });
+      tabs.style.display = order.length > 1 ? '' : 'none';
+    }
+    buildTabs();
+    function S() { return scen[sid].steps; }
+    function stopTimer() { if (timer) { clearInterval(timer); timer = null; } bPlay.textContent = 'Play'; }
+    function render() {
+      steps.innerHTML = ''; state.innerHTML = '';
+      Object.keys(actorEls).forEach(function (k) { actorEls[k].className = 'actor'; });
+      var merged = {};
+      for (var i = 0; i <= idx; i++) {
+        var s = S()[i];
+        var li = h('li', { class: (s.tone || '') + (i === idx ? ' current' : '') }, [
+          h('div', { class: 'route', text: (actorName(s.from) + (s.to ? ' -> ' + actorName(s.to) : '')) }),
+          h('div', { class: 't', text: s.title }),
+          h('div', { class: 'd', text: s.text || '' })
+        ]);
+        steps.appendChild(li);
+        if (s.state) for (var k in s.state) merged[k] = s.state[k];
+      }
+      if (idx >= 0) {
+        var c = S()[idx];
+        if (c.from && actorEls[c.from]) actorEls[c.from].classList.add('from');
+        if (c.to && actorEls[c.to]) actorEls[c.to].classList.add('to');
+        var last = steps.lastChild; if (last && last.scrollIntoView && !RM) last.scrollIntoView({ block: 'nearest' });
+      }
+      Object.keys(merged).forEach(function (k) {
+        state.appendChild(h('span', {}, [h('b', { text: k + ': ' }), String(merged[k])]));
+      });
+      pos.textContent = (idx + 1) + ' / ' + S().length;
+      bPrev.disabled = idx < 0; bNext.disabled = idx >= S().length - 1;
+      order.forEach(function (k) { tabEls[k].setAttribute('aria-selected', k === sid ? 'true' : 'false'); tabEls[k].classList.toggle('on', k === sid); });
+      title.textContent = scen[sid].title;
+    }
+    function actorName(id) { var a = actors.filter(function (x) { return x.id === id; })[0]; return a ? a.label : (id || ''); }
+    function choose(k) { stopTimer(); sid = k; idx = -1; render(); }
+    function next() { if (idx < S().length - 1) { idx++; render(); } else stopTimer(); }
+    bNext.addEventListener('click', function () { stopTimer(); next(); });
+    bPrev.addEventListener('click', function () { stopTimer(); if (idx >= 0) { idx--; render(); } });
+    bReset.addEventListener('click', function () { stopTimer(); idx = -1; render(); });
+    sp.addEventListener('change', function () { speed = parseFloat(sp.value); if (timer) { stopTimer(); play(); } });
+    function play() {
+      if (idx >= S().length - 1) idx = -1;
+      bPlay.textContent = 'Pause';
+      next();
+      timer = setInterval(function () { if (idx >= S().length - 1) stopTimer(); else next(); }, 1800 / speed);
+    }
+    bPlay.addEventListener('click', function () { if (timer) stopTimer(); else play(); });
+    function load(newScen) { stopTimer(); scen = newScen; order = Object.keys(scen); sid = order[0]; idx = -1; buildTabs(); render(); }
+    render();
+    return { choose: choose, next: next, load: load, last: function () { stopTimer(); idx = S().length - 1; render(); }, state: function () { return { scenario: sid, index: idx }; } };
+  }
+
+  /* ---------- cast player ---------- */
+  function ansi(text, st) {
+    // Tiny SGR parser: 0 reset, 1 bold, 2 dim, 31 red, 32 green, 36 cyan.
+    var out = '', re = /\x1b\[([0-9;]*)m/g, last = 0, m;
+    function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function open() {
+      var c = [];
+      if (st.b) c.push('bld'); if (st.d) c.push('dim'); if (st.c) c.push(st.c);
+      return c.length ? '<span class="' + c.join(' ') + '">' : '';
+    }
+    var cur = '';
+    function emit(s) { if (!s) return; var o = open(); out += o + esc(s) + (o ? '</span>' : ''); }
+    while ((m = re.exec(text))) {
+      emit(text.slice(last, m.index)); last = re.lastIndex;
+      (m[1] || '0').split(';').forEach(function (n) {
+        n = parseInt(n, 10);
+        if (n === 0) { st.b = st.d = false; st.c = ''; }
+        else if (n === 1) st.b = true;
+        else if (n === 2) st.d = true;
+        else if (n === 31) st.c = 'red';
+        else if (n === 32) st.c = 'grn';
+        else if (n === 36) st.c = 'cyn';
+      });
+    }
+    emit(text.slice(last));
+    return out;
+  }
+
+  function CastPlayer(root, cast) {
+    var ev = cast.events, n = ev.length, idx = 0, timer = null, speed = 1, dragging = false;
+    // A "chapter" starts at a note line ("# ...") or at a prompt that no note introduces.
+    var chap = [];
+    ev.forEach(function (e, i) {
+      var t = e[2], isNote = t.indexOf('\x1b[2m# ') === 0, isPrompt = t.indexOf('\x1b[32m$ ') === 0;
+      var prevNote = i > 0 && ev[i - 1][2].indexOf('\x1b[2m# ') === 0;
+      if (isNote || (isPrompt && !prevNote)) chap.push(i);
+    });
+    var term = h('pre', { class: 'term', tabindex: '0', role: 'log', 'aria-label': 'Terminal recording: ' + (cast.title || '') });
+    var bRestart = h('button', { type: 'button', text: 'Restart' });
+    var bPrev = h('button', { type: 'button', text: 'Previous command' });
+    var bPlay = h('button', { type: 'button', text: 'Play', class: 'primary' });
+    var bNext = h('button', { type: 'button', text: 'Next command' });
+    var sp = h('select', { 'aria-label': 'Playback speed' }, [h('option', { value: '1', text: '1x' }), h('option', { value: '2', text: '2x' }), h('option', { value: '4', text: '4x' })]);
+    var rng = h('input', { type: 'range', min: '0', max: String(n), value: '0', 'aria-label': 'Position' });
+    var tl = h('span', { class: 'small' });
+    root.appendChild(term);
+    root.appendChild(h('div', { class: 'controls' }, [bRestart, bPrev, bPlay, bNext, sp]));
+    root.appendChild(h('div', { class: 'controls' }, [rng, tl]));
+
+    function render() {
+      var st = { b: false, d: false, c: '' }, html = '';
+      for (var i = 0; i < idx; i++) html += ansi(ev[i][2], st);
+      term.innerHTML = html + '<span class="cur">&nbsp;</span>';
+      term.scrollTop = term.scrollHeight;
+      rng.value = String(idx);
+      var t = idx > 0 ? ev[Math.min(idx, n) - 1][0] : 0;
+      tl.textContent = t.toFixed(1) + ' s of ' + ev[n - 1][0].toFixed(1) + ' s (pauses shortened)';
+      bPrev.disabled = idx <= 0; bNext.disabled = idx >= n;
+    }
+    function stop() { if (timer) { clearTimeout(timer); timer = null; } bPlay.textContent = 'Play'; }
+    function tick() {
+      if (idx >= n) { stop(); return; }
+      var prev = idx > 0 ? ev[idx - 1][0] : 0;
+      var gap = Math.min(ev[idx][0] - prev, 1.5);
+      var wait = RM ? 0 : gap * 1000 / speed;
+      timer = setTimeout(function () { idx++; render(); tick(); }, wait);
+    }
+    function play() { if (idx >= n) idx = 0; bPlay.textContent = 'Pause'; tick(); }
+    bPlay.addEventListener('click', function () { if (timer) stop(); else play(); });
+    bRestart.addEventListener('click', function () { stop(); idx = 0; render(); });
+    bNext.addEventListener('click', function () {
+      stop();
+      var target = n;
+      for (var i = 0; i < chap.length; i++) if (chap[i] > idx) { target = chap[i]; break; }
+      idx = target; render();
+    });
+    bPrev.addEventListener('click', function () {
+      stop();
+      var t = 0;
+      for (var i = 0; i < chap.length; i++) if (chap[i] < idx) t = chap[i];
+      idx = t; render();
+    });
+    sp.addEventListener('change', function () { speed = parseFloat(sp.value); if (timer) { stop(); play(); } });
+    rng.addEventListener('input', function () { stop(); idx = parseInt(rng.value, 10); render(); });
+    render();
+    return { state: function () { return { index: idx, total: n }; }, seek: function (i) { stop(); idx = i; render(); }, play: play, stop: stop };
+  }
+
+  function loadCast(id) { return JSON.parse(document.getElementById(id).textContent); }
+
+  window.RK = { h: h, Stepper: Stepper, CastPlayer: CastPlayer, loadCast: loadCast, initTheme: initTheme, reducedMotion: RM };
+  document.addEventListener('DOMContentLoaded', initTheme);
+})();
+</script>
+<script>
+(function () {
+  'use strict';
+  /* ---- pure simulation (no DOM) ---- */
+  function WakeSim(p) {
+    this.p = p; this.reset();
+  }
+  WakeSim.prototype.reset = function () {
+    this.t = 0; this.interval = this.p.base; this.nextAt = this.p.base; this.tick = 0;
+    this.sig = false; this.cap = []; this.calls = 0; this.turns = 0; this.quiet = 0;
+    this.alarmOn = false; this.stopFile = false; this.stopped = false; this.audit = []; this.ticks = [];
+  };
+  WakeSim.prototype.addAudit = function (o) { this.audit.push(JSON.stringify(o)); };
+  WakeSim.prototype.doTick = function () {
+    var p = this.p, n = this.tick + 1, rec;
+    if (this.stopFile) { // 1. kill switch
+      this.stopped = true; this.tick = n;
+      this.addAudit({ event: 'tick', outcome: 'quiet', result: 'killed', tick: n });
+      rec = { n: n, cls: 'kill', text: '#' + n + ' killed' }; this.ticks.push(rec); return rec;
+    }
+    var alarm = this.alarmOn; // 2. checks
+    if (!alarm) { // 3. quiet
+      this.interval = Math.min(this.interval * p.factor, p.max);
+      this.sig = false; this.tick = n; this.quiet++;
+      this.addAudit({ event: 'tick', outcome: 'quiet', tick: n });
+      rec = { n: n, cls: '', text: '#' + n + ' quiet' };
+    } else {
+      this.interval = p.base; this.tick = n;
+      if (this.sig) { // 4. same alarm again
+        this.addAudit({ event: 'tick', outcome: 'alarm', reason: 'alarm_unchanged', suppressed: 'single_flight', tick: n });
+        rec = { n: n, cls: 'supp', text: '#' + n + ' same alarm, no turn' };
+      } else {
+        var cutoff = this.t - 3600;
+        this.cap = this.cap.filter(function (x) { return x >= cutoff; });
+        if (this.cap.length >= p.cap) { // 5. hourly cap
+          this.addAudit({ event: 'tick', outcome: 'alarm', suppressed: 'hourly_cap', tick: n });
+          rec = { n: n, cls: 'supp', text: '#' + n + ' hourly cap' };
+        } else { // 6. one turn
+          this.cap.push(this.t); this.sig = true; this.turns++; this.calls++;
+          this.addAudit({ event: 'escalate', level: 'L2', reason: 'alarm: log-errors', tick: n });
+          rec = { n: n, cls: 'turn', text: '#' + n + ' TURN' };
+        }
+      }
+    }
+    this.ticks.push(rec);
+    this.nextAt = this.t + this.interval;
+    return rec;
+  };
+  WakeSim.prototype.advance = function (dt) { // move virtual time, firing ticks that fall due
+    if (this.stopped) { this.t += dt; return; }
+    var end = this.t + dt;
+    while (!this.stopped && this.nextAt <= end) { this.t = this.nextAt; this.doTick(); }
+    this.t = end;
+  };
+  WakeSim.prototype.stepToNext = function () {
+    if (this.stopped) return null;
+    this.t = this.nextAt; return this.doTick();
+  };
+  WakeSim.prototype.turnsLastHour = function () {
+    var c = this.t - 3600; return this.cap.filter(function (x) { return x >= c; }).length;
+  };
+  WakeSim.prototype.resume = function () {
+    if (this.stopFile) return { ok: false, code: 409 };
+    if (!this.stopped) return { ok: true, code: 200, note: 'already running' };
+    this.stopped = false; this.nextAt = this.t + this.interval; return { ok: true, code: 200 };
+  };
+
+  var PRESETS = { rec: { base: 10, factor: 1.5, max: 20, cap: 2 }, def: { base: 60, factor: 1.5, max: 600, cap: 6 } };
+
+  /* ---- the scripted replay of the real recording ---- */
+  var REPLAY = [
+    ['tick', 3], ['err'], ['tick', 2], ['clr'], ['tick', 1], ['err'], ['tick', 1],
+    ['clr'], ['tick', 1], ['err'], ['tick', 1], ['stop'], ['tick', 1]
+  ];
+
+  /* ---- UI ---- */
+  var $ = function (id) { return document.getElementById(id); };
+  var sim = new WakeSim(PRESETS.rec), timer = null, last = 0, replayTimer = null;
+  function msg(t) { $('msg').textContent = t || ''; }
+  function render() {
+    $('v-calls').textContent = sim.calls;
+    $('c-calls').classList.toggle('hot', sim.calls > 0);
+    $('v-ticks').textContent = sim.tick; $('v-quiet').textContent = sim.quiet;
+    $('v-turns').textContent = sim.turnsLastHour(); $('v-cap').textContent = sim.p.cap;
+    $('v-next').textContent = sim.stopped ? 'stopped' : Math.max(0, Math.ceil(sim.nextAt - sim.t)) + ' s';
+    $('v-int').textContent = Math.round(sim.interval * 10) / 10 + ' s';
+    $('v-loop').textContent = sim.stopped ? 'stopped, healthz 503' : 'running, healthz 200';
+    var tl = $('timeline'); tl.innerHTML = '';
+    sim.ticks.slice(-40).forEach(function (r) {
+      var s = document.createElement('span'); s.className = 'tk ' + r.cls; s.textContent = r.text; tl.appendChild(s);
+    });
+    var a = $('audit'); a.textContent = sim.audit.join('\n'); a.scrollTop = a.scrollHeight;
+    $('b-err').setAttribute('aria-pressed', String(sim.alarmOn));
+    $('b-stop').setAttribute('aria-pressed', String(sim.stopFile));
+  }
+  function stopPlay() { if (timer) { cancelAnimationFrame(timer); timer = null; } $('b-play').textContent = 'Play'; }
+  function loop(ts) {
+    if (!last) last = ts;
+    var dt = Math.min((ts - last) / 1000, 0.25); last = ts;
+    sim.advance(dt * parseFloat($('s-speed').value)); render();
+    timer = requestAnimationFrame(loop);
+  }
+  $('b-play').addEventListener('click', function () {
+    if (timer) { stopPlay(); return; }
+    $('b-play').textContent = 'Pause'; last = 0; timer = requestAnimationFrame(loop);
+  });
+  $('b-step').addEventListener('click', function () {
+    stopPlay();
+    var r = sim.stepToNext(); render();
+    msg(r ? '' : 'The loop is stopped: no more ticks until Resume.');
+  });
+  function setPreset() { stopPlay(); stopReplay(); sim = new WakeSim(PRESETS[$('s-preset').value]); msg(''); render(); }
+  $('s-preset').addEventListener('change', setPreset);
+  $('b-reset').addEventListener('click', setPreset);
+  $('b-err').addEventListener('click', function () { sim.alarmOn = true; msg('The file now contains ERROR. The next tick will see it.'); render(); });
+  $('b-clr').addEventListener('click', function () { sim.alarmOn = false; msg('The file is clear. The next tick is quiet and re-arms escalation.'); render(); });
+  $('b-stop').addEventListener('click', function () { sim.stopFile = true; msg('STOP file created. The loop stops at its next tick.'); render(); });
+  $('b-rm').addEventListener('click', function () { sim.stopFile = false; msg('STOP file removed. The loop stays stopped until you resume it.'); render(); });
+  $('b-resume').addEventListener('click', function () {
+    var r = sim.resume();
+    msg(r.ok ? 'Resumed (HTTP 200): {"status":"resumed"}' : 'Refused (HTTP 409): the STOP file still exists.'); render();
+  });
+
+  function stopReplay() { if (replayTimer) { clearTimeout(replayTimer); replayTimer = null; } }
+  function runReplay(fast) {
+    stopPlay(); stopReplay();
+    sim = new WakeSim(PRESETS.rec); $('s-preset').value = 'rec'; render();
+    var steps = []; REPLAY.forEach(function (s) { if (s[0] === 'tick') for (var i = 0; i < s[1]; i++) steps.push(['tick']); else steps.push(s); });
+    var i = 0;
+    function one() {
+      if (i >= steps.length) { msg('Replay finished. Compare the audit log above with the recording below.'); render(); return; }
+      var s = steps[i++];
+      if (s[0] === 'tick') sim.stepToNext(); else if (s[0] === 'err') sim.alarmOn = true; else if (s[0] === 'clr') sim.alarmOn = false; else if (s[0] === 'stop') sim.stopFile = true;
+      render();
+      if (fast) one(); else replayTimer = setTimeout(one, 650);
+    }
+    one();
+  }
+  $('b-replay').addEventListener('click', function () { runReplay(false); });
+
+  render();
+  var cp = RK.CastPlayer($('player'), RK.loadCast('cast-wake'));
+  window.__page = { sim: function () { return sim; }, replayFast: function () { runReplay(true); return sim.audit.slice(); }, cast: cp, WakeSim: WakeSim, PRESETS: PRESETS };
+})();
+</script>
+</body>
+</html>

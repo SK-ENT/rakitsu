@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Monitors, /healthz and alerts</title>
+<style>:root{
+  --bg:#f7f8fa;--panel:#fff;--ink:#1b1f27;--muted:#5b6475;--line:#d9dde5;
+  --accent:#2f5fd0;--accent-ink:#fff;--ok:#1f8a4c;--warn:#a86a00;--bad:#c0322b;--info:#2f5fd0;
+  --term-bg:#12141a;--term-ink:#d7dbe4;--term-dim:#7b8496;--term-green:#5fd08a;--term-cyan:#6cc6e8;--term-red:#ff7b72;
+  --chip:#eef1f6;
+}
+html[data-theme="dark"]{
+  --bg:#0f1218;--panel:#171b24;--ink:#e6e9ef;--muted:#9aa3b5;--line:#2a3140;
+  --accent:#6b94ff;--accent-ink:#0b1020;--ok:#4cc27d;--warn:#e0a53a;--bad:#ff7b72;--info:#6b94ff;
+  --term-bg:#0a0c10;--chip:#202636;
+}
+@media (prefers-color-scheme: dark){
+  html:not([data-theme="light"]){
+    --bg:#0f1218;--panel:#171b24;--ink:#e6e9ef;--muted:#9aa3b5;--line:#2a3140;
+    --accent:#6b94ff;--accent-ink:#0b1020;--ok:#4cc27d;--warn:#e0a53a;--bad:#ff7b72;--info:#6b94ff;
+    --term-bg:#0a0c10;--chip:#202636;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--accent)}
+code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+code{background:var(--chip);padding:.05em .35em;border-radius:4px;font-size:.92em}
+header.top{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+header.top nav{display:flex;gap:14px;flex-wrap:wrap;font-size:.95rem}
+main{max-width:980px;margin:0 auto;padding:16px}
+h1{font-size:1.6rem;margin:.4em 0 .2em}
+h2{font-size:1.2rem;margin:1.6em 0 .4em}
+p.lead{color:var(--muted);margin:.2em 0 1em}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin:12px 0}
+.badge{display:inline-block;font-size:.75rem;padding:.1em .55em;border-radius:99px;border:1px solid var(--line);color:var(--muted);background:var(--chip)}
+.badge.sim{color:var(--warn);border-color:var(--warn)}
+.badge.real{color:var(--ok);border-color:var(--ok)}
+button,select,input[type=number],input[type=text]{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:.4em .8em;min-height:40px}
+button{cursor:pointer}
+button:hover:not(:disabled){border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:default}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button[aria-pressed="true"],button.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.actors{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.actor{flex:1 1 130px;min-width:120px;border:2px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--panel);transition:border-color .25s,background .25s}
+.actor b{display:block;font-size:.92rem}
+.actor small{color:var(--muted)}
+.actor.from{border-color:var(--warn)}
+.actor.to{border-color:var(--ok)}
+.actor.from.to{border-color:var(--accent)}
+.steps{list-style:none;margin:8px 0;padding:0}
+.steps li{border-left:4px solid var(--line);padding:6px 10px;margin:6px 0;background:var(--panel);border-radius:0 8px 8px 0}
+.steps li.current{border-left-color:var(--accent);background:var(--chip)}
+.steps li.ok{border-left-color:var(--ok)}
+.steps li.warn{border-left-color:var(--warn)}
+.steps li.bad{border-left-color:var(--bad)}
+.steps .route{font-size:.8rem;color:var(--muted)}
+.steps .t{font-weight:600}
+.steps .d{color:var(--muted);font-size:.93rem;margin-top:2px;overflow-wrap:anywhere}
+.state{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.state span{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:2px 9px;font-size:.88rem}
+.state span b{font-weight:600}
+.caption{min-height:1.5em;color:var(--muted);font-size:.93rem}
+table{border-collapse:collapse;width:100%;font-size:.93rem}
+th,td{border-bottom:1px solid var(--line);text-align:left;padding:6px 8px;vertical-align:top}
+.tablewrap{overflow-x:auto}
+.term{background:var(--term-bg);color:var(--term-ink);border-radius:8px;padding:12px;margin:8px 0;height:360px;overflow:auto;font-size:12.5px;line-height:1.45;white-space:pre;tab-size:4}
+.term .dim{color:var(--term-dim)}
+.term .grn{color:var(--term-green)}
+.term .cyn{color:var(--term-cyan)}
+.term .red{color:var(--term-red)}
+.term .bld{font-weight:700}
+.term .cur{display:inline-block;width:.6em;background:var(--term-ink);opacity:.8;animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+input[type=range]{flex:1 1 160px;min-width:120px;min-height:28px}
+.small{font-size:.88rem;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:640px){
+  main{padding:12px}
+  .grid2{grid-template-columns:1fr}
+  .term{height:300px;font-size:11.5px}
+  .actor{flex:1 1 44%;min-width:0}
+  label{display:block;max-width:100%;min-width:0}
+  select,input[type=number],input[type=text]{max-width:100%;width:100%;box-sizing:border-box}
+  pre,code,.actor b,.actor small{overflow-wrap:anywhere}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+.sr{position:absolute;left:-9999px}
+
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:6px 0}
+.row label{display:flex;gap:6px;align-items:center;font-size:.92rem}
+pre.out{background:var(--term-bg);color:var(--term-ink);border-radius:8px;padding:10px;overflow:auto;font-size:12.5px;margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+textarea,input[type=text]{width:100%;max-width:100%}
+.bad{color:var(--bad)} .good{color:var(--ok)} .warnc{color:var(--warn)}
+td.n{white-space:nowrap}
+</style>
+</head>
+<body>
+<header class="top">
+  <nav><a href="index.html">All demos</a> <a href="wake.html">Wake timer</a> <a href="messaging.html">Session messaging</a></nav>
+  <button id="theme-toggle" type="button">Dark mode</button>
+</header>
+<main>
+<h1>Monitors, /healthz and alerts</h1>
+<p class="lead"><code>rakitsu serve --config monitor.yaml</code> starts every monitor itself, under a stable session id (<code>monitor-&lt;id&gt;</code>). <code>/healthz</code> tells a supervisor if they are all fine. The model can queue alerts, and the server sends them to ntfy or a webhook.</p>
+<p class="small">The step lists and the two testers are explanation (<span class="badge sim">simulation</span>) built from <code>internal/server/healthz.go</code>, <code>wake_status.go</code> and <code>internal/alert/</code>. The recording at the bottom is a <span class="badge real">real run</span>.</p>
+
+<h2>Step through</h2>
+<div class="card" id="stepper"></div>
+
+<h2>/healthz tester</h2>
+<div class="card">
+  <div class="row">
+    <label>Monitor state <select id="h-state"><option>ok</option><option>starting</option><option>stale</option><option>stopped</option><option>failed</option></select></label>
+    <label><input type="checkbox" id="h-fos" checked> healthz_fail_on_stopped (default true)</label>
+    <label>Caller <select id="h-caller"><option value="lo">loopback</option><option value="rem">remote address</option></select></label>
+    <label><input type="checkbox" id="h-remote"> healthz_allow_remote (default false)</label>
+  </div>
+  <pre class="out mono" id="h-out" aria-live="polite"></pre>
+  <div class="row">
+    <label>heartbeat_stale_seconds <input type="number" id="hb-stale" value="180" min="15" style="width:6em"></label>
+    <label>Heartbeat age (s) <input type="range" id="hb-age" min="0" max="400" value="20"> <span id="hb-age-v">20</span></label>
+    <label><input type="checkbox" id="hb-running" checked> loop is running</label>
+    <label><input type="checkbox" id="hb-file" checked> heartbeat file is readable</label>
+  </div>
+  <p class="small" id="hb-note"></p>
+</div>
+
+<h2>Alert tester</h2>
+<div class="card">
+  <p class="small">The agent calls <code>send_alert(severity, title, body)</code>. The tool only queues the message; the server sends it. Try a secret or a home path in the body.</p>
+  <div class="row">
+    <label>Severity <select id="a-sev"><option>info</option><option selected>warn</option><option>critical</option></select></label>
+  </div>
+  <label class="small" for="a-title">Title</label><input type="text" id="a-title" value="log-watch alarm">
+  <label class="small" for="a-body">Body</label>
+  <textarea id="a-body" rows="3">The timer saw ERROR. Home is /Users/someone. Header was Authorization: Bearer demo-not-a-real-token-123 and key sk-demoFAKEkey123.</textarea>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Sink</th><th>Type</th><th>min_severity</th><th>URL from env</th><th>Result</th></tr></thead>
+    <tbody id="a-sinks"></tbody>
+  </table></div>
+  <pre class="out mono" id="a-out" aria-live="polite"></pre>
+</div>
+
+<h2>Rate cap and retry</h2>
+<div class="card">
+  <div class="row">
+    <label>rate_per_hour <input type="number" id="r-rate" value="3" min="1" max="600" style="width:5em"></label>
+    <label>alerts sent in one hour <input type="number" id="r-n" value="5" min="0" max="50" style="width:5em"></label>
+  </div>
+  <p id="r-out" class="small" aria-live="polite"></p>
+  <div class="row">
+    <label>Sink answers <select id="y-resp"><option value="500">HTTP 500</option><option value="429">HTTP 429</option><option value="400">HTTP 400</option><option value="204">HTTP 204 (ok)</option><option value="down">unreachable</option></select></label>
+    <label>max_attempts <input type="number" id="y-max" value="3" min="1" max="5" style="width:5em"></label>
+    <label>backoff_seconds <input type="number" id="y-back" value="5" min="1" max="60" style="width:5em"></label>
+  </div>
+  <p id="y-out" class="small" aria-live="polite"></p>
+</div>
+
+<h2>Real recording</h2>
+<p class="small">Recorded by <code>docs/interactive/tools/record_monitor.py</code>: <code>/healthz</code>, <code>rakitsu healthcheck</code>, the stop route, and an alert reaching a webhook sink and an ntfy-style sink (a local stand-in server). Waits are shortened; output is not edited.</p>
+<div class="card" id="player"></div>
+
+<h2>Read more</h2>
+<ul>
+<li><a href="../monitor-autostart.md">docs/monitor-autostart.md</a></li>
+<li><a href="../wake-timer.md">docs/wake-timer.md</a></li>
+<li><a href="../reference/">Reference pages</a></li>
+<li>Deployment files: <code>deploy/monitor/</code> (Docker, systemd, launchd)</li>
+</ul>
+</main>
+<script type="application/json" id="cast-monitor">{"version":1,"title":"monitors: /healthz, healthcheck, stop route, alerts","width":100,"height":28,"events":[[0.5,"o","\u001b[2m# monitor.yaml lists env var NAMES for the alert URLs; the values come from the process environment\u001b[0m\r\n"],[0.9,"o","\u001b[32m$ \u001b[0m"],[0.925,"o","g"],[0.95,"o","r"],[0.975,"o","e"],[1.0,"o","p"],[1.025,"o"," "],[1.05,"o","-"],[1.075,"o","n"],[1.1,"o"," "],[1.125,"o","'"],[1.15,"o","e"],[1.175,"o","n"],[1.2,"o","v"],[1.225,"o","_"],[1.25,"o","r"],[1.275,"o","e"],[1.3,"o","f"],[1.325,"o","s"],[1.35,"o","'"],[1.375,"o"," "],[1.4,"o","m"],[1.425,"o","o"],[1.45,"o","n"],[1.475,"o","i"],[1.5,"o","t"],[1.525,"o","o"],[1.55,"o","r"],[1.575,"o","."],[1.6,"o","y"],[1.625,"o","a"],[1.65,"o","m"],[1.675,"o","l"],[1.975,"o","\r\n"],[2.425,"o","16:    env_refs: [ALERT_WEBHOOK_URL, ALERT_NTFY_URL, ALERT_PAGER_URL]   # env var NAMES only\r\n"],[2.925,"o","\u001b[2m# /healthz: 200 while every monitor is ok\u001b[0m\r\n"],[3.325,"o","\u001b[32m$ \u001b[0m"],[3.35,"o","c"],[3.375,"o","u"],[3.4,"o","r"],[3.425,"o","l"],[3.45,"o"," "],[3.475,"o","-"],[3.5,"o","s"],[3.525,"o"," "],[3.55,"o","-"],[3.575,"o","w"],[3.6,"o"," "],[3.625,"o","'"],[3.65,"o"," "],[3.675,"o","("],[3.7,"o","H"],[3.725,"o","T"],[3.75,"o","T"],[3.775,"o","P"],[3.8,"o"," "],[3.825,"o","%"],[3.85,"o","{"],[3.875,"o","h"],[3.9,"o","t"],[3.925,"o","t"],[3.95,"o","p"],[3.975,"o","_"],[4.0,"o","c"],[4.025,"o","o"],[4.05,"o","d"],[4.075,"o","e"],[4.1,"o","}"],[4.125,"o",")"],[4.15,"o","\\"],[4.175,"o","n"],[4.2,"o","'"],[4.225,"o"," "],[4.25,"o","h"],[4.275,"o","t"],[4.3,"o","t"],[4.325,"o","p"],[4.35,"o",":"],[4.375,"o","/"],[4.4,"o","/"],[4.425,"o","1"],[4.45,"o","2"],[4.475,"o","7"],[4.5,"o","."],[4.525,"o","0"],[4.55,"o","."],[4.575,"o","0"],[4.6,"o","."],[4.625,"o","1"],[4.65,"o",":"],[4.675,"o","9"],[4.7,"o","1"],[4.725,"o","0"],[4.75,"o","5"],[4.775,"o","/"],[4.8,"o","h"],[4.825,"o","e"],[4.85,"o","a"],[4.875,"o","l"],[4.9,"o","t"],[4.925,"o","h"],[4.95,"o","z"],[5.25,"o","\r\n"],[5.7,"o","{\"status\":\"ok\",\"monitors\":{\"log-watch\":\"ok\"}}\r\n"],[5.73,"o"," (HTTP 200)\r\n"],[6.23,"o","\u001b[2m# rakitsu healthcheck is the Docker-style probe: exit 0 healthy, 1 otherwise\u001b[0m\r\n"],[6.63,"o","\u001b[32m$ \u001b[0m"],[6.655,"o","r"],[6.68,"o","a"],[6.705,"o","k"],[6.73,"o","i"],[6.755,"o","t"],[6.78,"o","s"],[6.805,"o","u"],[6.83,"o"," "],[6.855,"o","h"],[6.88,"o","e"],[6.905,"o","a"],[6.93,"o","l"],[6.955,"o","t"],[6.98,"o","h"],[7.005,"o","c"],[7.03,"o","h"],[7.055,"o","e"],[7.08,"o","c"],[7.105,"o","k"],[7.13,"o"," "],[7.155,"o","-"],[7.18,"o","-"],[7.205,"o","u"],[7.23,"o","r"],[7.255,"o","l"],[7.28,"o"," "],[7.305,"o","h"],[7.33,"o","t"],[7.355,"o","t"],[7.38,"o","p"],[7.405,"o",":"],[7.43,"o","/"],[7.455,"o","/"],[7.48,"o","1"],[7.505,"o","2"],[7.53,"o","7"],[7.555,"o","."],[7.58,"o","0"],[7.605,"o","."],[7.63,"o","0"],[7.655,"o","."],[7.68,"o","1"],[7.705,"o",":"],[7.73,"o","9"],[7.755,"o","1"],[7.78,"o","0"],[7.805,"o","5"],[7.83,"o","/"],[7.855,"o","h"],[7.88,"o","e"],[7.905,"o","a"],[7.93,"o","l"],[7.955,"o","t"],[7.98,"o","h"],[8.005,"o","z"],[8.305,"o","\r\n"],[8.405,"o","\u001b[2m[exit 0]\u001b[0m\r\n"],[8.905,"o","\u001b[2m# stop the monitor on purpose. The stop route works by creating the kill-switch file\u001b[0m\r\n"],[9.305,"o","\u001b[32m$ \u001b[0m"],[9.33,"o","c"],[9.355,"o","u"],[9.38,"o","r"],[9.405,"o","l"],[9.43,"o"," "],[9.455,"o","-"],[9.48,"o","s"],[9.505,"o"," "],[9.53,"o","-"],[9.555,"o","X"],[9.58,"o"," "],[9.605,"o","P"],[9.63,"o","O"],[9.655,"o","S"],[9.68,"o","T"],[9.705,"o"," "],[9.73,"o","h"],[9.755,"o","t"],[9.78,"o","t"],[9.805,"o","p"],[9.83,"o",":"],[9.855,"o","/"],[9.88,"o","/"],[9.905,"o","1"],[9.93,"o","2"],[9.955,"o","7"],[9.98,"o","."],[10.005,"o","0"],[10.03,"o","."],[10.055,"o","0"],[10.08,"o","."],[10.105,"o","1"],[10.13,"o",":"],[10.155,"o","9"],[10.18,"o","1"],[10.205,"o","0"],[10.23,"o","5"],[10.255,"o","/"],[10.28,"o","a"],[10.305,"o","p"],[10.33,"o","i"],[10.355,"o","/"],[10.38,"o","c"],[10.405,"o","h"],[10.43,"o","a"],[10.455,"o","t"],[10.48,"o","/"],[10.505,"o","m"],[10.53,"o","o"],[10.555,"o","n"],[10.58,"o","i"],[10.605,"o","t"],[10.63,"o","o"],[10.655,"o","r"],[10.68,"o","-"],[10.705,"o","l"],[10.73,"o","o"],[10.755,"o","g"],[10.78,"o","-"],[10.805,"o","w"],[10.83,"o","a"],[10.855,"o","t"],[10.88,"o","c"],[10.905,"o","h"],[10.93,"o","/"],[10.955,"o","w"],[10.98,"o","a"],[11.005,"o","k"],[11.03,"o","e"],[11.055,"o","/"],[11.08,"o","s"],[11.105,"o","t"],[11.13,"o","o"],[11.155,"o","p"],[11.455,"o","\r\n"],[11.905,"o","{\"status\":\"stopped\"}\r\n"],[12.305,"o","\u001b[32m$ \u001b[0m"],[12.33,"o","l"],[12.355,"o","s"],[12.38,"o"," "],[12.405,"o","~"],[12.43,"o","/"],[12.455,"o","."],[12.48,"o","r"],[12.505,"o","a"],[12.53,"o","k"],[12.555,"o","i"],[12.58,"o","t"],[12.605,"o","s"],[12.63,"o","u"],[12.655,"o","/"],[12.68,"o","w"],[12.705,"o","a"],[12.73,"o","k"],[12.755,"o","e"],[12.78,"o","/"],[12.805,"o","S"],[12.83,"o","T"],[12.855,"o","O"],[12.88,"o","P"],[13.18,"o","\r\n"],[13.63,"o","~/.rakitsu/wake/STOP\r\n"],[14.13,"o","\u001b[2m# the loop saw the file at its next tick and stopped; the session stays open\u001b[0m\r\n"],[14.53,"o","\u001b[32m$ \u001b[0m"],[14.555,"o","c"],[14.58,"o","u"],[14.605,"o","r"],[14.63,"o","l"],[14.655,"o"," "],[14.68,"o","-"],[14.705,"o","s"],[14.73,"o"," "],[14.755,"o","-"],[14.78,"o","w"],[14.805,"o"," "],[14.83,"o","'"],[14.855,"o"," "],[14.88,"o","("],[14.905,"o","H"],[14.93,"o","T"],[14.955,"o","T"],[14.98,"o","P"],[15.005,"o"," "],[15.03,"o","%"],[15.055,"o","{"],[15.08,"o","h"],[15.105,"o","t"],[15.13,"o","t"],[15.155,"o","p"],[15.18,"o","_"],[15.205,"o","c"],[15.23,"o","o"],[15.255,"o","d"],[15.28,"o","e"],[15.305,"o","}"],[15.33,"o",")"],[15.355,"o","\\"],[15.38,"o","n"],[15.405,"o","'"],[15.43,"o"," "],[15.455,"o","h"],[15.48,"o","t"],[15.505,"o","t"],[15.53,"o","p"],[15.555,"o",":"],[15.58,"o","/"],[15.605,"o","/"],[15.63,"o","1"],[15.655,"o","2"],[15.68,"o","7"],[15.705,"o","."],[15.73,"o","0"],[15.755,"o","."],[15.78,"o","0"],[15.805,"o","."],[15.83,"o","1"],[15.855,"o",":"],[15.88,"o","9"],[15.905,"o","1"],[15.93,"o","0"],[15.955,"o","5"],[15.98,"o","/"],[16.005,"o","h"],[16.03,"o","e"],[16.055,"o","a"],[16.08,"o","l"],[16.105,"o","t"],[16.13,"o","h"],[16.155,"o","z"],[16.455,"o","\r\n"],[16.905,"o","{\"status\":\"fail\",\"monitors\":{\"log-watch\":\"stopped\"}}\r\n"],[16.935,"o"," (HTTP 503)\r\n"],[17.335,"o","\u001b[32m$ \u001b[0m"],[17.36,"o","r"],[17.385,"o","a"],[17.41,"o","k"],[17.435,"o","i"],[17.46,"o","t"],[17.485,"o","s"],[17.51,"o","u"],[17.535,"o"," "],[17.56,"o","h"],[17.585,"o","e"],[17.61,"o","a"],[17.635,"o","l"],[17.66,"o","t"],[17.685,"o","h"],[17.71,"o","c"],[17.735,"o","h"],[17.76,"o","e"],[17.785,"o","c"],[17.81,"o","k"],[17.835,"o"," "],[17.86,"o","-"],[17.885,"o","-"],[17.91,"o","u"],[17.935,"o","r"],[17.96,"o","l"],[17.985,"o"," "],[18.01,"o","h"],[18.035,"o","t"],[18.06,"o","t"],[18.085,"o","p"],[18.11,"o",":"],[18.135,"o","/"],[18.16,"o","/"],[18.185,"o","1"],[18.21,"o","2"],[18.235,"o","7"],[18.26,"o","."],[18.285,"o","0"],[18.31,"o","."],[18.335,"o","0"],[18.36,"o","."],[18.385,"o","1"],[18.41,"o",":"],[18.435,"o","9"],[18.46,"o","1"],[18.485,"o","0"],[18.51,"o","5"],[18.535,"o","/"],[18.56,"o","h"],[18.585,"o","e"],[18.61,"o","a"],[18.635,"o","l"],[18.66,"o","t"],[18.685,"o","h"],[18.71,"o","z"],[19.01,"o","\r\n"],[19.46,"o","healthcheck: status is not ok: fail\r\n"],[19.49,"o","unhealthy monitors:\r\n"],[19.52,"o","  log-watch: stopped\r\n"],[19.62,"o","\u001b[2m[exit 1]\u001b[0m\r\n"],[20.12,"o","\u001b[2m# resume is refused while the file exists\u001b[0m\r\n"],[20.52,"o","\u001b[32m$ \u001b[0m"],[20.545,"o","c"],[20.57,"o","u"],[20.595,"o","r"],[20.62,"o","l"],[20.645,"o"," "],[20.67,"o","-"],[20.695,"o","s"],[20.72,"o"," "],[20.745,"o","-"],[20.77,"o","w"],[20.795,"o"," "],[20.82,"o","'"],[20.845,"o"," "],[20.87,"o","("],[20.895,"o","H"],[20.92,"o","T"],[20.945,"o","T"],[20.97,"o","P"],[20.995,"o"," "],[21.02,"o","%"],[21.045,"o","{"],[21.07,"o","h"],[21.095,"o","t"],[21.12,"o","t"],[21.145,"o","p"],[21.17,"o","_"],[21.195,"o","c"],[21.22,"o","o"],[21.245,"o","d"],[21.27,"o","e"],[21.295,"o","}"],[21.32,"o",")"],[21.345,"o","\\"],[21.37,"o","n"],[21.395,"o","'"],[21.42,"o"," "],[21.445,"o","-"],[21.47,"o","X"],[21.495,"o"," "],[21.52,"o","P"],[21.545,"o","O"],[21.57,"o","S"],[21.595,"o","T"],[21.62,"o"," "],[21.645,"o","h"],[21.67,"o","t"],[21.695,"o","t"],[21.72,"o","p"],[21.745,"o",":"],[21.77,"o","/"],[21.795,"o","/"],[21.82,"o","1"],[21.845,"o","2"],[21.87,"o","7"],[21.895,"o","."],[21.92,"o","0"],[21.945,"o","."],[21.97,"o","0"],[21.995,"o","."],[22.02,"o","1"],[22.045,"o",":"],[22.07,"o","9"],[22.095,"o","1"],[22.12,"o","0"],[22.145,"o","5"],[22.17,"o","/"],[22.195,"o","a"],[22.22,"o","p"],[22.245,"o","i"],[22.27,"o","/"],[22.295,"o","c"],[22.32,"o","h"],[22.345,"o","a"],[22.37,"o","t"],[22.395,"o","/"],[22.42,"o","m"],[22.445,"o","o"],[22.47,"o","n"],[22.495,"o","i"],[22.52,"o","t"],[22.545,"o","o"],[22.57,"o","r"],[22.595,"o","-"],[22.62,"o","l"],[22.645,"o","o"],[22.67,"o","g"],[22.695,"o","-"],[22.72,"o","w"],[22.745,"o","a"],[22.77,"o","t"],[22.795,"o","c"],[22.82,"o","h"],[22.845,"o","/"],[22.87,"o","w"],[22.895,"o","a"],[22.92,"o","k"],[22.945,"o","e"],[22.97,"o","/"],[22.995,"o","r"],[23.02,"o","e"],[23.045,"o","s"],[23.07,"o","u"],[23.095,"o","m"],[23.12,"o","e"],[23.42,"o","\r\n"],[23.87,"o","{\"error\":\"wake: kill-switch file present; remove it before resuming\"}\r\n"],[23.9,"o"," (HTTP 409)\r\n"],[24.4,"o","\u001b[2m# remove the file, then resume\u001b[0m\r\n"],[24.8,"o","\u001b[32m$ \u001b[0m"],[24.825,"o","r"],[24.85,"o","m"],[24.875,"o"," "],[24.9,"o","~"],[24.925,"o","/"],[24.95,"o","."],[24.975,"o","r"],[25.0,"o","a"],[25.025,"o","k"],[25.05,"o","i"],[25.075,"o","t"],[25.1,"o","s"],[25.125,"o","u"],[25.15,"o","/"],[25.175,"o","w"],[25.2,"o","a"],[25.225,"o","k"],[25.25,"o","e"],[25.275,"o","/"],[25.3,"o","S"],[25.325,"o","T"],[25.35,"o","O"],[25.375,"o","P"],[25.675,"o","\r\n"],[26.075,"o","\u001b[32m$ \u001b[0m"],[26.1,"o","c"],[26.125,"o","u"],[26.15,"o","r"],[26.175,"o","l"],[26.2,"o"," "],[26.225,"o","-"],[26.25,"o","s"],[26.275,"o"," "],[26.3,"o","-"],[26.325,"o","X"],[26.35,"o"," "],[26.375,"o","P"],[26.4,"o","O"],[26.425,"o","S"],[26.45,"o","T"],[26.475,"o"," "],[26.5,"o","h"],[26.525,"o","t"],[26.55,"o","t"],[26.575,"o","p"],[26.6,"o",":"],[26.625,"o","/"],[26.65,"o","/"],[26.675,"o","1"],[26.7,"o","2"],[26.725,"o","7"],[26.75,"o","."],[26.775,"o","0"],[26.8,"o","."],[26.825,"o","0"],[26.85,"o","."],[26.875,"o","1"],[26.9,"o",":"],[26.925,"o","9"],[26.95,"o","1"],[26.975,"o","0"],[27.0,"o","5"],[27.025,"o","/"],[27.05,"o","a"],[27.075,"o","p"],[27.1,"o","i"],[27.125,"o","/"],[27.15,"o","c"],[27.175,"o","h"],[27.2,"o","a"],[27.225,"o","t"],[27.25,"o","/"],[27.275,"o","m"],[27.3,"o","o"],[27.325,"o","n"],[27.35,"o","i"],[27.375,"o","t"],[27.4,"o","o"],[27.425,"o","r"],[27.45,"o","-"],[27.475,"o","l"],[27.5,"o","o"],[27.525,"o","g"],[27.55,"o","-"],[27.575,"o","w"],[27.6,"o","a"],[27.625,"o","t"],[27.65,"o","c"],[27.675,"o","h"],[27.7,"o","/"],[27.725,"o","w"],[27.75,"o","a"],[27.775,"o","k"],[27.8,"o","e"],[27.825,"o","/"],[27.85,"o","r"],[27.875,"o","e"],[27.9,"o","s"],[27.925,"o","u"],[27.95,"o","m"],[27.975,"o","e"],[28.275,"o","\r\n"],[28.725,"o","{\"status\":\"resumed\"}\r\n"],[29.125,"o","\u001b[32m$ \u001b[0m"],[29.15,"o","c"],[29.175,"o","u"],[29.2,"o","r"],[29.225,"o","l"],[29.25,"o"," "],[29.275,"o","-"],[29.3,"o","s"],[29.325,"o"," "],[29.35,"o","-"],[29.375,"o","w"],[29.4,"o"," "],[29.425,"o","'"],[29.45,"o"," "],[29.475,"o","("],[29.5,"o","H"],[29.525,"o","T"],[29.55,"o","T"],[29.575,"o","P"],[29.6,"o"," "],[29.625,"o","%"],[29.65,"o","{"],[29.675,"o","h"],[29.7,"o","t"],[29.725,"o","t"],[29.75,"o","p"],[29.775,"o","_"],[29.8,"o","c"],[29.825,"o","o"],[29.85,"o","d"],[29.875,"o","e"],[29.9,"o","}"],[29.925,"o",")"],[29.95,"o","\\"],[29.975,"o","n"],[30.0,"o","'"],[30.025,"o"," "],[30.05,"o","h"],[30.075,"o","t"],[30.1,"o","t"],[30.125,"o","p"],[30.15,"o",":"],[30.175,"o","/"],[30.2,"o","/"],[30.225,"o","1"],[30.25,"o","2"],[30.275,"o","7"],[30.3,"o","."],[30.325,"o","0"],[30.35,"o","."],[30.375,"o","0"],[30.4,"o","."],[30.425,"o","1"],[30.45,"o",":"],[30.475,"o","9"],[30.5,"o","1"],[30.525,"o","0"],[30.55,"o","5"],[30.575,"o","/"],[30.6,"o","h"],[30.625,"o","e"],[30.65,"o","a"],[30.675,"o","l"],[30.7,"o","t"],[30.725,"o","h"],[30.75,"o","z"],[31.05,"o","\r\n"],[31.5,"o","{\"status\":\"ok\",\"monitors\":{\"log-watch\":\"ok\"}}\r\n"],[31.53,"o"," (HTTP 200)\r\n"],[32.03,"o","\u001b[2m# now an alarm: the model calls send_alert (severity warn). Three sinks are configured\u001b[0m\r\n"],[32.43,"o","\u001b[32m$ \u001b[0m"],[32.455,"o","g"],[32.48,"o","r"],[32.505,"o","e"],[32.53,"o","p"],[32.555,"o"," "],[32.58,"o","-"],[32.605,"o","n"],[32.63,"o","E"],[32.655,"o"," "],[32.68,"o","'"],[32.705,"o","n"],[32.73,"o","a"],[32.755,"o","m"],[32.78,"o","e"],[32.805,"o",":"],[32.83,"o","|"],[32.855,"o","t"],[32.88,"o","y"],[32.905,"o","p"],[32.93,"o","e"],[32.955,"o",":"],[32.98,"o","|"],[33.005,"o","m"],[33.03,"o","i"],[33.055,"o","n"],[33.08,"o","_"],[33.105,"o","s"],[33.13,"o","e"],[33.155,"o","v"],[33.18,"o","e"],[33.205,"o","r"],[33.23,"o","i"],[33.255,"o","t"],[33.28,"o","y"],[33.305,"o","'"],[33.33,"o"," "],[33.355,"o","m"],[33.38,"o","o"],[33.405,"o","n"],[33.43,"o","i"],[33.455,"o","t"],[33.48,"o","o"],[33.505,"o","r"],[33.53,"o","s"],[33.555,"o","/"],[33.58,"o","l"],[33.605,"o","o"],[33.63,"o","g"],[33.655,"o","-"],[33.68,"o","w"],[33.705,"o","a"],[33.73,"o","t"],[33.755,"o","c"],[33.78,"o","h"],[33.805,"o","."],[33.83,"o","y"],[33.855,"o","a"],[33.88,"o","m"],[33.905,"o","l"],[33.93,"o"," "],[33.955,"o","|"],[33.98,"o"," "],[34.005,"o","s"],[34.03,"o","e"],[34.055,"o","d"],[34.08,"o"," "],[34.105,"o","-"],[34.13,"o","n"],[34.155,"o"," "],[34.18,"o","'"],[34.205,"o","/"],[34.23,"o","p"],[34.255,"o","h"],[34.28,"o","o"],[34.305,"o","n"],[34.33,"o","e"],[34.355,"o","/"],[34.38,"o",","],[34.405,"o","$"],[34.43,"o","p"],[34.455,"o","'"],[34.755,"o","\r\n"],[35.205,"o","48:        - name: phone\r\n"],[35.235,"o","49:          type: webhook\r\n"],[35.265,"o","52:          min_severity: warn\r\n"],[35.295,"o","53:        - name: phone-push\r\n"],[35.325,"o","54:          type: ntfy\r\n"],[35.355,"o","57:          min_severity: warn\r\n"],[35.385,"o","58:        - name: pager\r\n"],[35.415,"o","59:          type: webhook\r\n"],[35.445,"o","62:          min_severity: critical      # a warn alert does not reach this sink\r\n"],[35.475,"o","65:  - name: watcher\r\n"],[35.875,"o","\u001b[32m$ \u001b[0m"],[35.9,"o","e"],[35.925,"o","c"],[35.95,"o","h"],[35.975,"o","o"],[36.0,"o"," "],[36.025,"o","'"],[36.05,"o","E"],[36.075,"o","R"],[36.1,"o","R"],[36.125,"o","O"],[36.15,"o","R"],[36.175,"o"," "],[36.2,"o","d"],[36.225,"o","i"],[36.25,"o","s"],[36.275,"o","k"],[36.3,"o"," "],[36.325,"o","f"],[36.35,"o","u"],[36.375,"o","l"],[36.4,"o","l"],[36.425,"o","'"],[36.45,"o"," "],[36.475,"o",">"],[36.5,"o",">"],[36.525,"o"," "],[36.55,"o","m"],[36.575,"o","o"],[36.6,"o","n"],[36.625,"o","i"],[36.65,"o","t"],[36.675,"o","o"],[36.7,"o","r"],[36.725,"o","s"],[36.75,"o","/"],[36.775,"o","l"],[36.8,"o","o"],[36.825,"o","g"],[36.85,"o","-"],[36.875,"o","w"],[36.9,"o","a"],[36.925,"o","t"],[36.95,"o","c"],[36.975,"o","h"],[37.0,"o","/"],[37.025,"o","l"],[37.05,"o","o"],[37.075,"o","g"],[37.1,"o","s"],[37.125,"o","/"],[37.15,"o","a"],[37.175,"o","p"],[37.2,"o","p"],[37.225,"o","."],[37.25,"o","l"],[37.275,"o","o"],[37.3,"o","g"],[37.6,"o","\r\n"],[38.1,"o","\u001b[2m# the webhook sink gets JSON; the ntfy sink gets the body as text plus Title and Priority headers\u001b[0m\r\n"],[38.5,"o","\u001b[32m$ \u001b[0m"],[38.525,"o","c"],[38.55,"o","a"],[38.575,"o","t"],[38.6,"o"," "],[38.625,"o","w"],[38.65,"o","e"],[38.675,"o","b"],[38.7,"o","h"],[38.725,"o","o"],[38.75,"o","o"],[38.775,"o","k"],[38.8,"o","."],[38.825,"o","j"],[38.85,"o","s"],[38.875,"o","o"],[38.9,"o","n"],[38.925,"o","l"],[39.225,"o","\r\n"],[39.675,"o","{\"path\": \"/hook\", \"content_type\": \"application/json\", \"body\": \"{\\\"severity\\\":\\\"warn\\\",\\\"title\\\":\\\"log-watch alarm\\\",\\\"body\\\":\\\"The timer saw ERROR in the log. Home is ~ Header was Authorization: Bearer [redacted] and key [redacted].\\\",\\\"time\\\":\\\"2026-10-04T13:31:08.927918+09:00\\\"}\"}\r\n"],[39.705,"o","{\"path\": \"/ntfy\", \"content_type\": \"text/plain; charset=utf-8\", \"body\": \"The timer saw ERROR in the log. Home is ~ Header was Authorization: Bearer [redacted] and key [redacted].\", \"title\": \"log-watch alarm\", \"priority\": \"4\"}\r\n"],[40.205,"o","\u001b[2m# redaction: the home path became ~, the Bearer token and the sk- key became [redacted]\u001b[0m\r\n"],[40.705,"o","\u001b[2m# the pager sink only takes critical alerts, so it received nothing\u001b[0m\r\n"],[41.105,"o","\u001b[32m$ \u001b[0m"],[41.13,"o","g"],[41.155,"o","r"],[41.18,"o","e"],[41.205,"o","p"],[41.23,"o"," "],[41.255,"o","-"],[41.28,"o","c"],[41.305,"o"," "],[41.33,"o","'"],[41.355,"o","/"],[41.38,"o","p"],[41.405,"o","a"],[41.43,"o","g"],[41.455,"o","e"],[41.48,"o","r"],[41.505,"o","'"],[41.53,"o"," "],[41.555,"o","w"],[41.58,"o","e"],[41.605,"o","b"],[41.63,"o","h"],[41.655,"o","o"],[41.68,"o","o"],[41.705,"o","k"],[41.73,"o","."],[41.755,"o","j"],[41.78,"o","s"],[41.805,"o","o"],[41.83,"o","n"],[41.855,"o","l"],[42.155,"o","\r\n"],[42.605,"o","0\r\n"]]}</script>
+<script>/* Shared helpers: theme toggle, step-through diagrams, cast player. No dependencies. */
+(function () {
+  'use strict';
+  var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function h(tag, attrs, kids) {
+    var e = document.createElement(tag);
+    if (attrs) for (var k in attrs) {
+      if (k === 'text') e.textContent = attrs[k];
+      else if (k === 'class') e.className = attrs[k];
+      else e.setAttribute(k, attrs[k]);
+    }
+    (kids || []).forEach(function (c) { e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    return e;
+  }
+
+  /* ---------- theme ---------- */
+  function initTheme() {
+    var btn = document.getElementById('theme-toggle');
+    var saved = null;
+    try { saved = localStorage.getItem('rk-theme'); } catch (e) {}
+    if (saved) document.documentElement.setAttribute('data-theme', saved);
+    function cur() {
+      var t = document.documentElement.getAttribute('data-theme');
+      if (t) return t;
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    function label() { if (btn) btn.textContent = cur() === 'dark' ? 'Light mode' : 'Dark mode'; }
+    if (btn) btn.addEventListener('click', function () {
+      var n = cur() === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', n);
+      try { localStorage.setItem('rk-theme', n); } catch (e) {}
+      label();
+    });
+    label();
+  }
+
+  /* ---------- step-through diagram ---------- */
+  function Stepper(root, cfg) {
+    var actors = cfg.actors, scen = cfg.scenarios, order = Object.keys(scen);
+    var sid = order[0], idx = -1, timer = null, speed = 1;
+    var tabs = h('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Scenario' });
+    var title = h('p', { class: 'caption' });
+    var actorBox = h('div', { class: 'actors' });
+    var steps = h('ol', { class: 'steps', 'aria-live': 'polite' });
+    var state = h('div', { class: 'state', 'aria-label': 'State' });
+    var bReset = h('button', { text: 'Reset', type: 'button' });
+    var bPrev = h('button', { text: 'Back', type: 'button' });
+    var bPlay = h('button', { text: 'Play', type: 'button', class: 'primary' });
+    var bNext = h('button', { text: 'Step', type: 'button' });
+    var sp = h('select', { 'aria-label': 'Speed' }, [h('option', { value: '1', text: '1x' }), h('option', { value: '2', text: '2x' }), h('option', { value: '0.5', text: '0.5x' })]);
+    var pos = h('span', { class: 'small' });
+    var controls = h('div', { class: 'controls' }, [bReset, bPrev, bPlay, bNext, sp, pos]);
+    root.appendChild(tabs); root.appendChild(title); root.appendChild(actorBox);
+    root.appendChild(controls); root.appendChild(steps); root.appendChild(state);
+    var actorEls = {};
+    actors.forEach(function (a) {
+      var e = h('div', { class: 'actor' }, [h('b', { text: a.label }), h('small', { text: a.sub || '' })]);
+      actorEls[a.id] = e; actorBox.appendChild(e);
+    });
+    var tabEls = {};
+    function buildTabs() {
+      tabs.innerHTML = ''; tabEls = {};
+      order.forEach(function (k) {
+        var b = h('button', { type: 'button', role: 'tab', text: scen[k].tab, 'aria-selected': 'false' });
+        b.addEventListener('click', function () { choose(k); });
+        tabEls[k] = b; tabs.appendChild(b);
+      });
+      tabs.style.display = order.length > 1 ? '' : 'none';
+    }
+    buildTabs();
+    function S() { return scen[sid].steps; }
+    function stopTimer() { if (timer) { clearInterval(timer); timer = null; } bPlay.textContent = 'Play'; }
+    function render() {
+      steps.innerHTML = ''; state.innerHTML = '';
+      Object.keys(actorEls).forEach(function (k) { actorEls[k].className = 'actor'; });
+      var merged = {};
+      for (var i = 0; i <= idx; i++) {
+        var s = S()[i];
+        var li = h('li', { class: (s.tone || '') + (i === idx ? ' current' : '') }, [
+          h('div', { class: 'route', text: (actorName(s.from) + (s.to ? ' -> ' + actorName(s.to) : '')) }),
+          h('div', { class: 't', text: s.title }),
+          h('div', { class: 'd', text: s.text || '' })
+        ]);
+        steps.appendChild(li);
+        if (s.state) for (var k in s.state) merged[k] = s.state[k];
+      }
+      if (idx >= 0) {
+        var c = S()[idx];
+        if (c.from && actorEls[c.from]) actorEls[c.from].classList.add('from');
+        if (c.to && actorEls[c.to]) actorEls[c.to].classList.add('to');
+        var last = steps.lastChild; if (last && last.scrollIntoView && !RM) last.scrollIntoView({ block: 'nearest' });
+      }
+      Object.keys(merged).forEach(function (k) {
+        state.appendChild(h('span', {}, [h('b', { text: k + ': ' }), String(merged[k])]));
+      });
+      pos.textContent = (idx + 1) + ' / ' + S().length;
+      bPrev.disabled = idx < 0; bNext.disabled = idx >= S().length - 1;
+      order.forEach(function (k) { tabEls[k].setAttribute('aria-selected', k === sid ? 'true' : 'false'); tabEls[k].classList.toggle('on', k === sid); });
+      title.textContent = scen[sid].title;
+    }
+    function actorName(id) { var a = actors.filter(function (x) { return x.id === id; })[0]; return a ? a.label : (id || ''); }
+    function choose(k) { stopTimer(); sid = k; idx = -1; render(); }
+    function next() { if (idx < S().length - 1) { idx++; render(); } else stopTimer(); }
+    bNext.addEventListener('click', function () { stopTimer(); next(); });
+    bPrev.addEventListener('click', function () { stopTimer(); if (idx >= 0) { idx--; render(); } });
+    bReset.addEventListener('click', function () { stopTimer(); idx = -1; render(); });
+    sp.addEventListener('change', function () { speed = parseFloat(sp.value); if (timer) { stopTimer(); play(); } });
+    function play() {
+      if (idx >= S().length - 1) idx = -1;
+      bPlay.textContent = 'Pause';
+      next();
+      timer = setInterval(function () { if (idx >= S().length - 1) stopTimer(); else next(); }, 1800 / speed);
+    }
+    bPlay.addEventListener('click', function () { if (timer) stopTimer(); else play(); });
+    function load(newScen) { stopTimer(); scen = newScen; order = Object.keys(scen); sid = order[0]; idx = -1; buildTabs(); render(); }
+    render();
+    return { choose: choose, next: next, load: load, last: function () { stopTimer(); idx = S().length - 1; render(); }, state: function () { return { scenario: sid, index: idx }; } };
+  }
+
+  /* ---------- cast player ---------- */
+  function ansi(text, st) {
+    // Tiny SGR parser: 0 reset, 1 bold, 2 dim, 31 red, 32 green, 36 cyan.
+    var out = '', re = /\x1b\[([0-9;]*)m/g, last = 0, m;
+    function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function open() {
+      var c = [];
+      if (st.b) c.push('bld'); if (st.d) c.push('dim'); if (st.c) c.push(st.c);
+      return c.length ? '<span class="' + c.join(' ') + '">' : '';
+    }
+    var cur = '';
+    function emit(s) { if (!s) return; var o = open(); out += o + esc(s) + (o ? '</span>' : ''); }
+    while ((m = re.exec(text))) {
+      emit(text.slice(last, m.index)); last = re.lastIndex;
+      (m[1] || '0').split(';').forEach(function (n) {
+        n = parseInt(n, 10);
+        if (n === 0) { st.b = st.d = false; st.c = ''; }
+        else if (n === 1) st.b = true;
+        else if (n === 2) st.d = true;
+        else if (n === 31) st.c = 'red';
+        else if (n === 32) st.c = 'grn';
+        else if (n === 36) st.c = 'cyn';
+      });
+    }
+    emit(text.slice(last));
+    return out;
+  }
+
+  function CastPlayer(root, cast) {
+    var ev = cast.events, n = ev.length, idx = 0, timer = null, speed = 1, dragging = false;
+    // A "chapter" starts at a note line ("# ...") or at a prompt that no note introduces.
+    var chap = [];
+    ev.forEach(function (e, i) {
+      var t = e[2], isNote = t.indexOf('\x1b[2m# ') === 0, isPrompt = t.indexOf('\x1b[32m$ ') === 0;
+      var prevNote = i > 0 && ev[i - 1][2].indexOf('\x1b[2m# ') === 0;
+      if (isNote || (isPrompt && !prevNote)) chap.push(i);
+    });
+    var term = h('pre', { class: 'term', tabindex: '0', role: 'log', 'aria-label': 'Terminal recording: ' + (cast.title || '') });
+    var bRestart = h('button', { type: 'button', text: 'Restart' });
+    var bPrev = h('button', { type: 'button', text: 'Previous command' });
+    var bPlay = h('button', { type: 'button', text: 'Play', class: 'primary' });
+    var bNext = h('button', { type: 'button', text: 'Next command' });
+    var sp = h('select', { 'aria-label': 'Playback speed' }, [h('option', { value: '1', text: '1x' }), h('option', { value: '2', text: '2x' }), h('option', { value: '4', text: '4x' })]);
+    var rng = h('input', { type: 'range', min: '0', max: String(n), value: '0', 'aria-label': 'Position' });
+    var tl = h('span', { class: 'small' });
+    root.appendChild(term);
+    root.appendChild(h('div', { class: 'controls' }, [bRestart, bPrev, bPlay, bNext, sp]));
+    root.appendChild(h('div', { class: 'controls' }, [rng, tl]));
+
+    function render() {
+      var st = { b: false, d: false, c: '' }, html = '';
+      for (var i = 0; i < idx; i++) html += ansi(ev[i][2], st);
+      term.innerHTML = html + '<span class="cur">&nbsp;</span>';
+      term.scrollTop = term.scrollHeight;
+      rng.value = String(idx);
+      var t = idx > 0 ? ev[Math.min(idx, n) - 1][0] : 0;
+      tl.textContent = t.toFixed(1) + ' s of ' + ev[n - 1][0].toFixed(1) + ' s (pauses shortened)';
+      bPrev.disabled = idx <= 0; bNext.disabled = idx >= n;
+    }
+    function stop() { if (timer) { clearTimeout(timer); timer = null; } bPlay.textContent = 'Play'; }
+    function tick() {
+      if (idx >= n) { stop(); return; }
+      var prev = idx > 0 ? ev[idx - 1][0] : 0;
+      var gap = Math.min(ev[idx][0] - prev, 1.5);
+      var wait = RM ? 0 : gap * 1000 / speed;
+      timer = setTimeout(function () { idx++; render(); tick(); }, wait);
+    }
+    function play() { if (idx >= n) idx = 0; bPlay.textContent = 'Pause'; tick(); }
+    bPlay.addEventListener('click', function () { if (timer) stop(); else play(); });
+    bRestart.addEventListener('click', function () { stop(); idx = 0; render(); });
+    bNext.addEventListener('click', function () {
+      stop();
+      var target = n;
+      for (var i = 0; i < chap.length; i++) if (chap[i] > idx) { target = chap[i]; break; }
+      idx = target; render();
+    });
+    bPrev.addEventListener('click', function () {
+      stop();
+      var t = 0;
+      for (var i = 0; i < chap.length; i++) if (chap[i] < idx) t = chap[i];
+      idx = t; render();
+    });
+    sp.addEventListener('change', function () { speed = parseFloat(sp.value); if (timer) { stop(); play(); } });
+    rng.addEventListener('input', function () { stop(); idx = parseInt(rng.value, 10); render(); });
+    render();
+    return { state: function () { return { index: idx, total: n }; }, seek: function (i) { stop(); idx = i; render(); }, play: play, stop: stop };
+  }
+
+  function loadCast(id) { return JSON.parse(document.getElementById(id).textContent); }
+
+  window.RK = { h: h, Stepper: Stepper, CastPlayer: CastPlayer, loadCast: loadCast, initTheme: initTheme, reducedMotion: RM };
+  document.addEventListener('DOMContentLoaded', initTheme);
+})();
+</script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var A = [
+    { id: 'sup', label: 'Supervisor', sub: 'Docker, systemd, launchd' },
+    { id: 'srv', label: 'rakitsu serve', sub: 'monitors + /healthz' },
+    { id: 'loop', label: 'Wake loop', sub: 'monitor-<id> session' },
+    { id: 'out', label: 'Sink', sub: 'ntfy or webhook' }
+  ];
+  var scen = {
+    health: { tab: '/healthz', title: 'How a supervisor sees a monitor', steps: [
+      { from: 'srv', to: 'loop', title: 'Autostart', text: 'serve --config monitor.yaml starts each monitors[] entry as session monitor-<id>. YAML holds env var NAMES only (env_refs). A monitor that cannot start is marked failed; the others still run.', state: { monitor: 'starting' } },
+      { from: 'loop', to: 'srv', title: 'Heartbeat', text: 'The loop writes a heartbeat every min(interval_seconds, heartbeat_stale_seconds / 3), even while quiet ticks back off. With no readable heartbeat the state is "starting" for heartbeat_stale_seconds after the loop started, then "stale".', tone: 'ok', state: { monitor: 'ok' } },
+      { from: 'sup', to: 'srv', title: 'GET /healthz', text: '200 {"status":"ok","monitors":{"log-watch":"ok"}} when every monitor is ok. Loopback callers only unless healthz_allow_remote is true (a remote caller gets 403).', tone: 'ok', state: { http: 200 } },
+      { from: 'sup', to: 'srv', title: 'Docker probe', text: 'rakitsu healthcheck [--url URL] [--timeout 5s]: exit 0 when healthy, exit 1 otherwise, and it names the unhealthy monitors. systemd can use WatchdogSec with sd_notify.', tone: 'ok' },
+      { from: 'sup', to: 'loop', title: 'Stop on purpose', text: 'POST /api/chat/monitor-<id>/wake/stop creates the kill-switch file. At its next tick the loop sees it and stops. The session stays open.', tone: 'warn', state: { monitor: 'stopped' } },
+      { from: 'sup', to: 'srv', title: 'healthz while stopped', text: '503 {"status":"fail",...,"log-watch":"stopped"}. Set healthz_fail_on_stopped: false if a stopped monitor should not fail the check. stale, failed: always 503. starting: 200.', tone: 'bad', state: { http: 503 } },
+      { from: 'sup', to: 'loop', title: 'Resume', text: 'POST .../wake/resume returns 409 while the kill-switch file exists. Remove the file first, then resume.', tone: 'ok', state: { monitor: 'ok', http: 200 } }
+    ]},
+    alert: { tab: 'Alerts', title: 'From send_alert to the phone', steps: [
+      { from: 'loop', to: 'srv', title: 'The model calls send_alert', text: 'Arguments: severity (info, warn, critical), title, body. The tool answers "alert queued" at once and never waits for delivery. If the queue is full the oldest message is dropped.', tone: 'ok' },
+      { from: 'srv', to: 'srv', title: 'Redact and cut', text: 'Explicit secrets, Bearer tokens, sk-/ghp_/xox/AKIA tokens and token=/key=/secret= values become [redacted]; /Users/name and /home/name become ~. Title is cut to 200 characters, body to 2000.', tone: 'ok' },
+      { from: 'srv', to: 'srv', title: 'Pick the sinks', text: 'A sink gets the alert only if the severity is at least its min_severity (default warn). The sink URL comes from the env var named in url_env; it must be https (or http to localhost / 127.0.0.1), have no credentials, and its host must be in allow_hosts. Otherwise the sink is disabled.', tone: 'warn' },
+      { from: 'srv', to: 'srv', title: 'Rate cap', text: 'At most rate_per_hour (default 20) per sink per hour. Extra alerts are only counted. When the next alert arrives after the hour is over, one "Alerts suppressed" summary is sent first.', tone: 'warn' },
+      { from: 'srv', to: 'out', title: 'Deliver', text: 'webhook: JSON {severity, title, body, time}. ntfy: the body as plain text with Title and Priority headers (info 3, warn 4, critical 5). 5xx, 429 and network errors are retried with doubling backoff (defaults: 3 attempts, 5 s); other 4xx are not retried. The whole delivery stops after 60 s. Redirects to another host are refused.', tone: 'ok' }
+    ]}
+  };
+  RK.Stepper($('stepper'), { actors: A, scenarios: scen });
+
+  /* ---- healthz tester ---- */
+  function health() {
+    var st = $('h-state').value, fos = $('h-fos').checked, remote = $('h-caller').value === 'rem', allow = $('h-remote').checked;
+    var code, body;
+    if (remote && !allow) { code = 403; body = '{"error":"forbidden"}'; }
+    else {
+      var healthy = true;
+      if (st === 'failed' || st === 'stale') healthy = false;
+      if (st === 'stopped' && fos) healthy = false;
+      code = healthy ? 200 : 503;
+      body = JSON.stringify({ status: healthy ? 'ok' : 'fail', monitors: { 'log-watch': st } });
+    }
+    $('h-out').textContent = '$ curl -s -w " (HTTP %{http_code})" http://127.0.0.1:9100/healthz\n' + body + ' (HTTP ' + code + ')\n$ rakitsu healthcheck   # exit ' + (code === 200 ? 0 : 1);
+  }
+  ['h-state', 'h-fos', 'h-caller', 'h-remote'].forEach(function (i) { $(i).addEventListener('change', health); });
+  function hb() {
+    var stale = parseInt($('hb-stale').value, 10) || 180, age = parseInt($('hb-age').value, 10), run = $('hb-running').checked, file = $('hb-file').checked;
+    $('hb-age-v').textContent = age;
+    var st, why;
+    if (!run) { st = 'stopped'; why = 'The loop is not running (kill switch or stop route).'; }
+    else if (!file) { st = 'starting'; why = 'No readable heartbeat yet: "starting" until ' + stale + ' s after the loop started, then "stale". (Shown here as within that time.)'; }
+    else if (age > stale) { st = 'stale'; why = 'Heartbeat is ' + age + ' s old, older than ' + stale + ' s.'; }
+    else { st = 'ok'; why = 'Heartbeat is ' + age + ' s old, within ' + stale + ' s. The loop writes it every min(interval, ' + stale + '/3) s, so a healthy monitor stays below that.'; }
+    $('hb-note').textContent = 'State: ' + st + '. ' + why;
+    $('h-state').value = st; health();
+  }
+  ['hb-stale', 'hb-age', 'hb-running', 'hb-file'].forEach(function (i) { $(i).addEventListener('input', hb); });
+  hb();
+
+  /* ---- alert tester (same rules as internal/alert) ---- */
+  var SINKS = [
+    { name: 'phone', type: 'webhook', min: 'warn', url: 'http://127.0.0.1:4011/hook', hosts: ['127.0.0.1'] },
+    { name: 'phone-push', type: 'ntfy', min: 'warn', url: 'http://127.0.0.1:4011/ntfy', hosts: ['127.0.0.1'] },
+    { name: 'pager', type: 'webhook', min: 'critical', url: 'http://127.0.0.1:4011/pager', hosts: ['127.0.0.1'] }
+  ];
+  var RANK = { info: 1, warn: 2, critical: 3 };
+  function redact(s) {
+    s = s.replace(/\bBearer[ \t]+[A-Za-z0-9._~+\/=-]+/gi, 'Bearer [redacted]');
+    s = s.replace(/\b(?:sk-[A-Za-z0-9_-]+|ghp_[A-Za-z0-9_]+|xox[baprs]?-[A-Za-z0-9-]+|AKIA[A-Z0-9]+)/g, '[redacted]');
+    s = s.replace(/\b(token|key|secret)=([A-Za-z0-9+\/=_-]{32,})/gi, '$1=[redacted]');
+    return s.replace(/\/(?:Users|home)\/[^\/\s"'<>]+/g, '~');
+  }
+  function cut(s, n) { return Array.from(s).slice(0, n).join(''); }
+  function allowed(u, hosts) {
+    var m = /^(https?):\/\/([^\/:@]+)(?::\d+)?(\/|$)/i.exec(u);
+    if (!m) return false;
+    var h = m[2].toLowerCase();
+    if (m[1] !== 'https' && !(m[1] === 'http' && (h === 'localhost' || h === '127.0.0.1'))) return false;
+    return hosts.indexOf(h) >= 0;
+  }
+  function alerts() {
+    var sev = $('a-sev').value, title = cut(redact($('a-title').value), 200), body = cut(redact($('a-body').value), 2000);
+    var tb = $('a-sinks'); tb.innerHTML = '';
+    var lines = [];
+    SINKS.forEach(function (s) {
+      var tr = document.createElement('tr'), res;
+      if (!allowed(s.url, s.hosts)) res = 'disabled: URL not allowed';
+      else if (RANK[sev] < RANK[s.min]) res = 'skipped: ' + sev + ' is below ' + s.min;
+      else {
+        res = 'delivered';
+        if (s.type === 'ntfy') lines.push('POST ' + s.name + '  Title: ' + title.replace(/[\r\n]+/g, ' ') + '  Priority: ' + (RANK[sev] + 2) + '\n' + body);
+        else lines.push('POST ' + s.name + '  Content-Type: application/json\n' + JSON.stringify({ severity: sev, title: title, body: body, time: '2026-10-04T00:00:00Z' }));
+      }
+      [s.name, s.type, s.min, s.url, res].forEach(function (c, i) { var td = document.createElement('td'); td.textContent = c; if (i === 4) td.className = res === 'delivered' ? 'good' : 'warnc'; tr.appendChild(td); });
+      tb.appendChild(tr);
+    });
+    $('a-out').textContent = lines.length ? lines.join('\n\n') : 'No sink takes this alert.';
+  }
+  ['a-sev', 'a-title', 'a-body'].forEach(function (i) { $(i).addEventListener('input', alerts); });
+  alerts();
+
+  function rate() {
+    var r = parseInt($('r-rate').value, 10) || 1, n = parseInt($('r-n').value, 10) || 0;
+    var sent = Math.min(n, r), sup = Math.max(0, n - r);
+    $('r-out').textContent = n + ' alerts in one hour with rate_per_hour ' + r + ': ' + sent + ' sent, ' + sup + ' suppressed.' + (sup ? ' When the next alert arrives after the hour is over, one extra message goes first: title "Alerts suppressed", body "' + sup + ' alerts suppressed".' : '');
+  }
+  ['r-rate', 'r-n'].forEach(function (i) { $(i).addEventListener('input', rate); }); rate();
+  function retry() {
+    var resp = $('y-resp').value, max = parseInt($('y-max').value, 10) || 1, back = parseInt($('y-back').value, 10) || 1;
+    var t = 0, parts = [], b = back, done = false;
+    for (var a = 0; a < max; a++) {
+      var line = 'attempt ' + (a + 1) + ' at +' + t + ' s';
+      if (resp === '204') { parts.push(line + ': delivered'); done = true; break; }
+      var retryable = resp === 'down' || resp === '500' || resp === '429';
+      parts.push(line + ': ' + (resp === 'down' ? 'network error' : 'HTTP ' + resp));
+      if (!retryable) { parts.push('4xx other than 429 is not retried'); break; }
+      if (a + 1 === max) break;
+      if (b >= 60 - t) { parts.push('no time left in the 60 s window'); break; }
+      t += b; b = b < 60 ? b * 2 : b;
+    }
+    if (!done) parts.push('gave up: the failure is logged, the alert is lost');
+    $('y-out').textContent = parts.join(' -> ');
+  }
+  ['y-resp', 'y-max', 'y-back'].forEach(function (i) { $(i).addEventListener('input', retry); }); retry();
+
+  var cp = RK.CastPlayer($('player'), RK.loadCast('cast-monitor'));
+  window.__page = { redact: redact, cast: cp };
+})();
+</script>
+</body>
+</html>

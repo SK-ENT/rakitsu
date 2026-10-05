@@ -2,8 +2,11 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+
+	"github.com/SK-ENT/rakitsu/internal/wake"
 )
 
 // A2A wake skills: wake_status, wake_stop, wake_resume
@@ -72,7 +75,11 @@ func (s *SSEServer) handleA2AWakeResume(w http.ResponseWriter, r *http.Request, 
 
 	// Call the existing resume logic
 	if err := sess.ResumeWake(); err != nil {
-		http.Error(w, fmt.Sprintf("failed to resume wake: %v", err), http.StatusInternalServerError)
+		code := http.StatusInternalServerError
+		if errors.Is(err, wake.ErrKillSwitchPresent) {
+			code = http.StatusConflict
+		}
+		http.Error(w, fmt.Sprintf("failed to resume wake: %v", err), code)
 		return
 	}
 

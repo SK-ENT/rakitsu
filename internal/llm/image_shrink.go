@@ -14,8 +14,11 @@ import (
 	"strconv"
 )
 
-// ImageShrinkThreshold is the encoded size above which an image is
-// downscaled and re-encoded as JPEG before it is sent to a provider.
+// ImageShrinkThreshold is the base64-encoded size above which an image is
+// downscaled and re-encoded as JPEG before it is sent to a provider. It is
+// measured on the encoded form because that is what goes in the request body
+// (base64 adds about a third). The default of 1,000,000 stays under a 1 MB
+// proxy body limit (about 750 KB of raw image).
 // 0 or less disables shrinking. Override with RAKITSU_IMAGE_SHRINK_BYTES
 // (set it to 0 to opt out). A var so tests can change it.
 var ImageShrinkThreshold int64 = defaultImageShrinkThreshold()
@@ -35,15 +38,15 @@ func defaultImageShrinkThreshold() int64 {
 			return n
 		}
 	}
-	return 1 << 20
+	return 1_000_000
 }
 
 // ShrinkImage returns data unchanged unless it is a png/jpeg/gif larger than
-// ImageShrinkThreshold. Then it downscales to ImageShrinkMaxEdge and
+// ImageShrinkThreshold (compared on base64 size). Then it downscales to ImageShrinkMaxEdge and
 // re-encodes as JPEG (animated gifs keep only the first frame). On any
 // failure, or if the result is not smaller, the original is returned.
 func ShrinkImage(data []byte, mimeType string) ([]byte, string) {
-	if ImageShrinkThreshold <= 0 || int64(len(data)) <= ImageShrinkThreshold {
+	if ImageShrinkThreshold <= 0 || int64(base64.StdEncoding.EncodedLen(len(data))) <= ImageShrinkThreshold {
 		return data, mimeType
 	}
 	var cfg image.Config
@@ -227,7 +230,7 @@ func orient(img image.Image, o int) image.Image {
 // shrinkBase64Image is ShrinkImage for a base64 payload. Invalid base64 or
 // no shrink returns the inputs unchanged.
 func shrinkBase64Image(b64, mimeType string) (string, string, int64) {
-	if ImageShrinkThreshold <= 0 || int64(base64.StdEncoding.DecodedLen(len(b64))) <= ImageShrinkThreshold {
+	if ImageShrinkThreshold <= 0 || int64(len(b64)) <= ImageShrinkThreshold {
 		return b64, mimeType, int64(base64.StdEncoding.DecodedLen(len(b64)))
 	}
 	raw, err := base64.StdEncoding.DecodeString(b64)

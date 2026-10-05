@@ -234,3 +234,28 @@ type FakeClock struct {
 func (fc *FakeClock) Now() time.Time {
 	return fc.now
 }
+
+// After a kill the loop is no longer running, but status must still report the
+// rolling-window count that the cap uses.
+func TestWakeStatusTurnsLastHourWhileStopped(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	state := fmt.Sprintf(`{"version":1,"tick":3,"cap_window":[%d,%d]}`, now.Add(-time.Minute).UnixNano(), now.Add(-2*time.Minute).UnixNano())
+	if err := os.WriteFile(filepath.Join(dir, "s.state.json"), []byte(state), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	eng, err := wake.New(wake.Deps{Cfg: config.WakeConfig{IntervalSeconds: 60}, SessionID: "s", Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer eng.Close()
+	cs := &ChatSession{ID: "s", cfg: &config.Config{Settings: config.Settings{Wake: config.WakeConfig{IntervalSeconds: 60}}}}
+	cs.wake = &wakeRunner{eng: eng} // running flag false: stopped
+	st := cs.WakeStatus()
+	if st.State != WakeStateStopped {
+		t.Fatalf("state = %q", st.State)
+	}
+	if st.TurnsLastHour != 2 {
+		t.Fatalf("turns_last_hour = %d, want 2", st.TurnsLastHour)
+	}
+}

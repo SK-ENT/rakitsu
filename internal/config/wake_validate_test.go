@@ -133,3 +133,13 @@ func TestWakeHeartbeatStaleTooSmallRejected(t *testing.T) {
 		t.Fatalf("want one heartbeat_stale_seconds error, got %v", errs)
 	}
 }
+
+func TestWakeValidateRejectsUserinfoURL(t *testing.T) {
+	w := okWake()
+	w.Allow.URLHosts = []string{"user:pw@localhost:8080", "localhost:8080"}
+	w.Checks[1].URL = "http://user:pw@localhost:8080/health"
+	c := &Config{Settings: Settings{Wake: w}}
+	if errs := wakeErrs(c); len(errs) == 0 {
+		t.Fatal("userinfo URL accepted")
+	}
+}

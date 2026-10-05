@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/netsafe"
 	"github.com/google/uuid"
 )
 
@@ -294,6 +296,21 @@ func NewA2ATool(def *config.ToolDefinition) (*A2ATool, error) {
 		return nil, fmt.Errorf("a2a tool %q: agent name is required", def.Name)
 	}
 
+	u, err := netsafe.ValidateURL(def.URL)
+	if err != nil {
+		return nil, fmt.Errorf("a2a tool %q: endpoint: %w", def.Name, err)
+	}
+	// The operator configured this endpoint, so its host:port is allowed even
+	// if it is loopback or private (a local peer). Nothing else internal is.
+	allowed := u.Host
+	if u.Port() == "" {
+		port := "80"
+		if u.Scheme == "https" {
+			port = "443"
+		}
+		allowed = net.JoinHostPort(u.Hostname(), port)
+	}
+
 	desc := def.Description
 	if desc == "" {
 		desc = fmt.Sprintf("Delegate to agent %q at %s", def.AgentName, def.URL)
@@ -317,8 +334,10 @@ func NewA2ATool(def *config.ToolDefinition) (*A2ATool, error) {
 		endpoint:  def.URL,
 		agentName: def.AgentName,
 		apiKey:    def.APIKey,
-		httpClient: &http.Client{
-			Timeout: timeout,
-		},
+		httpClient: netsafe.NewClient(netsafe.Options{
+			Allow:     []string{allowed},
+			Redirects: netsafe.RedirectSameOrigin,
+			Timeout:   timeout,
+		}),
 	}, nil
 }

@@ -1,6 +1,10 @@
 package server
 
-import "time"
+import (
+	"time"
+
+	"github.com/SK-ENT/rakitsu/internal/wake"
+)
 
 // Monitor/wake states shared by /healthz, the status API, A2A skills and the UI.
 const (
@@ -46,18 +50,28 @@ func (s *ChatSession) WakeStatus() WakeStatus {
 
 	now := time.Now()
 
-	// Determine state based on whether the wake loop is running.
-	if s.WakeRunning() {
-		st.State = WakeStateOK
-
-		// Read engine state
-		s.wakeMu.Lock()
-		eng := s.wake.eng
-		started := s.wake.started
+	s.wakeMu.Lock()
+	var eng *wake.Engine
+	var started time.Time
+	if s.wake != nil {
+		eng = s.wake.eng
+		started = s.wake.started
 		if clock := s.wake.opts.Clock; clock != nil {
 			now = clock.Now()
 		}
-		s.wakeMu.Unlock()
+	}
+	s.wakeMu.Unlock()
+
+	// Rolling-window figures come from the same source as the cap, running or not
+	// (after a kill the window still holds its entries).
+	if eng != nil {
+		st.TurnsLastHour = eng.TurnsLastHour(now)
+		st.LastAlarm = eng.LastAlarm(now)
+	}
+
+	// Determine state based on whether the wake loop is running.
+	if s.WakeRunning() {
+		st.State = WakeStateOK
 
 		if eng != nil {
 			// LastTick from heartbeat file
@@ -80,12 +94,6 @@ func (s *ChatSession) WakeStatus() WakeStatus {
 					st.State = WakeStateStale
 				}
 			}
-
-			// TurnsLastHour from cap window
-			st.TurnsLastHour = eng.TurnsLastHour(now)
-
-			// LastAlarm from cap window
-			st.LastAlarm = eng.LastAlarm(now)
 
 			// NextTickInSeconds calculated from NextDelay
 			nextDelay := eng.NextDelay()

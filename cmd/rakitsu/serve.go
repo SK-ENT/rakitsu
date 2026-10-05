@@ -68,6 +68,12 @@ Examples:
 	Run: func(cmd *cobra.Command, args []string) {
 		startServe()
 	},
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if mcpPort > 0 && mcpConfig == "" {
+			return fmt.Errorf("--mcp-port requires --config")
+		}
+		return nil
+	},
 }
 
 func init() {
