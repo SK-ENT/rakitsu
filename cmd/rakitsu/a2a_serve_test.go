@@ -303,6 +303,80 @@ func TestA2AHandler_CancelTask_TerminalRejected(t *testing.T) {
 	}
 }
 
+func TestA2AHandler_SendMessage_HonorsExecutionTimeout(t *testing.T) {
+	cfg := testConfig()
+	cfg.Settings.Execution.TimeoutSeconds = 1
+	started := make(chan struct{})
+	var sawDeadline int32
+	run := func(ctx context.Context, cfg *config.Config, query string) (string, error) {
+		if _, ok := ctx.Deadline(); ok {
+			atomic.StoreInt32(&sawDeadline, 1)
+		}
+		close(started)
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+	handler := a2aHandlerFunc(cfg, run)
+
+	sendResp := postA2A(t, handler, "SendMessage", "1", srvSendMessageParams{
+		Tenant:  "Researcher",
+		Message: srvA2AMessage{MessageID: "m1", Role: roleUser, Parts: []srvA2APart{{Text: "hi"}}},
+	})
+	var sendResult srvSendMessageResult
+	if err := json.Unmarshal(sendResp.Result, &sendResult); err != nil {
+		t.Fatalf("unmarshal SendMessage result: %v", err)
+	}
+	if sendResult.Task.Status.State != taskStateWorking {
+		t.Fatalf("state = %q, want %q immediately after SendMessage", sendResult.Task.Status.State, taskStateWorking)
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("run was never invoked")
+	}
+
+	final := pollUntilTerminal(t, handler, sendResult.Task.ID)
+	if final.Status.State != taskStateFailed {
+		t.Fatalf("state = %q, want %q after the configured execution timeout", final.Status.State, taskStateFailed)
+	}
+	if atomic.LoadInt32(&sawDeadline) == 0 {
+		t.Fatal("A2A run context did not receive the configured execution deadline")
+	}
+	if final.Status.Message == nil || len(final.Status.Message.Parts) == 0 {
+		t.Fatal("timed-out task has no failure message")
+	}
+	if got := final.Status.Message.Parts[0].Text; !strings.Contains(got, context.DeadlineExceeded.Error()) {
+		t.Errorf("failure message = %q, want it to report the execution deadline", got)
+	}
+}
+
+func TestA2AExecutionTimeout_DoesNotOverflow(t *testing.T) {
+	maxInt := int(^uint(0) >> 1)
+	const maxDuration = time.Duration(1<<63 - 1)
+	wantOversized := maxDuration
+	if int64(maxInt) <= int64(maxDuration/time.Second) {
+		wantOversized = time.Duration(maxInt) * time.Second
+	}
+
+	tests := []struct {
+		name    string
+		seconds int
+		want    time.Duration
+	}{
+		{name: "unset", seconds: 0, want: 0},
+		{name: "negative", seconds: -1, want: 0},
+		{name: "normal", seconds: 1, want: time.Second},
+		{name: "maximum int", seconds: maxInt, want: wantOversized},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := a2aExecutionTimeout(tt.seconds); got != tt.want {
+				t.Fatalf("a2aExecutionTimeout(%d) = %v, want %v", tt.seconds, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestA2AHandler_CancelTask_CancelsRunningTask covers the actual point of
 // async SendMessage: a task still in TASK_STATE_WORKING can be canceled —
 // and canceling it must genuinely stop the in-flight run (observe ctx.Done()),
@@ -310,7 +384,11 @@ func TestA2AHandler_CancelTask_TerminalRejected(t *testing.T) {
 func TestA2AHandler_CancelTask_CancelsRunningTask(t *testing.T) {
 	started := make(chan struct{})
 	var sawCancel int32
+	var sawDeadline int32
 	run := func(ctx context.Context, cfg *config.Config, query string) (string, error) {
+		if _, ok := ctx.Deadline(); ok {
+			atomic.StoreInt32(&sawDeadline, 1)
+		}
 		close(started)
 		<-ctx.Done()
 		atomic.StoreInt32(&sawCancel, 1)
@@ -334,6 +412,9 @@ func TestA2AHandler_CancelTask_CancelsRunningTask(t *testing.T) {
 	case <-started:
 	case <-time.After(time.Second):
 		t.Fatal("run was never invoked")
+	}
+	if atomic.LoadInt32(&sawDeadline) != 0 {
+		t.Fatal("run context has a deadline when settings.execution.timeout_seconds is unset")
 	}
 
 	cancelResp := postA2A(t, handler, "CancelTask", "2", srvCancelTaskParams{ID: sendResult.Task.ID})

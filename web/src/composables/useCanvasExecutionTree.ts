@@ -20,8 +20,8 @@ export function useCanvasExecutionTree(
   renderKey: Ref<number>,
   findNodeById?: (id: string) => Node | undefined,
 ) {
-  const execNodes = ref<Node[]>([]);
-  const execEdges = ref<Edge[]>([]);
+  const execNodes = ref<Node[]>([]) as Ref<Node[]>;
+  const execEdges = ref<Edge[]>([]) as Ref<Edge[]>;
   const expandedAgents = ref<Set<string>>(new Set());
 
   // When true, rebuild() won't clear exec nodes (snapshot/results mode)

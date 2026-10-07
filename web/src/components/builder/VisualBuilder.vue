@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onUnmounted, onActivated, provide, markRaw } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onUnmounted, onActivated, provide, markRaw, type Ref } from 'vue';
 import { VueFlow, useVueFlow, type Node, type Edge } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
@@ -753,8 +753,8 @@ async function clearBreakpointsForNode() {
   contextMenu.value = null;
 }
 
-const nodes = ref<Node[]>([]);
-const edges = ref<Edge[]>([]);
+const nodes = ref<Node[]>([]) as Ref<Node[]>;
+const edges = ref<Edge[]>([]) as Ref<Edge[]>;
 
 // Late-bound VueFlow findNode (assigned after useVueFlow)
 let vfFindNode: (id: string) => Node | undefined = () => undefined;
@@ -868,7 +868,7 @@ const miniMapReady = computed(() => dimensions.value.width > 0 && dimensions.val
 
 // Node editor state
 const showEditor = ref(false);
-const selectedNodeRef = ref<Node | null>(null);
+const selectedNodeRef = ref<Node | null>(null) as Ref<Node | null>;
 
 // --- Scope-based selection (like Maya/Figma) ---
 // selectionScope: null = canvas root, string = group node ID we're "inside"
@@ -1038,12 +1038,12 @@ const canvasGroupNodes = computed(() =>
 );
 
 // Selected nodes filtered to current scope
-const selectedNodes = computed(() =>
+const selectedNodes = computed<Node[]>(() =>
   getSelectedNodes.value.filter(n => (n.parentNode ?? null) === selectionScope.value)
 );
 const isMultiSelect = computed(() => selectedNodes.value.length > 1);
-const selectedNode = computed(() => {
-  if (selectedNodes.value.length === 1) return selectedNodes.value[0];
+const selectedNode = computed<Node | null>(() => {
+  if (selectedNodes.value.length === 1) return selectedNodes.value[0] ?? null;
   return selectedNodeRef.value;
 });
 

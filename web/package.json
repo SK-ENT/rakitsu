@@ -21,7 +21,7 @@
     "js-yaml": "4.3.2",
     "jszip": "3.10.1",
     "markdown-it": "14.3.1",
-    "vue": "3.5.28",
+    "vue": "3.5.42",
     "yaml": "2.8.3"
   },
   "devDependencies": {
@@ -34,6 +34,7 @@
     "vue-tsc": "3.2.5"
   },
   "overrides": {
-    "esbuild": "^0.28.1"
+    "esbuild": "^0.28.1",
+    "source-map-js": "1.2.2"
   }
 }
