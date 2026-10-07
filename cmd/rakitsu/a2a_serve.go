@@ -467,8 +467,18 @@ func handleA2ASendMessage(
 	// as soon as the task is stored, well before run finishes, and Go
 	// cancels a request's context the moment its handler returns. Using ctx
 	// here would cancel the agent run the instant this response is written.
-	// This context is cancelable on its own terms, via CancelTask below.
-	runCtx, cancel := context.WithCancel(context.Background())
+	// CancelTask can stop it, and a positive settings.execution.timeout_seconds
+	// also bounds it; an unset or non-positive value leaves it unbounded.
+	runCtx, baseCancel := context.WithCancel(context.Background())
+	cancel := baseCancel
+	if timeout := a2aExecutionTimeout(subCfg.Settings.Execution.TimeoutSeconds); timeout > 0 {
+		var timeoutCancel context.CancelFunc
+		runCtx, timeoutCancel = context.WithTimeout(runCtx, timeout)
+		cancel = func() {
+			timeoutCancel()
+			baseCancel()
+		}
+	}
 	store.setCancel(taskID, cancel)
 
 	go func() {
@@ -496,6 +506,20 @@ func handleA2ASendMessage(
 	}()
 
 	writeResult(req.ID, srvSendMessageResult{Task: task})
+}
+
+// a2aExecutionTimeout converts the configured seconds without allowing an
+// extreme value to overflow time.Duration and become an immediate timeout.
+func a2aExecutionTimeout(seconds int) time.Duration {
+	if seconds <= 0 {
+		return 0
+	}
+	const maxDuration = time.Duration(1<<63 - 1)
+	maxSeconds := int64(maxDuration / time.Second)
+	if int64(seconds) > maxSeconds {
+		return maxDuration
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func handleA2AGetTask(
