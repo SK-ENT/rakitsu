@@ -113,18 +113,27 @@ POST /api/sessions/{id}/message
 | `wait` | `true`: block until the target's turn ends and return the reply. Default is fire and forget. |
 | `timeout_ms` | Wait limit. Default 30000, at most 120000. |
 
+Send an optional `Idempotency-Key` header (1–128 visible ASCII characters (`!` through `~`, no spaces)) when a request may be retried. For the same target session, `from_session_id`, key, and decoded request fields, the server replays the first response without delivering a second message. JSON whitespace, key order, and unknown fields do not affect matching. Changed request fields with the same key return 409. This guarantee lasts 10 minutes after the first response, within the same live server process; it does not survive a restart. The server holds at most 1024 keys and returns 503 for a new key when full. A delivery that was rejected before enqueue can be retried with the same key.
+
 Answers (JSON with a `status`):
 
 | HTTP | `status` | Meaning |
 |---|---|---|
-| 200 | `delivered` | Accepted. With `wait`, the body also has `waited`, `reply`, `interrupted`, and `turn_error` when the turn failed. If the wait ran out, `waited` is `false` and the message was still delivered. |
+| 200 | `delivered` | Accepted/queued. With `wait`, the body also has `waited`, `reply`, `interrupted`, and `turn_error` when the turn failed. If the wait ran out, `waited` is `false`; this does not confirm execution or completion. |
 | 200 | `mailboxed` | The target is not live; the message went to its hub mailbox. |
 | 401 | | Bad or missing token. |
 | 403 | `rejected` | The target does not accept messages (`session_msg.enabled` is false) or is not a messaging target. |
 | 404 | `not_found` | No such session. |
 | 409 | `busy` | The target has a turn running and one already queued (`session busy: a turn is already queued`). One message can wait in the queue. For a one-shot run target, a wait from the same sender is already in flight. |
+| 409 | `idempotency_conflict` | The same key was used for different decoded request fields. |
 | 413 | | Text over 16 KiB. |
 | 429 | `rate_limited` | More than 6 messages in 30 seconds between the same two sessions. No automatic retry. |
+| 500 | `delivery_unknown` | A keyed delivery was interrupted abnormally. Delivery may have occurred; inspect the target. Retries with this key replay the uncertainty within the cache window instead of enqueuing again. |
+| 503 | `idempotency_capacity` | The replay cache is full. This request was not enqueued. |
+
+For an auto-start monitor, enable `settings.session_msg.enabled` in its config and address its stable `monitor-{id}` session ID. If `waited` is `false`, the turn may still be queued behind a wake turn. Poll `GET /api/chat/{id}/tree` for the completed turn's ID, then `GET /api/chat/{id}/turn/{turn_id}` for its reply. Without an `Idempotency-Key`, repeating the POST can create another turn.
+
+A queued message appears in the turn tree only when its execution starts. If an earlier turn remains `generating`, the queued message cannot run until that turn ends; the HTTP wait limit does not interrupt it. A healthy monitor and zero running wake tasks do not prove the chat turn is idle. Inspect the live chat state and turn tree when diagnosing a delayed reply. An indefinitely stalled earlier turn can therefore leave an accepted message waiting indefinitely; retrying the POST does not recover that turn. Keyed retries replay the original response within the cache window above, rather than report updated execution status.
 
 `GET /api/sessions/live` lists live targets. `GET /api/sessions/{id}/inbox` drains the mailbox of an external sender (the sender id you used in `from_session_id`).
 
