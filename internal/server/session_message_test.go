@@ -8,13 +8,17 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/store"
 	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	"github.com/SK-ENT/rakitsu/internal/turntree"
 )
 
 // startMsgSession is startSession with settings.session_msg.enabled — the
@@ -431,6 +435,127 @@ func postMsgJSON(t *testing.T, base, id string, body map[string]interface{}) *ht
 	}
 	t.Cleanup(func() { resp.Body.Close() })
 	return resp
+}
+
+func postMsgWithKey(s *SSEServer, id, key string, body []byte) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions/"+id+"/message", bytes.NewReader(body))
+	req.Header.Set("Idempotency-Key", key)
+	s.handleSessionMessage(rec, req, id)
+	return rec
+}
+
+func TestSessionMessageIdempotencyConcurrentWaitRetry(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseTurn := func() { releaseOnce.Do(func() { close(release) }) }
+	var calls atomic.Int32
+	sess := startMsgSession(t, makeFakeChatBuildFunc("a1", func(ctx context.Context, _ string, _ *telemetry.EventBus) (string, error) {
+		calls.Add(1)
+		close(started)
+		select {
+		case <-release:
+			return "pong", nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}, nil))
+	defer releaseTurn()
+	s := newMsgServer(t, sess)
+	body := []byte(`{"text":"ping","from_session_id":"sender","wait":true}`)
+	first := make(chan *httptest.ResponseRecorder, 1)
+	go func() { first <- postMsgWithKey(s, sess.ID, "request-1", body) }()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first turn did not start")
+	}
+	second := make(chan *httptest.ResponseRecorder, 1)
+	go func() { second <- postMsgWithKey(s, sess.ID, "request-1", body) }()
+	select {
+	case <-second:
+		t.Fatal("retry returned before first response")
+	case <-time.After(20 * time.Millisecond):
+	}
+	releaseTurn()
+	a, b := <-first, <-second
+	if a.Code != http.StatusOK || b.Code != a.Code || a.Body.String() != b.Body.String() || calls.Load() != 1 {
+		t.Fatalf("responses: first=%d %s retry=%d %s calls=%d", a.Code, a.Body.String(), b.Code, b.Body.String(), calls.Load())
+	}
+}
+
+func TestSessionMessageIdempotencyTimeoutRetry(t *testing.T) {
+	release := make(chan struct{})
+	var calls atomic.Int32
+	sess := startMsgSession(t, makeFakeChatBuildFunc("a1", func(ctx context.Context, _ string, _ *telemetry.EventBus) (string, error) {
+		calls.Add(1)
+		select {
+		case <-release:
+			return "late", nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}, nil))
+	defer close(release)
+	s := newMsgServer(t, sess)
+	body := []byte(`{"text":"ping","from_session_id":"sender","wait":true,"timeout_ms":20}`)
+	a := postMsgWithKey(s, sess.ID, "request-2", body)
+	b := postMsgWithKey(s, sess.ID, "request-2", body)
+	if a.Code != http.StatusOK || b.Code != a.Code || a.Body.String() != b.Body.String() || !strings.Contains(a.Body.String(), `"waited":false`) || calls.Load() != 1 {
+		t.Fatalf("responses: first=%d %s retry=%d %s calls=%d", a.Code, a.Body.String(), b.Code, b.Body.String(), calls.Load())
+	}
+}
+
+func TestSessionMessageIdempotencyChangedPayloadConflict(t *testing.T) {
+	var calls atomic.Int32
+	sess := startMsgSession(t, makeFakeChatBuildFunc("a1", func(context.Context, string, *telemetry.EventBus) (string, error) {
+		calls.Add(1)
+		return "ok", nil
+	}, nil))
+	s := newMsgServer(t, sess)
+	a := postMsgWithKey(s, sess.ID, "request-3", []byte(`{"text":"first","from_session_id":"sender"}`))
+	b := postMsgWithKey(s, sess.ID, "request-3", []byte(`{"text":"changed","from_session_id":"sender"}`))
+	if a.Code != http.StatusOK || b.Code != http.StatusConflict || !strings.Contains(b.Body.String(), "idempotency_conflict") {
+		t.Fatalf("first=%d %s changed=%d %s", a.Code, a.Body.String(), b.Code, b.Body.String())
+	}
+	// The conflict must not enqueue a second turn.
+	deadline := time.Now().Add(2 * time.Second)
+	for calls.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("runner calls = %d, want 1", calls.Load())
+	}
+}
+
+func TestSessionMessageIdempotencyEquivalentJSONReplays(t *testing.T) {
+	s := newMsgServer(t)
+	s.activeSessions["target"] = &ActiveSession{ID: "target", Mode: "chat", Status: "running", AcceptsMsg: true}
+	a := postMsgWithKey(s, "target", "request-format", []byte(`{"text":"ping","from_session_id":"sender"}`))
+	b := postMsgWithKey(s, "target", "request-format", []byte(" { \"from_session_id\" : \"sender\", \"ignored\": 1, \"text\" : \"ping\" } "))
+	if a.Code != http.StatusOK || b.Code != a.Code || a.Body.String() != b.Body.String() {
+		t.Fatalf("first=%d %s retry=%d %s", a.Code, a.Body.String(), b.Code, b.Body.String())
+	}
+	if got := len(s.pendingCmds["target"]); got != 1 {
+		t.Fatalf("queued messages = %d, want 1", got)
+	}
+}
+
+func TestSessionMessageIdempotencyRejectedDeliveryCanRetry(t *testing.T) {
+	s := newMsgServer(t)
+	body := []byte(`{"text":"ping","from_session_id":"sender"}`)
+	a := postMsgWithKey(s, "late", "request-4", body)
+	if a.Code != http.StatusNotFound {
+		t.Fatalf("first status = %d: %s", a.Code, a.Body.String())
+	}
+	s.mu.Lock()
+	s.activeSessions["late"] = &ActiveSession{ID: "late", Mode: "chat", Status: "running", AcceptsMsg: true}
+	s.mu.Unlock()
+	b := postMsgWithKey(s, "late", "request-4", body)
+	if b.Code != http.StatusOK || len(s.pendingCmds["late"]) != 1 {
+		t.Fatalf("retry = %d %s, queued = %+v", b.Code, b.Body.String(), s.pendingCmds["late"])
+	}
 }
 
 // TestHandleSessionMessageEndpointWaitHappyPath — wait:true against a local
@@ -900,5 +1025,393 @@ func TestReplyRoutedWaitResolverSendIsAtomicWithDelete(t *testing.T) {
 		}
 	default:
 		t.Fatal("resolver's delete and send must commit together under s.mu — key absent must imply the outcome is already buffered")
+	}
+}
+
+func TestSessionMessageIdempotencyKeyValidation(t *testing.T) {
+	for _, key := range []string{"", "has space", "tab\tkey", "nonascii-é", strings.Repeat("x", 129)} {
+		t.Run(fmt.Sprintf("%q", key), func(t *testing.T) {
+			s := newMsgServer(t)
+			rec := postMsgWithKey(s, "target", key, []byte(`{"text":"ping"}`))
+			if rec.Code != http.StatusBadRequest || len(s.msgIdempotency.entries) != 0 {
+				t.Fatalf("invalid key reserved: %d %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+	s := newMsgServer(t)
+	s.activeSessions["target"] = &ActiveSession{ID: "target", Mode: "chat", Status: "running", AcceptsMsg: true}
+	rec := postMsgWithKey(s, "target", "!~", []byte(`{"text":"ping"}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("visible ASCII endpoints rejected: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSessionMessageIdempotencyCapacityAndExpiry(t *testing.T) {
+	c := newSessionMsgIdempotency()
+	now := time.Unix(1700000000, 0)
+	c.now = func() time.Time { return now }
+	var payload [32]byte
+	var first *sessionMsgIdempotencyEntry
+	for i := 0; i < sessionMsgIdempotencyMax; i++ {
+		entry, owner, code := c.reserve(sessionMsgIdempotencyKey{key: fmt.Sprint(i)}, payload)
+		if !owner || code != 0 {
+			t.Fatalf("reservation %d: owner=%v code=%d", i, owner, code)
+		}
+		if i == 0 {
+			first = entry
+		}
+	}
+	if _, _, code := c.reserve(sessionMsgIdempotencyKey{key: "overflow"}, payload); code != http.StatusServiceUnavailable {
+		t.Fatalf("full cache status = %d", code)
+	}
+	now = now.Add(sessionMsgIdempotencyTTL)
+	if _, _, code := c.reserve(sessionMsgIdempotencyKey{key: "overflow"}, payload); code != http.StatusServiceUnavailable {
+		t.Fatal("in-flight key expired")
+	}
+	key := sessionMsgIdempotencyKey{key: "0"}
+	c.finish(key, first, http.StatusOK, []byte("accepted"), true)
+	now = now.Add(sessionMsgIdempotencyTTL - time.Nanosecond)
+	if entry, owner, code := c.reserve(key, payload); entry != first || owner || code != 0 {
+		t.Fatal("completed key expired early")
+	}
+	now = now.Add(time.Nanosecond)
+	if entry, owner, code := c.reserve(key, payload); entry == first || !owner || code != 0 {
+		t.Fatal("completed key did not expire")
+	}
+}
+
+func TestSessionMessageIdempotencyReplayRequiresAuthorization(t *testing.T) {
+	t.Setenv(sessionMsgTokenEnv, "local-test-token")
+	t.Setenv(apiTokenEnv, "")
+	s := newMsgServer(t)
+	s.activeSessions["target"] = &ActiveSession{ID: "target", Mode: "chat", Status: "running", AcceptsMsg: true}
+	body := []byte(`{"text":"ping"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions/target/message", bytes.NewReader(body))
+	req.Header.Set("Idempotency-Key", "authorized-key")
+	req.Header.Set("Authorization", "Bearer local-test-token")
+	rec := httptest.NewRecorder()
+	s.Mux().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("authorized request: %d %s", rec.Code, rec.Body.String())
+	}
+	replay := postMsgWithKey(s, "target", "authorized-key", body)
+	if replay.Code != http.StatusUnauthorized || len(s.pendingCmds["target"]) != 1 {
+		t.Fatalf("unauthorized replay: %d %s", replay.Code, replay.Body.String())
+	}
+}
+
+func TestSessionMessageIdempotencyPanicAfterEnqueueDoesNotReplayDelivery(t *testing.T) {
+	s := newMsgServer(t)
+	s.activeSessions["target"] = &ActiveSession{ID: "target", Mode: "chat", Status: "running", AcceptsMsg: true}
+	body := []byte(`{"text":"ping","from_session_id":"sender"}`)
+	// Inject failure in telemetry after deliverMessage has already enqueued.
+	s.eventBus = nil
+	panicked := false
+	func() {
+		defer func() { panicked = recover() != nil }()
+		postMsgWithKey(s, "target", "panic-after-enqueue", body)
+	}()
+	if !panicked || len(s.pendingCmds["target"]) != 1 {
+		t.Fatal("fixture must panic after exactly one accepted enqueue")
+	}
+	s.eventBus = telemetry.NewEventBus(64)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions/target/message", bytes.NewReader(body)).WithContext(ctx)
+	req.Header.Set("Idempotency-Key", "panic-after-enqueue")
+	rec := httptest.NewRecorder()
+	s.handleSessionMessage(rec, req, "target")
+	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "delivery_unknown") || len(s.pendingCmds["target"]) != 1 {
+		t.Fatalf("retry must finish without reenqueuing: %d %s queued=%d", rec.Code, rec.Body.String(), len(s.pendingCmds["target"]))
+	}
+}
+
+// A busy rejection releases only its own reservation. Accepted keys remain
+// replayable after the queue drains, so neither accepted message runs twice.
+func TestSessionMessageIdempotencyBusyRetryPersistsExactlyOnce(t *testing.T) {
+	ss, err := store.NewSessionStoreAt(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseTurn := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseTurn()
+	var calls atomic.Int32
+	cfg := &config.Config{Name: "test", Agents: []config.AgentDefinition{{Name: "a1"}}}
+	cfg.Settings.SessionMsg.Enabled = true
+	sess, err := StartChatSession(context.Background(), ChatSessionOptions{
+		ConfigID: "test", Cfg: cfg, SessionStore: ss,
+		BuildFunc: makeFakeChatBuildFunc("a1", func(ctx context.Context, query string, _ *telemetry.EventBus) (string, error) {
+			calls.Add(1)
+			if query == "blocker" {
+				close(started)
+				select {
+				case <-release:
+					return "blocker done", nil
+				case <-ctx.Done():
+					return "", ctx.Err()
+				}
+			}
+			// The fake runner receives composed prior history. Match only the
+			// current external-message fence, not an earlier user's text.
+			if start := strings.LastIndex(query, "<session_message"); start >= 0 {
+				query = query[start:]
+			}
+			if strings.Contains(query, "message A") {
+				return "reply A", nil
+			}
+			if strings.Contains(query, "message B") {
+				return "reply B", nil
+			}
+			return "unexpected query", nil
+		}, nil),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sess.Close)
+	col := newCollector(sess)
+	s := newMsgServer(t, sess)
+	if err := sess.Submit("blocker"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("blocker did not start")
+	}
+	bodyA := []byte(`{"text":"message A","from_session_id":"sender"}`)
+	bodyB := []byte(`{"text":"message B","from_session_id":"sender","wait":true}`)
+	a := postMsgWithKey(s, sess.ID, "accepted-A", bodyA)
+	if a.Code != http.StatusOK {
+		t.Fatalf("queue A: %d %s", a.Code, a.Body.String())
+	}
+	rejected := postMsgWithKey(s, sess.ID, "retry-B", bodyB)
+	if rejected.Code != http.StatusConflict || !strings.Contains(rejected.Body.String(), `"status":"busy"`) {
+		t.Fatalf("busy B: %d %s", rejected.Code, rejected.Body.String())
+	}
+	keyA := sessionMsgIdempotencyKey{target: sess.ID, sender: "sender", key: "accepted-A"}
+	keyB := sessionMsgIdempotencyKey{target: sess.ID, sender: "sender", key: "retry-B"}
+	s.msgIdempotency.mu.Lock()
+	acceptedEntry := s.msgIdempotency.entries[keyA]
+	rejectedEntry := s.msgIdempotency.entries[keyB]
+	s.msgIdempotency.mu.Unlock()
+	if acceptedEntry == nil || rejectedEntry != nil {
+		t.Fatal("busy rejection must release B's reservation and retain accepted A's key")
+	}
+	t.Log("A accepted; B rejected busy; accepted A retained, rejected B released")
+	releaseTurn()
+	if !col.waitFor(func(ms []serverMsg) bool {
+		done := 0
+		for _, m := range ms {
+			if m.Type == "turn_done" {
+				done++
+			}
+		}
+		return done == 2
+	}, 2*time.Second) {
+		t.Fatal("blocker and A did not drain")
+	}
+	b := postMsgWithKey(s, sess.ID, "retry-B", bodyB)
+	if b.Code != http.StatusOK || !strings.Contains(b.Body.String(), `"reply":"reply B"`) || !strings.Contains(b.Body.String(), `"waited":true`) {
+		t.Fatalf("retry B after drain: %d %s", b.Code, b.Body.String())
+	}
+	replayA := postMsgWithKey(s, sess.ID, "accepted-A", bodyA)
+	replayB := postMsgWithKey(s, sess.ID, "retry-B", bodyB)
+	if replayA.Code != a.Code || replayA.Body.String() != a.Body.String() || replayB.Code != b.Code || replayB.Body.String() != b.Body.String() {
+		t.Fatal("accepted A/B responses were not replayed")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		raw, err := ss.LoadChatTree(sess.ID)
+		if err == nil {
+			file, err := LoadChatTreeFile(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := file.Tree.ActivePath()
+			if len(path) == 3 && path[2].Status == turntree.StatusComplete {
+				counts := map[string]int{}
+				replies := map[string]string{}
+				for _, node := range path {
+					if node.Status != turntree.StatusComplete {
+						t.Fatalf("incomplete persisted turn: %s", node.Status)
+					}
+					counts[node.UserText]++
+					for _, entry := range node.Entries {
+						if entry.Kind == "assistant" {
+							replies[node.UserText] = entry.Text
+						}
+					}
+				}
+				if len(file.Tree.Nodes) != 3 || counts["blocker"] != 1 || counts["message A"] != 1 || counts["message B"] != 1 || replies["message A"] != "reply A" || replies["message B"] != "reply B" {
+					t.Fatalf("persisted turns differ: counts=%v replies=%v", counts, replies)
+				}
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("three completed turns did not persist: %v", err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if calls.Load() != 3 {
+		t.Fatalf("runner calls=%d, want blocker plus A/B once each", calls.Load())
+	}
+	t.Log("after drain: same-key B accepted; A/B replayed; each message/reply persisted once; runner calls=3")
+}
+
+func TestSessionMessageRawBodyLimit(t *testing.T) {
+	const limit = sessionMsgMaxBytes + 1024
+	prefix := `{"text":"bounded-body-test"}`
+	for _, keyed := range []bool{false, true} {
+		for _, oversized := range []bool{false, true} {
+			t.Run(fmt.Sprintf("keyed=%t/oversized=%t", keyed, oversized), func(t *testing.T) {
+				t.Setenv(sessionMsgTokenEnv, "")
+				t.Setenv(apiTokenEnv, "")
+				s := NewSSEServer(telemetry.NewEventBus(64), "localhost", 0)
+				s.activeSessions["target"] = &ActiveSession{ID: "target", Mode: "run", Status: "running", AcceptsMsg: true}
+				body := prefix + strings.Repeat(" ", limit-len(prefix))
+				if oversized {
+					body += "unexpected trailing bytes" + strings.Repeat("x", 1<<20)
+				}
+				reader := strings.NewReader(body)
+				req := httptest.NewRequest(http.MethodPost, "/api/sessions/target/message", reader)
+				if keyed {
+					req.Header.Set("Idempotency-Key", "raw-body-test")
+				}
+				rec := httptest.NewRecorder()
+				s.handleSessionMessage(rec, req, "target")
+				if read := len(body) - reader.Len(); read > limit+1 {
+					t.Fatalf("read %d bytes, maximum %d", read, limit+1)
+				}
+				if !oversized {
+					if rec.Code != http.StatusOK || len(s.pendingCmds["target"]) != 1 {
+						t.Fatalf("exact-limit request: %d %s, queued=%d", rec.Code, rec.Body.String(), len(s.pendingCmds["target"]))
+					}
+					return
+				}
+				if rec.Code != http.StatusRequestEntityTooLarge {
+					t.Fatalf("oversized request: %d %s", rec.Code, rec.Body.String())
+				}
+				if len(s.pendingCmds["target"]) != 0 || len(s.msgIdempotency.entries) != 0 {
+					t.Fatal("oversized request delivered or reserved a key")
+				}
+				retry := httptest.NewRequest(http.MethodPost, "/api/sessions/target/message", strings.NewReader(prefix))
+				if keyed {
+					retry.Header.Set("Idempotency-Key", "raw-body-test")
+				}
+				retryRec := httptest.NewRecorder()
+				s.handleSessionMessage(retryRec, retry, "target")
+				if retryRec.Code != http.StatusOK || len(s.pendingCmds["target"]) != 1 {
+					t.Fatalf("valid retry: %d %s, queued=%d", retryRec.Code, retryRec.Body.String(), len(s.pendingCmds["target"]))
+				}
+			})
+		}
+	}
+}
+
+type sessionMessageGoexitContext struct{ context.Context }
+
+func (sessionMessageGoexitContext) Done() <-chan struct{} {
+	runtime.Goexit()
+	return nil
+}
+
+func TestSessionMessageIdempotencyGoexitFinalizesReservation(t *testing.T) {
+	s := newMsgServer(t)
+	body := []byte(`{"text":"ping","wait":true}`)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		req := httptest.NewRequest(http.MethodPost, "/api/sessions/target/message", bytes.NewReader(body))
+		req.Header.Set("Idempotency-Key", "goexit-after-reservation")
+		// WithTimeout queries this context after the handler reserves the key.
+		req = req.WithContext(sessionMessageGoexitContext{context.Background()})
+		s.handleSessionMessage(httptest.NewRecorder(), req, "target")
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Goexit handler did not exit")
+	}
+	key := sessionMsgIdempotencyKey{target: "target", key: "goexit-after-reservation"}
+	s.msgIdempotency.mu.Lock()
+	entry := s.msgIdempotency.entries[key]
+	s.msgIdempotency.mu.Unlock()
+	if entry == nil {
+		t.Fatal("reservation missing")
+	}
+	select {
+	case <-entry.ready:
+	default:
+		t.Fatal("Goexit did not close the reservation")
+	}
+	if entry.code != http.StatusInternalServerError || entry.expires.IsZero() || !strings.Contains(string(entry.body), "delivery_unknown") {
+		t.Fatal("Goexit reservation was not finalized with a bounded uncertainty response")
+	}
+	replay := postMsgWithKey(s, "target", "goexit-after-reservation", body)
+	if replay.Code != http.StatusInternalServerError || !strings.Contains(replay.Body.String(), "delivery_unknown") {
+		t.Fatalf("Goexit retry: %d %s", replay.Code, replay.Body.String())
+	}
+}
+
+func TestSessionMessageIdempotencyCanceledRetryDoesNotBlockOrRedeliver(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	releaseTurn := func() { once.Do(func() { close(release) }) }
+	defer releaseTurn()
+	var calls atomic.Int32
+	sess := startMsgSession(t, makeFakeChatBuildFunc("a1", func(ctx context.Context, _ string, _ *telemetry.EventBus) (string, error) {
+		calls.Add(1)
+		close(started)
+		select {
+		case <-release:
+			return "pong", nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}, nil))
+	s := newMsgServer(t, sess)
+	body := []byte(`{"text":"ping","from_session_id":"sender","wait":true}`)
+	owner := make(chan *httptest.ResponseRecorder, 1)
+	go func() { owner <- postMsgWithKey(s, sess.ID, "cancel-retry", body) }()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("owner turn did not start")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	retryDone := make(chan struct{})
+	go func() {
+		defer close(retryDone)
+		req := httptest.NewRequest(http.MethodPost, "/api/sessions/"+sess.ID+"/message", bytes.NewReader(body)).WithContext(ctx)
+		req.Header.Set("Idempotency-Key", "cancel-retry")
+		s.handleSessionMessage(httptest.NewRecorder(), req, sess.ID)
+	}()
+	select {
+	case <-retryDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("canceled retry blocked waiting for owner")
+	}
+	select {
+	case <-owner:
+		t.Fatal("owner returned before releasing its turn")
+	default:
+	}
+	releaseTurn()
+	select {
+	case rec := <-owner:
+		if rec.Code != http.StatusOK {
+			t.Fatalf("owner: %d %s", rec.Code, rec.Body.String())
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("owner did not finish")
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("calls=%d, want one delivery", calls.Load())
 	}
 }

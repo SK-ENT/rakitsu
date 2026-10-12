@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -14,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/SK-ENT/rakitsu/internal/chat"
 	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	"github.com/google/uuid"
 )
 
 // Cross-session messaging: POST /api/sessions/{id}/message injects a message
@@ -50,8 +51,10 @@ const (
 	// sessionMsgWaitDefaultMs / sessionMsgWaitMaxMs bound how long
 	// handleSessionMessage blocks when wait:true is requested. A request's
 	// own timeout_ms is clamped to this range.
-	sessionMsgWaitDefaultMs = 30_000
-	sessionMsgWaitMaxMs     = 120_000
+	sessionMsgWaitDefaultMs  = 30_000
+	sessionMsgWaitMaxMs      = 120_000
+	sessionMsgIdempotencyTTL = 10 * time.Minute
+	sessionMsgIdempotencyMax = 1024
 )
 
 var (
@@ -69,6 +72,66 @@ type SessionMessageRequest struct {
 	FromName      string `json:"from_name,omitempty"`
 	Wait          bool   `json:"wait,omitempty"`
 	TimeoutMs     int    `json:"timeout_ms,omitempty"`
+}
+
+type sessionMsgIdempotencyKey struct {
+	target, sender, key string
+}
+
+type sessionMsgIdempotencyEntry struct {
+	payload [32]byte
+	ready   chan struct{}
+	code    int
+	body    []byte
+	expires time.Time
+}
+
+// Entries remain reserved while delivery is in flight. Completed entries
+// expire after a bounded window; a full cache rejects new keys rather than
+// evicting an in-flight delivery and allowing it to run twice.
+type sessionMsgIdempotency struct {
+	mu      sync.Mutex
+	entries map[sessionMsgIdempotencyKey]*sessionMsgIdempotencyEntry
+	now     func() time.Time
+}
+
+func newSessionMsgIdempotency() *sessionMsgIdempotency {
+	return &sessionMsgIdempotency{entries: make(map[sessionMsgIdempotencyKey]*sessionMsgIdempotencyEntry), now: time.Now}
+}
+
+func (c *sessionMsgIdempotency) reserve(k sessionMsgIdempotencyKey, payload [32]byte) (*sessionMsgIdempotencyEntry, bool, int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := c.now()
+	for key, entry := range c.entries {
+		if !entry.expires.IsZero() && !now.Before(entry.expires) {
+			delete(c.entries, key)
+		}
+	}
+	if entry := c.entries[k]; entry != nil {
+		if entry.payload != payload {
+			return nil, false, http.StatusConflict
+		}
+		return entry, false, 0
+	}
+	if len(c.entries) >= sessionMsgIdempotencyMax {
+		return nil, false, http.StatusServiceUnavailable
+	}
+	entry := &sessionMsgIdempotencyEntry{payload: payload, ready: make(chan struct{})}
+	c.entries[k] = entry
+	return entry, true, 0
+}
+
+func (c *sessionMsgIdempotency) finish(k sessionMsgIdempotencyKey, entry *sessionMsgIdempotencyEntry, code int, body []byte, accepted bool) {
+	c.mu.Lock()
+	entry.code, entry.body = code, body
+	if accepted {
+		entry.expires = c.now().Add(sessionMsgIdempotencyTTL)
+	} else {
+		delete(c.entries, k)
+	}
+	close(entry.ready)
+	c.mu.Unlock()
 }
 
 // deliverResult carries the outcome of a deliverMessage call beyond plain
@@ -358,8 +421,13 @@ func (s *SSEServer) handleSessionMessage(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
+	raw, readErr := io.ReadAll(io.LimitReader(r.Body, sessionMsgMaxBytes+1024+1))
+	if len(raw) > sessionMsgMaxBytes+1024 {
+		http.Error(w, `{"error":"request body too large (17KB max)"}`, http.StatusRequestEntityTooLarge)
+		return
+	}
 	var req SessionMessageRequest
-	if err := json.NewDecoder(io.LimitReader(r.Body, sessionMsgMaxBytes+1024)).Decode(&req); err != nil {
+	if readErr != nil || json.Unmarshal(raw, &req) != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 		return
 	}
@@ -370,6 +438,54 @@ func (s *SSEServer) handleSessionMessage(w http.ResponseWriter, r *http.Request,
 	if len(req.Text) > sessionMsgMaxBytes {
 		http.Error(w, `{"error":"text too large (16KB max)"}`, http.StatusRequestEntityTooLarge)
 		return
+	}
+	var idemKey sessionMsgIdempotencyKey
+	var idemEntry *sessionMsgIdempotencyEntry
+	idemFinished := false
+	if values := r.Header.Values("Idempotency-Key"); len(values) > 0 {
+		key := values[0]
+		valid := len(values) == 1 && len(key) > 0 && len(key) <= 128
+		for i := 0; i < len(key); i++ {
+			if key[i] < '!' || key[i] > '~' {
+				valid = false
+			}
+		}
+		if !valid {
+			http.Error(w, `{"error":"invalid Idempotency-Key"}`, http.StatusBadRequest)
+			return
+		}
+		idemKey = sessionMsgIdempotencyKey{target: sessionID, sender: req.FromSessionID, key: key}
+		canonical, _ := json.Marshal(req) // fixed string/bool/int fields cannot fail to marshal
+		entry, owner, code := s.msgIdempotency.reserve(idemKey, sha256.Sum256(canonical))
+		if code != 0 {
+			status := "idempotency_conflict"
+			if code == http.StatusServiceUnavailable {
+				status = "idempotency_capacity"
+			}
+			w.WriteHeader(code)
+			json.NewEncoder(w).Encode(map[string]string{"status": status})
+			return
+		}
+		if !owner {
+			select {
+			case <-entry.ready:
+				w.WriteHeader(entry.code)
+				_, _ = w.Write(entry.body)
+			case <-r.Context().Done():
+				return
+			}
+			return
+		}
+		idemEntry = entry
+		defer func() {
+			if !idemFinished {
+				// An abnormal exit may follow a successful enqueue. Retain a bounded
+				// unknown-outcome response rather than allow duplicate delivery
+				// or leave retries waiting forever on an unfinished reservation.
+				s.msgIdempotency.finish(idemKey, idemEntry, http.StatusInternalServerError,
+					[]byte("{\"status\":\"delivery_unknown\",\"error\":\"delivery interrupted; inspect the target before retrying\"}\n"), true)
+			}
+		}()
 	}
 
 	ctx := r.Context()
@@ -420,12 +536,21 @@ func (s *SSEServer) handleSessionMessage(w http.ResponseWriter, r *http.Request,
 	}
 	s.eventBus.Emit(sessionID, telemetry.EventSessionMsgSent, sent)
 
-	w.WriteHeader(code)
+	var response []byte
 	if err != nil {
-		json.NewEncoder(w).Encode(map[string]string{"status": status, "error": err.Error()})
-		return
+		response, _ = json.Marshal(map[string]string{"status": status, "error": err.Error()})
+	} else {
+		response, _ = json.Marshal(sessionMessageResponse(status, req.Wait, result))
 	}
-	json.NewEncoder(w).Encode(sessionMessageResponse(status, req.Wait, result))
+	response = append(response, '\n')
+	if idemEntry != nil {
+		// Only a successful enqueue (including a wait timeout) is replayable.
+		// Busy/rejected/rate-limited requests are removed for a later retry.
+		s.msgIdempotency.finish(idemKey, idemEntry, code, response, err == nil)
+		idemFinished = true
+	}
+	w.WriteHeader(code)
+	_, _ = w.Write(response)
 }
 
 // handleSessionInbox serves GET /api/sessions/{id}/inbox — drain-on-read
@@ -462,7 +587,7 @@ func sessionMessageResponse(status string, wait bool, result deliverResult) map[
 		if result.ReplyRouted {
 			out["note"] = "no reply within timeout; poll GET /api/sessions/{id}/inbox"
 		} else {
-			out["note"] = "reply not received within timeout; poll GET /api/chat/{id}/tree"
+			out["note"] = "reply not received within timeout; poll GET /api/chat/{id}/tree, then GET /api/chat/{id}/turn/{turn_id} for the reply"
 		}
 		return out
 	}

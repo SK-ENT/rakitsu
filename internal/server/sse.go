@@ -94,6 +94,8 @@ type SSEServer struct {
 	// msgLimiter enforces the cross-session messaging pairwise rate limit
 	// (loop guard). See session_message.go.
 	msgLimiter *sessionMsgLimiter
+	// msgIdempotency bounds replay of POST /api/sessions/{id}/message.
+	msgIdempotency *sessionMsgIdempotency
 	// mailboxes holds external-sender mailboxes for cross-session messaging
 	// (spec §3). See mailbox.go.
 	mailboxes *mailboxStore
@@ -117,6 +119,7 @@ func NewSSEServer(eventBus *telemetry.EventBus, host string, port int) *SSEServe
 		pendingWaits:      make(map[string]chan turnOutcome),
 		pendingReplyWaits: make(map[string]chan turnOutcome),
 		msgLimiter:        newSessionMsgLimiter(),
+		msgIdempotency:    newSessionMsgIdempotency(),
 		mailboxes:         newMailboxStore(),
 		port:              port,
 	}
