@@ -126,7 +126,7 @@ Answers (JSON with a `status`):
 | 404 | `not_found` | No such session. |
 | 409 | `busy` | The target has a turn running and one already queued (`session busy: a turn is already queued`). One message can wait in the queue. For a one-shot run target, a wait from the same sender is already in flight. |
 | 409 | `idempotency_conflict` | The same key was used for different decoded request fields. |
-| 413 | | Text over 16 KiB. |
+| 413 | | Text over 16 KiB or total request body over 17 KiB (including JSON encoding and whitespace). |
 | 429 | `rate_limited` | More than 6 messages in 30 seconds between the same two sessions. No automatic retry. |
 | 500 | `delivery_unknown` | A keyed delivery was interrupted abnormally. Delivery may have occurred; inspect the target. Retries with this key replay the uncertainty within the cache window instead of enqueuing again. |
 | 503 | `idempotency_capacity` | The replay cache is full. This request was not enqueued. |

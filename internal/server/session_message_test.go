@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1260,4 +1261,157 @@ func TestSessionMessageIdempotencyBusyRetryPersistsExactlyOnce(t *testing.T) {
 		t.Fatalf("runner calls=%d, want blocker plus A/B once each", calls.Load())
 	}
 	t.Log("after drain: same-key B accepted; A/B replayed; each message/reply persisted once; runner calls=3")
+}
+
+func TestSessionMessageRawBodyLimit(t *testing.T) {
+	const limit = sessionMsgMaxBytes + 1024
+	prefix := `{"text":"bounded-body-test"}`
+	for _, keyed := range []bool{false, true} {
+		for _, oversized := range []bool{false, true} {
+			t.Run(fmt.Sprintf("keyed=%t/oversized=%t", keyed, oversized), func(t *testing.T) {
+				t.Setenv(sessionMsgTokenEnv, "")
+				t.Setenv(apiTokenEnv, "")
+				s := NewSSEServer(telemetry.NewEventBus(64), "localhost", 0)
+				s.activeSessions["target"] = &ActiveSession{ID: "target", Mode: "run", Status: "running", AcceptsMsg: true}
+				body := prefix + strings.Repeat(" ", limit-len(prefix))
+				if oversized {
+					body += "unexpected trailing bytes" + strings.Repeat("x", 1<<20)
+				}
+				reader := strings.NewReader(body)
+				req := httptest.NewRequest(http.MethodPost, "/api/sessions/target/message", reader)
+				if keyed {
+					req.Header.Set("Idempotency-Key", "raw-body-test")
+				}
+				rec := httptest.NewRecorder()
+				s.handleSessionMessage(rec, req, "target")
+				if read := len(body) - reader.Len(); read > limit+1 {
+					t.Fatalf("read %d bytes, maximum %d", read, limit+1)
+				}
+				if !oversized {
+					if rec.Code != http.StatusOK || len(s.pendingCmds["target"]) != 1 {
+						t.Fatalf("exact-limit request: %d %s, queued=%d", rec.Code, rec.Body.String(), len(s.pendingCmds["target"]))
+					}
+					return
+				}
+				if rec.Code != http.StatusRequestEntityTooLarge {
+					t.Fatalf("oversized request: %d %s", rec.Code, rec.Body.String())
+				}
+				if len(s.pendingCmds["target"]) != 0 || len(s.msgIdempotency.entries) != 0 {
+					t.Fatal("oversized request delivered or reserved a key")
+				}
+				retry := httptest.NewRequest(http.MethodPost, "/api/sessions/target/message", strings.NewReader(prefix))
+				if keyed {
+					retry.Header.Set("Idempotency-Key", "raw-body-test")
+				}
+				retryRec := httptest.NewRecorder()
+				s.handleSessionMessage(retryRec, retry, "target")
+				if retryRec.Code != http.StatusOK || len(s.pendingCmds["target"]) != 1 {
+					t.Fatalf("valid retry: %d %s, queued=%d", retryRec.Code, retryRec.Body.String(), len(s.pendingCmds["target"]))
+				}
+			})
+		}
+	}
+}
+
+type sessionMessageGoexitContext struct{ context.Context }
+
+func (sessionMessageGoexitContext) Done() <-chan struct{} {
+	runtime.Goexit()
+	return nil
+}
+
+func TestSessionMessageIdempotencyGoexitFinalizesReservation(t *testing.T) {
+	s := newMsgServer(t)
+	body := []byte(`{"text":"ping","wait":true}`)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		req := httptest.NewRequest(http.MethodPost, "/api/sessions/target/message", bytes.NewReader(body))
+		req.Header.Set("Idempotency-Key", "goexit-after-reservation")
+		// WithTimeout queries this context after the handler reserves the key.
+		req = req.WithContext(sessionMessageGoexitContext{context.Background()})
+		s.handleSessionMessage(httptest.NewRecorder(), req, "target")
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Goexit handler did not exit")
+	}
+	key := sessionMsgIdempotencyKey{target: "target", key: "goexit-after-reservation"}
+	s.msgIdempotency.mu.Lock()
+	entry := s.msgIdempotency.entries[key]
+	s.msgIdempotency.mu.Unlock()
+	if entry == nil {
+		t.Fatal("reservation missing")
+	}
+	select {
+	case <-entry.ready:
+	default:
+		t.Fatal("Goexit did not close the reservation")
+	}
+	if entry.code != http.StatusInternalServerError || entry.expires.IsZero() || !strings.Contains(string(entry.body), "delivery_unknown") {
+		t.Fatal("Goexit reservation was not finalized with a bounded uncertainty response")
+	}
+	replay := postMsgWithKey(s, "target", "goexit-after-reservation", body)
+	if replay.Code != http.StatusInternalServerError || !strings.Contains(replay.Body.String(), "delivery_unknown") {
+		t.Fatalf("Goexit retry: %d %s", replay.Code, replay.Body.String())
+	}
+}
+
+func TestSessionMessageIdempotencyCanceledRetryDoesNotBlockOrRedeliver(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	releaseTurn := func() { once.Do(func() { close(release) }) }
+	defer releaseTurn()
+	var calls atomic.Int32
+	sess := startMsgSession(t, makeFakeChatBuildFunc("a1", func(ctx context.Context, _ string, _ *telemetry.EventBus) (string, error) {
+		calls.Add(1)
+		close(started)
+		select {
+		case <-release:
+			return "pong", nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}, nil))
+	s := newMsgServer(t, sess)
+	body := []byte(`{"text":"ping","from_session_id":"sender","wait":true}`)
+	owner := make(chan *httptest.ResponseRecorder, 1)
+	go func() { owner <- postMsgWithKey(s, sess.ID, "cancel-retry", body) }()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("owner turn did not start")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	retryDone := make(chan struct{})
+	go func() {
+		defer close(retryDone)
+		req := httptest.NewRequest(http.MethodPost, "/api/sessions/"+sess.ID+"/message", bytes.NewReader(body)).WithContext(ctx)
+		req.Header.Set("Idempotency-Key", "cancel-retry")
+		s.handleSessionMessage(httptest.NewRecorder(), req, sess.ID)
+	}()
+	select {
+	case <-retryDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("canceled retry blocked waiting for owner")
+	}
+	select {
+	case <-owner:
+		t.Fatal("owner returned before releasing its turn")
+	default:
+	}
+	releaseTurn()
+	select {
+	case rec := <-owner:
+		if rec.Code != http.StatusOK {
+			t.Fatalf("owner: %d %s", rec.Code, rec.Body.String())
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("owner did not finish")
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("calls=%d, want one delivery", calls.Load())
+	}
 }

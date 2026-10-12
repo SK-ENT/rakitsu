@@ -421,7 +421,11 @@ func (s *SSEServer) handleSessionMessage(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	raw, readErr := io.ReadAll(io.LimitReader(r.Body, sessionMsgMaxBytes+1024))
+	raw, readErr := io.ReadAll(io.LimitReader(r.Body, sessionMsgMaxBytes+1024+1))
+	if len(raw) > sessionMsgMaxBytes+1024 {
+		http.Error(w, `{"error":"request body too large (17KB max)"}`, http.StatusRequestEntityTooLarge)
+		return
+	}
 	var req SessionMessageRequest
 	if readErr != nil || json.Unmarshal(raw, &req) != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -475,7 +479,7 @@ func (s *SSEServer) handleSessionMessage(w http.ResponseWriter, r *http.Request,
 		idemEntry = entry
 		defer func() {
 			if !idemFinished {
-				// A panic may follow a successful enqueue. Retain a bounded
+				// An abnormal exit may follow a successful enqueue. Retain a bounded
 				// unknown-outcome response rather than allow duplicate delivery
 				// or leave retries waiting forever on an unfinished reservation.
 				s.msgIdempotency.finish(idemKey, idemEntry, http.StatusInternalServerError,
