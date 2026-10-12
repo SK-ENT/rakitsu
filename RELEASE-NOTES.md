@@ -28,41 +28,20 @@ newest-first there) rather than letting this table grow without bound —
 GitHub's find-in-page still searches inside a collapsed `<details>` block,
 so no row becomes harder to actually locate, just less prominent by default.
 
-## v0.3.0-beta.4 changes
-
-This beta improves monitor steering, request validation, A2A execution timing, and the frontend.
-
-- Oversized session-message bodies now return 413 before decoding, delivery, or retry-key reservation (17 KiB total body; 16 KiB decoded text). Boundary and cancellation/abnormal-exit regressions verify these paths.
-- Session-message requests can use `Idempotency-Key` to retry safely after a wait timeout without enqueueing another message. Conflicting payloads return an explicit error.
-- Abnormally interrupted keyed deliveries retain an explicit uncertainty response so retries do not silently enqueue again.
-- Monitor messaging documentation explains queued work, reply retrieval, and the difference between delivery and completion.
-- A2A execution honors the configured timeout.
-- Frontend fixes align the Vue runtime security patch and improve execution-tree display.
-- An unused vulnerable test dependency is removed.
-
-### Known limits
-
-Message-key replay is local to one server process, limited to 1,024 keys, and retained for 10 minutes after the first response. It does not survive restart. A timed-out wait does not interrupt an active turn; steering can remain queued behind that turn. Retrieve completion through the chat tree and turn endpoints. A repeated keyed POST replays the original response rather than providing fresh completion status.
-
-Controlled timer-to-message-to-persisted-reply validation passed. The exact cause of the earlier deployed monitor stall remains unexplained. The ongoing hourly test uses an earlier candidate and includes a maintenance pause; it is not an uninterrupted soak of this release commit.
-
-Interactive A2A clarification continuation remains unsupported.
-
-CLI `run --hub` streams to the chosen hub but does not negotiate or inherit that serve instance's history directory. `run` and `serve` resolve their own `--sessions-dir`/config/default independently, so live visibility does not guarantee that the chosen hub can browse the saved CLI history. Multiple hubs require explicit URL selection; automatic serve-instance discovery/selection remains deferred. Avoid sharing session directories across concurrent writers, as documented.
-
 | Version | First published (UTC) | Converts to Apache 2.0 (UTC) |
 |---|---|---|
+| [v0.3.0-beta.4](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-beta.4) | 2026-10-12T02:00:21Z | 2030-10-12T02:00:21Z |
 | [v0.3.0-beta.3](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-beta.3) | 2026-10-05T14:09:07Z | 2030-10-05T14:09:07Z |
 | [v0.3.0-alpha.14](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.14) | 2026-09-28T23:59:45Z | 2030-09-28T23:59:45Z |
 | [v0.3.0-alpha.13](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.13) | 2026-09-26T01:14:56Z | 2030-09-26T01:14:56Z |
 | [v0.3.0-alpha.12](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.12) | 2026-09-24T14:48:29Z | 2030-09-24T14:48:29Z |
-| [v0.3.0-alpha.11](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.11) | 2026-09-23T08:09:04Z | 2030-09-23T08:09:04Z |
 
 <details>
 <summary>Older releases</summary>
 
 | Version | First published (UTC) | Converts to Apache 2.0 (UTC) |
 |---|---|---|
+| [v0.3.0-alpha.11](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.11) | 2026-09-23T08:09:04Z | 2030-09-23T08:09:04Z |
 | [v0.3.0-alpha.10](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.10) | 2026-09-23T04:16:21Z | 2030-09-23T04:16:21Z |
 | [v0.3.0-alpha.9](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.9) | 2026-09-23T00:19:52Z | 2030-09-23T00:19:52Z |
 | [v0.3.0-alpha.8](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.8) | 2026-09-21T22:38:04Z | 2030-09-21T22:38:04Z |
