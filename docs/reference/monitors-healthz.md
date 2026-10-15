@@ -6,7 +6,7 @@ You want a watcher ([wake timer](wake-timer.md)) that starts by itself when the 
 
 ## How it works
 
-`rakitsu serve --config monitor.yaml` reads the `monitors:` list and starts each one as a chat session with a stable id `monitor-<id>`. After a restart the same session id is resumed, so the wake state and the hourly cap are kept. A supervisor only has to restart the process.
+`rakitsu serve --config monitor.yaml` reads the `monitors:` list and starts each one as a chat session with a stable id `monitor-<id>`. After a normal restart the same session id is resumed, restoring wake state and the hourly cap from intact persisted files. Missing or malformed wake state starts fresh; malformed JSON is renamed with a `.corrupt` suffix. Live 24/7 durability is not verified; the live soak is incomplete and the historical stall remains unexplained. A supervisor only has to restart the process.
 
 Secrets are never written in YAML. A monitor lists the **names** of the environment variables it needs (`env_refs`). The values are read from the server process environment when the monitor starts.
 
@@ -67,7 +67,7 @@ curl -s http://localhost:9100/healthz
 | `stopped` | Stopped by the stop route or the kill-switch file. | No, unless `healthz_fail_on_stopped: false` |
 | `failed` | Could not start (missing env name, bad config, session locked by another process). | No |
 
-The answer is `200` when all monitors are healthy, `503` otherwise. With no monitors it is `200`. A non-loopback caller gets `403` unless `healthz_allow_remote: true`. The route uses the real connection address and never trusts `X-Forwarded-For`.
+The answer is `200` when all monitors are healthy, `503` otherwise. With no monitors it is `200`, including after a rejected monitor block. Check that the response contains all expected monitor IDs as well as a healthy HTTP status. A non-loopback caller gets `403` unless `healthz_allow_remote: true`. The route uses the real connection address and never trusts `X-Forwarded-For`.
 
 ## healthcheck command
 

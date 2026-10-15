@@ -421,7 +421,7 @@ tools:
   - name: "researcher"
     type: "a2a"
     description: "Delegate to the Researcher agent on another rakitsu process"
-    url: "http://research-host:9100/a2a"
+    url: "http://research-host:9100"  # server base URL; the tool appends /a2a
     agent: "Researcher"                  # remote agent name to delegate to
 
   - name: "jev"
@@ -838,11 +838,11 @@ pipeline:
 |------|----------|
 | `sequential` | Run steps one after another. Each step receives the previous step's output. Default when `type` is omitted. |
 | `parallel` | Run all nested `steps` concurrently. Results are merged for the next step. |
-| `loop` | Repeat nested steps until `condition_agent` returns "done" or `max_iterations` is reached. |
+| `loop` | Repeat nested steps until `condition_agent` returns a verdict beginning with `PASS` (case-insensitive, after trimming whitespace), or `max_iterations` is reached. |
 
 ## Workflows
 
-Workflows define pre-configured sequences of agent tasks.
+`workflows` is parsed for compatibility and its file references are resolved, but it has no runtime effect in this release. Use a `Pipeline` orchestrator with `orchestrator.pipeline.steps` to execute a sequence of agent tasks. The following block illustrates the accepted configuration shape only.
 
 ```yaml
 workflows:

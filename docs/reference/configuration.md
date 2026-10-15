@@ -197,7 +197,7 @@ settings:
 | `timeout_seconds` | Total time limit per run (per turn in chat). Negative or `0` is no limit. The `--timeout` flag wins when given. |
 | `idle_timeout_seconds` | Cancel after this many seconds without streaming activity. `0` is off. |
 | `retry_attempts` | Older retry setting. Prefer `settings.retry`. |
-| `max_total_tokens` | Hard token budget for the whole run. `0` is unlimited. The result then reads `[budget exceeded: token_guard: token budget exceeded: N / LIMIT]`. Enforced in orchestrator runs and in `serve` chat sessions (the budget is for the whole session). Not enforced by a plain single-agent `rakitsu run` in this release. |
+| `max_total_tokens` | Hard token budget for the whole run. `0` is unlimited. The result then reads `[budget exceeded: token_guard: token budget exceeded: N / LIMIT]`. Enforced in plain single-agent `rakitsu run`, orchestrator runs and `serve` chat sessions (the budget is for the whole session in chat). |
 | `max_cost` | Hard cost budget in USD. `0` is unlimited. Same rules as `max_total_tokens`; cost is only counted for models that have a price (`settings.pricing`). |
 
 ### settings.pricing

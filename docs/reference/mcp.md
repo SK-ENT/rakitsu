@@ -47,7 +47,7 @@ Facts about the server (from `internal/server/mcp.go`):
 - With `RAKITSU_API_TOKEN` set, requests need `Authorization: Bearer <token>`.
 
 - `initialize` answers with an `Mcp-Session-Id` response header. Every later request must send that header back. Without it the server answers 400 (`Mcp-Session-Id header is required`).
-- Without `--config`, `--mcp-port` is silently ignored: `serve` starts, no MCP listener opens and no error is printed.
+- Without `--config`, a positive `--mcp-port` fails startup with `--mcp-port requires --config`.
 
 Quick check with curl (no token set). The first call prints the response headers, so you can read the session id:
 

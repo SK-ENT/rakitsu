@@ -235,7 +235,7 @@ Remove-Item -Recurse -Force internal\webui\dist -ErrorAction SilentlyContinue
 Copy-Item -Recurse web\dist internal\webui\dist
 New-Item -ItemType Directory -Force -Path bin | Out-Null
 $commit = git rev-parse --short HEAD
-go build -ldflags "-X main.Version=v0.2.0-alpha.3.$commit -X main.BuildCommit=$commit" -o bin\rakitsu.exe .\cmd\rakitsu
+go build -ldflags "-X main.Version=dev.$commit -X main.BuildCommit=$commit" -o bin\rakitsu.exe .\cmd\rakitsu
 ```
 
 #### Windows-Specific Notes
@@ -268,11 +268,11 @@ go build -ldflags "-X main.Version=v0.2.0-alpha.3.$commit -X main.BuildCommit=$c
 ### Version Override
 
 ```bash
-make build VERSION=v0.2.0-beta.1
-# Output: rakitsu version v0.2.0-beta.1+abc1234
+make build VERSION=v0.3.0-beta.4
+# Output: rakitsu version v0.3.0-beta.4
 ```
 
-The build commit hash is injected automatically from `git rev-parse --short HEAD`.
+An explicit `VERSION` is embedded as given. Without an override, the Makefile composes its development version from `VERSION_CORE` and a branch-dependent build suffix. This is a local source build; it is not the signed identity or exact artifact of the public release.
 
 ### Cross-Compilation
 
@@ -307,7 +307,7 @@ Copy-Item -Recurse web\dist internal\webui\dist
 # Build Go binary
 New-Item -ItemType Directory -Force -Path bin | Out-Null
 $commit = git rev-parse --short HEAD
-go build -ldflags "-X main.Version=v0.2.0-alpha.3.$commit -X main.BuildCommit=$commit" -o bin\rakitsu.exe .\cmd\rakitsu
+go build -ldflags "-X main.Version=dev.$commit -X main.BuildCommit=$commit" -o bin\rakitsu.exe .\cmd\rakitsu
 ```
 
 ---
@@ -474,7 +474,7 @@ docker-compose up test-single
 # Multi-agent test
 docker-compose up test-multi
 
-# UI server (accessible at http://localhost:8080)
+# API server at http://localhost:8080; requires RAKITSU_API_TOKEN in the env file
 docker-compose up test-ui
 
 # Gemini provider test
@@ -490,9 +490,11 @@ docker-compose up test-gemini
 | `test-multi` | Multi-agent orchestration | `OPENAI_API_KEY` |
 | `test-gemini` | Gemini API key auth | `GEMINI_API_KEY` |
 | `test-gemini-sa` | Gemini service account | `GOOGLE_APPLICATION_CREDENTIALS` |
-| `test-ui` | Web UI on port 8080 | `OPENAI_API_KEY` |
+| `test-ui` | Token-protected API on port 8080; the browser UI cannot authenticate in this release | `OPENAI_API_KEY`, `RAKITSU_API_TOKEN` |
 
 ---
+
+The `test-ui` service requires `RAKITSU_API_TOKEN` because it binds `0.0.0.0` in the container. The current browser UI does not send this bearer token. For local visual inspection, run `rakitsu serve` on loopback without a token; use authenticated API clients for the container.
 
 ## Environment Variables
 

@@ -2,11 +2,11 @@
 
 Deployment files: `deploy/monitor/`.
 
-Status: merged on main. The native 24h run is tested with a fake clock; a live run is in progress and not yet proven.
+Status: merged on main. Fake-clock tests cover restart and heartbeat behavior. Live 24/7 durability is not verified; the live soak is incomplete and the historical stall remains unexplained.
 
 ## Idea
 `rakitsu serve --config monitor.yaml` starts every monitor in `monitors:` itself. Session ids are
-stable (`monitor-<id>`), so a restart resumes the same session. A supervisor (Docker, systemd, launchd)
+stable (`monitor-<id>`), so a normal restart can restore the same session from intact persisted files. A supervisor (Docker, systemd, launchd)
 only restarts the process.
 
 ## Config
@@ -18,12 +18,12 @@ See `deploy/monitor/monitor.example.yaml` (BTC price example). YAML holds env va
         workdir: ./monitors/btc-price
         env_refs: [OPENAI_API_KEY, ALERT_WEBHOOK_URL]
     healthz:
-      monitors_start_grace_seconds: 120   # default 120
+      monitors_start_grace_seconds: 120   # accepted but unused in this release
       healthz_fail_on_stopped: true       # default true
       healthz_allow_remote: false         # default false: loopback callers only
 
 ## Health
-`/healthz`: 200 when every monitor is `ok`, else 503. States: ok, stale (heartbeat older than `heartbeat_stale_seconds`, same rule as the status API), stopped, failed, starting. A running loop with no readable heartbeat file is `starting` for `heartbeat_stale_seconds` after the loop starts (200 on `/healthz`), then `stale` (503).
+`/healthz`: 200 when every monitor is healthy, else 503. `starting` counts as healthy; `stopped` also does when `healthz_fail_on_stopped: false`. With no monitors, it returns 200, including after a rejected monitor block; check that the response contains every expected monitor ID. States: ok, stale (heartbeat older than `heartbeat_stale_seconds`, same rule as the status API), stopped, failed, starting. A running loop with no readable heartbeat file is `starting` for `heartbeat_stale_seconds` after the loop starts (200 on `/healthz`), then `stale` (503).
 Docker uses `rakitsu healthcheck [--url URL] [--timeout 5s]` (exit 0 healthy, 1 otherwise); systemd uses `WatchdogSec` with sd_notify (`NOTIFY_SOCKET`).
 
 ## Alerts
@@ -44,8 +44,7 @@ with redaction and a rate cap. Sinks live under `settings.wake.alerts` (code: `i
 
 ## Status and control
 `GET /api/chat/{id}/wake/status`, `POST .../wake/stop`, `POST .../wake/resume`, `POST .../wake/tasks/{task-id}/cancel`.
-The same three controls exist as A2A skills (`wake_status`, `wake_stop`, `wake_resume`) and as the `/wake status|stop|resume`
-slash command in chat. The web UI card
+Status, stop and resume are also available as the `/wake status|stop|resume` slash command in chat. The `/a2a` dispatcher does not expose `wake_status`, `wake_stop` or `wake_resume` in this release. The web UI card
 (`MonitorStatusCard.vue`, props: `sessionId`) polls status every 5 s and has Stop and Resume buttons.
 Mount it with `<MonitorStatusCard session-id="monitor-btc-price" />`.
 

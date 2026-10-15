@@ -1,6 +1,6 @@
 # Rakitsu System Specification
 
-**Version**: v0.3.0-alpha.3-internal (see `Makefile` `VERSION_CORE` / latest git tag for current)
+**Version**: Build-dependent; release builds use their git tag, while local builds use `Makefile` `VERSION_CORE` plus a build suffix.
 **Stack**: Go 1.25 + Vue 3 / Vite 7 / TypeScript 5.9
 **Module**: `github.com/SK-ENT/rakitsu`
 
@@ -292,7 +292,7 @@ flowchart TD
 
 ## 3. CLI Commands
 
-11 top-level commands: `run`, `serve`, `ui` (deprecated), `version`, `sessions`, `export`, `scaffold`, `quickstart`, `doctor`, `acp`, `license` (pro builds only).
+12 top-level commands: `run`, `serve`, `ui` (deprecated), `version`, `sessions`, `export`, `scaffold`, `quickstart`, `doctor`, `healthcheck`, `acp`, `license` (pro builds only).
 
 ### `rakitsu run <config.yaml> <query>`
 
@@ -1105,10 +1105,10 @@ flowchart TD
     CMD["rakitsu run --debug-port 9200 config.yaml 'query'"]
     CMD --> DC["DebugController\ncreated + attached to each agent"]
     DC --> LOOP["Agent ReAct Loop\ndebugCtrl.Check() at checkpoints"]
-    DC --> SSED["SSE Debug Server\n/debug/events"]
+    DC --> SSED["SSE Debug Server\n/events"]
     LOOP -->|pause at breakpoint| BLOCK["Block on resumeCh"]
     SSED -->|stream events| BROWSER["Browser DebugView.vue"]
-    BROWSER -->|"POST /debug/resume\nPOST /debug/set_breakpoint\nPOST /debug/set_params"| SSED
+    BROWSER -->|"POST /api/debug/resume\nPOST /api/debug/breakpoints\nPOST /api/debug/params"| SSED
     SSED -->|send command| DC
     DC -->|unblock| BLOCK
 ```
@@ -1148,17 +1148,17 @@ States: running → paused → stepping → running
 stateDiagram-v2
     [*] --> Running : NewDebugController()
 
-    Running --> Paused : breakpoint hit\nor pause command
+    Running --> Paused : breakpoint hit<br/>or pause command
     Running --> Running : Check() → nil (fast path)
 
     Paused --> Running : Resume(ActionResume)
     Paused --> Stepping : Resume(ActionStep)
-    Paused --> Running : Resume(ActionStepIn)\n(pause at first child checkpoint)
-    Paused --> Running : Resume(ActionStepOut)\n(pause when back at parent)
-    Paused --> Running : Resume(ActionRunUntil)\nset RunUntilCondition
-    Paused --> [*] : Resume(ActionStop)\nreturn error
+    Paused --> Running : Resume(ActionStepIn)<br/>(pause at first child checkpoint)
+    Paused --> Running : Resume(ActionStepOut)<br/>(pause when back at parent)
+    Paused --> Running : Resume(ActionRunUntil)<br/>set RunUntilCondition
+    Paused --> [*] : Resume(ActionStop)<br/>return error
 
-    Stepping --> Paused : next Check() hit\nemit DEBUG_PAUSED
+    Stepping --> Paused : next Check() hit<br/>emit DEBUG_PAUSED
 ```
 
 ### Breakpoints
@@ -1192,14 +1192,25 @@ ParamOverride {
 ### Debug HTTP API
 
 ```
-GET  /debug/events          → SSE stream of debug events
-POST /debug/pause           → Pause execution
-POST /debug/resume          → Resume with action
-POST /debug/set_breakpoint  → Add/remove breakpoint
-POST /debug/set_params      → Set parameter overrides
-GET  /debug/replay          → Stream replay events
-GET  /debug/export          → Download config with overrides
+GET         /events                  → SSE event stream
+GET/POST    /api/debug/breakpoints    → List, add or remove breakpoints
+POST        /api/debug/pause          → Pause execution
+POST        /api/debug/resume         → Resume with action
+POST        /api/debug/attach         → Attach debugger to a live session
+POST        /api/debug/detach         → Detach debugger
+GET         /api/debug/state          → Inspect execution state
+POST/DELETE /api/debug/params         → Set or clear parameter overrides
+POST        /api/debug/replay         → Reconstruct history at an event index
+POST        /api/debug/export         → Return an agent's overrides as JSON
+POST        /api/debug/rerun          → Request pipeline rerun from a named step
+POST        /api/debug/user_input     → Answer a pending chat user_input request
 ```
+
+For session-scoped controls, pass `session_id` in the JSON body or query
+parameter used by the endpoint. Specify it when multiple sessions are live;
+the server rejects ambiguous targets. Replay takes the stored `session_id`
+and `event_index`; export returns the overrides for the requested `agent`,
+not a merged YAML configuration.
 
 ---
 
@@ -1222,12 +1233,12 @@ rakitsu run (CLI)                       rakitsu serve (Hub)          Browser
        │ ────────────────────────────────────►│ Broadcast via SSE ──►│
        │                                      │                      │
        │  [loop: command polling]             │                      │
-       │  GET /api/hub/commands?session=X     │                      │
+       │  GET /api/hub/commands?id=X            │                      │
        │ ◄────────────────────────────────────│                      │
        │  (execute debug command)             │                      │
        │                                      │◄─────────────────────│
-       │                                      │  POST /api/hub/command
-       │                                      │  {session, action}   │
+       │                                      │  POST /api/hub/debug
+       │                                      │  {session_id, action, data}
        │  POST /api/hub/deregister            │                      │
        │ ────────────────────────────────────►│ Mark complete ──────►│
 ```
@@ -1240,24 +1251,24 @@ sequenceDiagram
     participant HUB as rakitsu serve (Hub)
     participant Browser
 
-    CLI->>HUB: POST /api/hub/register\n{sessionId, name, agents}
+    CLI->>HUB: POST /api/hub/register<br/>{sessionId, name, agents}
     HUB-->>CLI: 200 OK + sessionId
 
     loop Event Batching (every 500ms)
-        CLI->>HUB: POST /api/hub/ingest\n[AgentEvent, ...]
-        HUB-->>Browser: SSE broadcast\nall session events
+        CLI->>HUB: POST /api/hub/ingest<br/>[AgentEvent, ...]
+        HUB-->>Browser: SSE broadcast<br/>all session events
     end
 
     loop Debug Commands (polling)
-        CLI->>HUB: GET /api/hub/commands?session=X
+        CLI->>HUB: GET /api/hub/commands?id=X
         HUB-->>CLI: [DebugCommand, ...]
-        CLI->>CLI: Execute debug command\n(pause, set_breakpoint, etc.)
+        CLI->>CLI: Execute debug command<br/>(pause, set_breakpoint, etc.)
     end
 
     Browser->>HUB: GET /events (SSE)
     HUB-->>Browser: All active session events
 
-    Browser->>HUB: POST /api/hub/command\n{session, action, params}
+    Browser->>HUB: POST /api/hub/debug<br/>{session_id, action, data}
     HUB-->>CLI: (via command queue)
 
     CLI->>HUB: POST /api/hub/deregister
@@ -1397,9 +1408,9 @@ flowchart TD
     UDG --> EG["ExecutionGraph.vue"]
 
     UDC["useDebugControl.ts"] --> BB["BreakpointBar.vue"]
-    UDC -->|"POST /debug/resume\nPOST /debug/pause\nPOST /debug/set_breakpoint"| DEBUG_API["Debug HTTP API"]
+    UDC -->|"POST /api/debug/resume\nPOST /api/debug/pause\nPOST /api/debug/breakpoints"| DEBUG_API["Debug HTTP API"]
     UDC --> ASE["AgentSettingsEditor.vue\nRuntime param overrides"]
-    ASE -->|"POST /debug/set_params"| DEBUG_API
+    ASE -->|"POST /api/debug/params"| DEBUG_API
 ```
 
 ### SSE Event Stream (Browser)
@@ -1515,12 +1526,13 @@ make clean              # Remove build artifacts
 ### Version Injection
 
 ```bash
-# Format: v{major}.{minor}.{patch}-alpha.{N}.{build}
-# ({build} is branch-aware: short commit hash on main, commit count elsewhere)
+# Explicit VERSION is used as-is. Without it, the Makefile appends a
+# branch-aware suffix to VERSION_CORE (short hash on main, commit count elsewhere).
 make build VERSION=v0.3.0-alpha.3-internal
 
 # Runtime output:
-rakitsu version v0.3.0-alpha.3-internal.30132e9
+rakitsu version v0.3.0-alpha.3-internal
+License: BSL 1.1 — see LICENSE
 ```
 
 ### Project Structure

@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/SK-ENT/rakitsu/actions/workflows/ci.yml/badge.svg)](https://github.com/SK-ENT/rakitsu/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/SK-ENT/rakitsu?include_prereleases)](https://github.com/SK-ENT/rakitsu/releases)
-[![Status: Alpha](https://img.shields.io/badge/status-alpha-orange.svg)](#disclaimer)
+[![Status: Beta](https://img.shields.io/badge/status-beta-orange.svg)](#disclaimer)
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL%201.1-blue.svg)](LICENSE)
 [![Go 1.25](https://img.shields.io/badge/Go-1.25-00ADD8.svg)](https://go.dev)
 
@@ -65,23 +65,24 @@ before writing a config.
 
 ### Other ways to install
 
-Same pre-release (alpha) builds as `install.sh`.
+For beta.4, use `install.sh` or the exact release downloads. The Homebrew formula currently pins v0.3.0-alpha.14; it does not install beta.4.
 
 ```bash
 # Homebrew (macOS / Linux) — the formula lives in this repo
 brew tap sk-ent/rakitsu https://github.com/SK-ENT/rakitsu
 brew install sk-ent/rakitsu/rakitsu
 
-# Docker (linux/amd64, linux/arm64) — tags: exact version, or the moving `alpha`
-docker run --rm ghcr.io/sk-ent/rakitsu:alpha version
+# Docker (linux/amd64, linux/arm64) — tags: exact version, or the moving `beta`
+docker run --rm ghcr.io/sk-ent/rakitsu:v0.3.0-beta.4 version
 docker run --rm -it -e OPENAI_API_KEY -v "$PWD:/workspace" \
-  ghcr.io/sk-ent/rakitsu:alpha run config.yaml "your query"
+  ghcr.io/sk-ent/rakitsu:v0.3.0-beta.4 run config.yaml "your query"
 ```
 
-To use the web UI from Docker, `serve` must bind `0.0.0.0` inside the
+To expose the API from Docker, `serve` must bind `0.0.0.0` inside the
 container, which it only allows with an API token set. Publish the port on
 localhost only:
-`docker run --rm -e RAKITSU_API_TOKEN=<token> -p 127.0.0.1:9100:9100 ghcr.io/sk-ent/rakitsu:alpha serve --host 0.0.0.0`.
+`docker run --rm -e RAKITSU_API_TOKEN=<token> -p 127.0.0.1:9100:9100 ghcr.io/sk-ent/rakitsu:v0.3.0-beta.4 serve --host 0.0.0.0`.
+The browser UI cannot authenticate with this token in beta.4; for local visual inspection, run `rakitsu serve` on loopback outside the container.
 Inside the container, a cli tool's `sandbox: docker` needs the host Docker
 socket mounted, which gives the container root on your machine. The default
 `local_restricted` sandbox works without it.
@@ -143,14 +144,14 @@ Recorded against a local model with the [Code Reviewer config](#example-config) 
 - Session history with replay and rerun
 - CLI and web UI modes
 - Secure tools: CLI whitelist/blocklist, file path restrictions, Docker sandbox
-- Cross-platform: Linux, macOS, Windows (amd64 + arm64)
+- Release binaries: Linux and macOS (amd64 + arm64), Windows (amd64)
 
 **Protocol interop**
 - `rakitsu acp` — run as an ACP (Agent Client Protocol) server so editors like Zed can talk to rakitsu agents directly
 - `rakitsu acp` reads one JSON-RPC message per line, capped at 16 MiB per line
 - `rakitsu acp` keeps at most `--max-sessions` sessions (default 256) and drops one unused for `--session-idle-timeout` (default 24h); a session with a running prompt is never dropped
-- `rakitsu serve` exposes an MCP server at `/mcp` (legacy era, ≤2025-11-25 revision) so external MCP clients can discover and call rakitsu's tools
-- `rakitsu serve` exposes an A2A endpoint at `/a2a` (real A2A v1.0.1) plus agent-card discovery, so a rakitsu agent can delegate to a named agent in a different rakitsu process
+- `rakitsu serve --config tools.yaml --mcp-port 9200` exposes an MCP server at `http://localhost:9200/mcp` on a separate listener (legacy era, ≤2025-11-25 revision) so external MCP clients can discover and call rakitsu's tools
+- `rakitsu serve --config team.yaml` exposes an A2A endpoint at `/a2a` (real A2A v1.0.1) plus agent-card discovery, so a rakitsu agent can delegate to a named agent in a different rakitsu process
 - Tool types `mcp_server`, `a2a`, and `jev` let a rakitsu agent call *out* to other MCP servers, A2A agents, or TypeSafe AI's Jev model for typed yes/no, pick-one, or scored questions
 
 ## Long-running monitors
@@ -194,7 +195,8 @@ The other six:
 
 ```bash
 rakitsu quickstart                    # Interactive project wizard
-rakitsu serve                         # Web UI + agent runner (also serves MCP at /mcp, A2A at /a2a)
+rakitsu serve                         # Web UI + agent runner
+rakitsu serve --config tools.yaml --mcp-port 9200  # A2A on 9100; MCP at localhost:9200/mcp
 rakitsu run config.yaml "query"       # Run agents from CLI
 rakitsu acp                           # Run as an ACP server (editor integration, e.g. Zed)
 rakitsu scaffold code-review          # Generate config from template
@@ -294,7 +296,7 @@ make build-embedded    # frontend + Go binary → bin/rakitsu
 ./bin/rakitsu serve
 ```
 
-Requires: Go 1.25+, Node.js 20+
+Requires: Go 1.25+, Node.js 20.19+ or 22.12+
 
 ## Project Structure
 
@@ -328,7 +330,7 @@ export OPENAI_API_KEY=sk-...
 rakitsu serve --port 8080
 ```
 
-**Running more than one instance** — Give each instance its own session directory and memory directory, via `--sessions-dir PATH` (on `serve`, `run`, `sessions`) or `settings.sessions_dir`, plus `settings.memory.dir`. Never share one directory between running instances: the `sessions.json` index is not safe for several writers. Default is `~/.rakitsu/sessions`. Details: [docs/configuration.md](docs/configuration.md#running-isolated-instances).
+**Running more than one instance** — Give each instance its own session directory and memory directory, via `--sessions-dir PATH` (on `serve`, `run`, `sessions`) or `settings.sessions_dir`, plus `settings.memory.dir`. Never share one directory between running instances: the `sessions.json` index is not safe for several writers. Default is `~/.rakitsu/sessions`. `run --hub URL` selects only the live event destination; it does not inherit that server's history directory. Configure `run` and `serve` history explicitly; live visibility does not guarantee saved-history visibility. Details: [docs/configuration.md](docs/configuration.md#running-isolated-instances).
 
 **Agent runs but produces no output** — Check `--trace` for execution details:
 ```bash
@@ -357,7 +359,7 @@ license.
 
 ## Disclaimer
 
-> **This software is alpha and not production-ready.** Interfaces, APIs, and behavior may change without notice. Rakitsu executes LLM-generated tool calls (shell commands, file operations) which carry inherent risk. Use at your own risk. The authors assume no liability for any losses, damages, or consequences arising from use of this software. See [LICENSE](LICENSE) for full terms.
+> **This software is beta and not production-ready.** Interfaces, APIs, and behavior may change without notice. Rakitsu executes LLM-generated tool calls (shell commands, file operations) which carry inherent risk. Use at your own risk. The authors assume no liability for any losses, damages, or consequences arising from use of this software. See [LICENSE](LICENSE) for full terms.
 
 ## License
 

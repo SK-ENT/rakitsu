@@ -47,7 +47,7 @@ Parameter types:
 ## Rules
 
 - **Allowlist only.** Any name not listed is refused. The task `path` must be relative to the workdir, must not contain `..`, and symlinks are resolved. At session start every listed file must exist and parse, or the session does not start.
-- **Config snapshot.** At session start the SHA-256 of each listed file is saved. On every start the file is read and hashed again. If it changed, was replaced or was removed, the start is refused with reason `task_config_changed` and no slot is used. Keep task configs read-only for the server user.
+- **Config snapshot.** At session start the SHA-256 of each listed file is saved. On every start the file is read and hashed again. If it changed, was replaced or was removed, the start is refused with reason `task_config_changed` and no slot is used. The runner subsequently loads the config by path, leaving a check-to-load race for a writer with filesystem access. Treat the workdir as trusted and keep task configs read-only for the server user. See the [detailed trust boundary](../wake-timer.md#starting-tasks-start_task).
 - **Fixed prompt.** The task prompt is your `task` text plus a fenced `key=value` block. Arguments must be exactly the declared params. Missing or extra keys are refused. Values cannot contain free text, newlines or fence markers.
 - **Independent run.** The task loads its own config, uses the server process environment (not the wake session's), has no user input and no session messaging, and cannot start tasks itself. A task config may have its own tools, because it is a separate run.
 - **Results.** The full result goes to `~/.rakitsu/wake/<session-id>.tasks/<task-id>.log` (mode 0600). The wake session only sees the status and a short summary.
