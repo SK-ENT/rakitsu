@@ -41,12 +41,6 @@ settings:
   execution:
     max_iterations: 20
     timeout_seconds: 900
-  context:
-    strategy: auto
-    max_tool_output: 4000
-    fence_outputs: true
-    context_budget_threshold: 0.6
-    context_retrieval_threshold: 0.8
   allowed_commands:
     - grep
     - wc
@@ -108,6 +102,12 @@ agents:
       - read_file
       - search
     settings:
+      context:
+        strategy: auto
+        max_tool_output: 4000
+        fence_outputs: true
+        context_budget_threshold: 0.6
+        context_retrieval_threshold: 0.8
       max_iterations: 8
 
   - name: FrontendAuditor
@@ -130,6 +130,12 @@ agents:
       - read_file
       - search
     settings:
+      context:
+        strategy: auto
+        max_tool_output: 4000
+        fence_outputs: true
+        context_budget_threshold: 0.6
+        context_retrieval_threshold: 0.8
       max_iterations: 8
 
   - name: Synthesizer
@@ -147,6 +153,12 @@ agents:
       Do not add commentary. Do not re-summarize. Relay only.
     tools: []
     settings:
+      context:
+        strategy: auto
+        max_tool_output: 4000
+        fence_outputs: true
+        context_budget_threshold: 0.6
+        context_retrieval_threshold: 0.8
       temperature: 0.3
       max_tokens: 2048
       max_iterations: 2

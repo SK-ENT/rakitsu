@@ -76,9 +76,9 @@ rakitsu --version
 .\bin\rakitsu.exe --version
 ```
 
-Expected output: `rakitsu version v0.2.0-alpha.3.<commit>`
+Expected output: `rakitsu version <build version>`, followed by the BSL 1.1 license line. Release builds use their release tag; local builds use the configured Makefile version.
 
-> `rakitsu version` (without `--`) is not a valid command — always use `--version`.
+> `rakitsu version` and `rakitsu --version` are both supported.
 
 ---
 
@@ -122,7 +122,7 @@ Each test has:
 | | |
 |---|---|
 | **Steps** | `rakitsu --version` |
-| **Expected** | `rakitsu version v0.2.0-alpha.3.<commit>` |
+| **Expected** | `rakitsu version <build version>`, followed by the BSL 1.1 license line |
 | **Result** | |
 
 ### 1.2 Frontend is embedded (embedded build only)
@@ -635,7 +635,7 @@ Check browser console (F12 → Console) for JavaScript errors during each test.
 | | |
 |---|---|
 | **Steps** | Open `http://localhost:8080` |
-| **Expected** | Three tabs visible: Builder, Inspector, Debugger. Each loads without JS errors. |
+| **Expected** | Five tabs visible: Builder, Inspector, Debugger, Sessions, Chat. Each loads without JS errors. |
 | **Result** | |
 
 ### 15.2 Visual Builder — add and connect nodes

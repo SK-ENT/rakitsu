@@ -202,8 +202,9 @@ live event stream, and the CLI↔hub reporting endpoints (`/api/hub/*`). A
 handler added under those prefixes is gated without a code change to the
 auth policy.
 
-The only public exceptions are `/health`, `/api/status` (version and boot id
-only), the A2A agent card at `/.well-known/agent-card.json` (the spec expects
+The public exceptions are `/health`, `/healthz` (loopback callers only unless
+`healthz_allow_remote` is enabled), `/api/status` (version and boot id only),
+the A2A agent card at `/.well-known/agent-card.json` (the spec expects
 it to be fetchable so a client can learn what auth is required; the card
 advertises the bearer requirement), and the static web UI assets.
 

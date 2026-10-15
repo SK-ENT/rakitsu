@@ -74,7 +74,7 @@ tools:
     api_key: ${PEER_TOKEN}          # only if the peer sets RAKITSU_API_TOKEN
 ```
 
-The model calls the tool with one argument, `query`. The tool starts the task, polls until it is done, and returns the reply text. `timeout_seconds` limits the call (default 30).
+The model calls the tool with one argument, `query`. The tool starts the task, polls until it is done, and returns the reply text. `timeout_seconds` limits each HTTP request (default 30), not the whole polling operation. The caller context bounds the overall operation; configure an execution deadline for a total delegation limit.
 
 Safety rules of the client (see [security](security.md#network-rules)):
 

@@ -14,7 +14,7 @@ Read this before you run a config you did not write, give an agent `cli` or `fs`
 - The `cli` allowlist and the blocklist are a guard rail against mistakes, not a security boundary. Interpreters on the allowlist (`python3`, `node`, `bash`, `sh`, `find`) can run any code. Only run configs you trust.
 - `sandbox.allowed_paths` on a `cli` tool filters the **arguments** that name a path. It does not contain what an interpreter does inside its own code.
 - For `fs` tools always set `allowed_paths`. The default `["."]` is the whole launch folder, including `.env` and `.git`.
-- A `cli` tool can never call the running rakitsu binary, and it never receives `RAKITSU_API_TOKEN` or `RAKITSU_SESSION_MSG_TOKEN` in its environment.
+- Direct `cli` invocation of the running rakitsu binary, including a symlink or hard link to that file, is blocked. Copies, wrappers and allowed interpreters can still invoke it; this check is not containment. The tool scrubs `RAKITSU_API_TOKEN` and `RAKITSU_SESSION_MSG_TOKEN` from its subprocess environment. See the [detailed limitations](../SECURITY.md#reducing-blast-radius).
 - Configs with `cli` or `fs` tools must never be wired to anything an untrusted party can message (session messaging, a bridge, A2A, MCP). See [rakitsu-ask](rakitsu-ask.md#threat-model).
 
 ### Sandboxing

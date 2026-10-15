@@ -59,7 +59,7 @@ By default `run` connects to a hub at `http://localhost:9100` if one is running.
 | `--no-hub` | Do not connect to a hub. |
 | `--idle-timeout int` | Cancel the run after N seconds with no streaming activity. `0` is off. A slow but progressing model never trips it. |
 | `-i, --interactive` | Run as an interactive chat. Overrides the config `interactive` flag. |
-| `--max-cost float` | Stop the run if the total cost goes over this USD amount. Overrides the config value. Known limits in this release: a plain single-agent `run` does not enforce any budget, and for orchestrator runs the flag only takes effect when the config also sets a budget under `settings.execution`. Cost needs a price: set `settings.pricing` for the model. |
+| `--max-cost float` | Stop the run if the total cost goes over this USD amount. A positive value overrides the config cost limit for single-agent and orchestrator runs, even without a budget in `settings.execution`. Cost needs a known model price; set `settings.pricing` to supply or override it. |
 | `--max-tokens int` | Override max output tokens for all agents and orchestrators. `0` keeps the config value. Raise it for reasoning models, whose hidden reasoning tokens share the same budget. |
 | `--model string` | Override the default model for all agents. |
 | `--provider string` | Override the default provider for all agents (for example `litellm`, `ollama`, `anthropic`). If the provider is not in the config, rakitsu builds it from `<NAME>_API_KEY` and `<NAME>_BASE_URL` environment variables. `nvidia` maps to the OpenAI type with the NVIDIA base URL. |
@@ -98,7 +98,7 @@ Starts the hub: web UI, SSE event stream, agent runner, session history, debugge
 | `--config string` | YAML config for the MCP server, the A2A endpoint, and the `monitors` and `healthz` blocks. This is not the global `-c` flag. |
 | `--config-dir string` | Extra directory scanned for agent configs. Configs found here show up in the UI and in `/api/configs`. |
 | `--host string` | Host to bind. Default `localhost`. A non-loopback host needs `RAKITSU_API_TOKEN`; without it, serve refuses to start. |
-| `--mcp-port int` | Start a separate MCP HTTP listener on this port. Needs `--config`; without it the flag is silently ignored (no listener, no error). |
+| `--mcp-port int` | Start a separate MCP HTTP listener on this port. Needs `--config`; without it startup fails with `--mcp-port requires --config`. |
 | `-p, --port int` | Hub and UI port. Default `9100`. |
 | `--sessions-dir string` | Directory for session files. Same rule as in `run`. |
 

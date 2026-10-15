@@ -39,11 +39,11 @@ Rakitsu exposes a complete debug HTTP API:
 | `POST /api/debug/attach`, `/detach` | Begin/end a debug session against a live run |
 | `GET/POST /api/debug/breakpoints` | List or set breakpoints at agent / step boundaries |
 | `POST /api/debug/pause`, `/resume` | Halt and continue a running session |
-| `POST/DELETE /api/debug/params` | Override prompt, temperature, tool args mid-flight |
+| `POST/DELETE /api/debug/params` | Override prompt, model settings, iteration limit, or enabled tools mid-flight |
 | `GET /api/debug/state` | Inspect current execution state |
 | `POST /api/debug/replay`, `/rerun` | Reconstruct history; re-run from a named step |
-| `POST /api/debug/export` | Export the YAML config with all live overrides applied |
-| `POST /api/debug/user_input` | Inject a user message into a chat-mode session |
+| `POST /api/debug/export` | Return the requested agent's parameter overrides as JSON |
+| `POST /api/debug/user_input` | Answer a pending `user_input` request in a chat session |
 
 The Vue UI is one client of this API. Your agentic editor is another. Claude
 Code can subscribe to the SSE event stream, notice a supervisor about to

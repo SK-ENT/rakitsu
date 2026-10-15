@@ -37,12 +37,6 @@ settings:
   execution:
     max_iterations: 20
     timeout_seconds: 900
-  context:
-    strategy: auto
-    max_tool_output: 4000
-    fence_outputs: true
-    context_budget_threshold: 0.6
-    context_retrieval_threshold: 0.8
   allowed_commands:
     - grep
     - wc
@@ -112,3 +106,10 @@ agents:
       - list_files
       - read_file
       - search
+    settings:
+      context:
+        strategy: auto
+        max_tool_output: 4000
+        fence_outputs: true
+        context_budget_threshold: 0.6
+        context_retrieval_threshold: 0.8

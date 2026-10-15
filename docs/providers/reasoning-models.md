@@ -93,6 +93,8 @@ Working reference: [examples/providers/gemini.yaml](../../examples/providers/gem
 
 Run high-volume tool-using workers on the local nemotron model (free), then aggregate via a cloud non-reasoning model. This is the most reliable pattern for production-like reliability without paying for every token.
 
+This configuration fragment omits tool definitions: add root `tools:` entries named `read_file`, `list_files` and `grep` before running it.
+
 ```yaml
 settings:
   default_provider: nemotron-local   # ← required: DataGatherer has no explicit
@@ -121,10 +123,15 @@ agents:
     # No tools — pure synthesis.
 
 orchestrator:
+  name: HybridPipeline
   strategy: Pipeline
-  steps:
-    - agent: DataGatherer
-    - agent: Synthesizer
+  agents: [DataGatherer, Synthesizer]
+  pipeline:
+    steps:
+      - name: gather
+        agent: DataGatherer
+      - name: synthesize
+        agent: Synthesizer
 ```
 
 **Why it works**: worker tasks are tool-bounded — model reads, calls a tool, sees the result, calls the next tool. Reasoning models stop cleanly after each tool result. The synthesis step is the open-ended one that triggers reasoning loops, so use a non-reasoning model for that step.

@@ -10,7 +10,7 @@
 # Usage:
 #   export RAKITSU_API_TOKEN=...   # server control-plane API token required for the bridge's /a2a auth; also enables settings.session_msg (unused here)
 #   export OPENAI_API_KEY=...              # this agent's own provider key
-#   rakitsu serve --config-dir examples/single/13-voice-orchestrator
+#   rakitsu serve --config examples/single/13-voice-orchestrator/worker-config.yaml --config-dir examples/single/13-voice-orchestrator
 
 name: Voice Orchestrator Worker
 version: "1.0"

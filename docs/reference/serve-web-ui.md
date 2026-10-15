@@ -59,6 +59,8 @@ rakitsu run examples/single/01-chat/config.yaml "Hello"
 
 If the hub has `RAKITSU_API_TOKEN` set, the `run` process needs the same token in its environment.
 
+`--hub` selects only the live event destination. It does not inherit the server's history directory: `run` and `serve` resolve their own `--sessions-dir`/config/default independently. A live card does not guarantee the selected hub can browse the saved CLI history. Keep writable stores separate between concurrent processes. With several hubs, choose the URL explicitly; there is no automatic instance selection.
+
 ## HTTP endpoints
 
 The ones that matter most. With a token set, every path under `/api/`, `/ws/`, `/events`, `/mcp` and `/a2a` needs `Authorization: Bearer <token>`.

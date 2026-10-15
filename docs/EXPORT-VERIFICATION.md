@@ -8,12 +8,17 @@ End-to-end verification that Rakitsu-generated deployment files actually work wi
 
 ## Summary
 
-Rakitsu's `rakitsu export --format nemoclaw` command produces two files:
+For a single-agent config, `rakitsu export --format nemoclaw` produces:
 
 - `openclaw.json` — agent configuration (models, providers, tools)
 - `sandbox-policy.yaml` — OpenShell security policy (filesystem, network, process rules)
+- `README.md` — deployment instructions
+- `AGENT.md` — system prompt, when the agent has one
 
-Both files were verified against real NemoClaw/OpenShell sandbox infrastructure by running a full deployment and sending a real chat completion request that returned an HTTP 200 from an NVIDIA Nemotron-3-Super-120B endpoint through a sandboxed egress proxy. The inference backend itself was a local GPU host reached via a LiteLLM proxy, not NVIDIA's hosted inference — see Test Environment below for the exact setup.
+`--with-blueprint` additionally generates `blueprint.yaml`. The verification
+below focuses on the configuration and security-policy files.
+
+The configuration and security-policy files were verified against real NemoClaw/OpenShell sandbox infrastructure by running a full deployment and sending a real chat completion request that returned an HTTP 200 from an NVIDIA Nemotron-3-Super-120B endpoint through a sandboxed egress proxy. The inference backend itself was a local GPU host reached via a LiteLLM proxy, not NVIDIA's hosted inference — see Test Environment below for the exact setup.
 
 **Scope**: This verification covers **single-agent exports only**. Multi-agent orchestration scripts (`orchestrate.sh`, `delegate.sh`, `docker-compose.yaml`) are generated but have NOT been E2E tested on NemoClaw infrastructure. The orchestration scripts use verified NemoClaw CLI commands (confirmed from source at `github.com/NVIDIA/NemoClaw`), but the file-transfer + SSH-exec pattern for multi-sandbox coordination has not been validated end-to-end.
 
@@ -187,7 +192,7 @@ docker volume prune -f
 
 ## Bugs Found and Fixed During Verification
 
-Verification uncovered three real bugs in Rakitsu's export that would have shipped otherwise. Each has a unit regression test that runs in CI (see `internal/export/nemoclaw_test.go`).
+Verification uncovered three real bugs in Rakitsu's export that would have shipped otherwise. Each has a unit regression test that runs in CI (see `internal/export/nemoclaw/nemoclaw_test.go`).
 
 ### 1. Policy hardcoded port 443
 
@@ -232,7 +237,7 @@ Verification uncovered three real bugs in Rakitsu's export that would have shipp
 - Requires `--privileged` Docker (not supported on all CI runners)
 - Requires a valid `NVIDIA_API_KEY` secret (only distributed to trusted maintainers)
 - Takes ~5 minutes end-to-end
-- The **schema correctness** (what CI should catch) is covered by cheap unit tests in `internal/export/nemoclaw_test.go`
+- The **schema correctness** (what CI should catch) is covered by cheap unit tests in `internal/export/nemoclaw/nemoclaw_test.go`
 
 The heavy E2E test runs locally before every release tag. CI catches regressions in the generator logic.
 

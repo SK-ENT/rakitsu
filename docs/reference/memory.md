@@ -57,7 +57,7 @@ With `memory.enabled: true`, every agent gets six tools without any `tools:` ent
 
 Scopes are `session`, `project` (default) and `global`. The `project` scope uses the config `project_id`. Each scope is one JSON file under `settings.memory.dir` (default `~/.rakitsu/memory`), for example `global.json` and `project-memory-demo.json`.
 
-Knowledge is never destroyed. When knowledge changes, add the new entry with `supersedes: <old-id>`. The old entry is kept as history but hidden from normal recall. You can look at the past with `as_of` (an RFC 3339 time, or `YYYY-MM-DD`, meaning the end of that day in UTC) or `include_expired`.
+Normal supersession and retirement retain prior knowledge in the JSON file; this is not a backup or a guarantee against file corruption or power loss. When knowledge changes, add the new entry with `supersedes: <old-id>`. The old entry is kept as history but hidden from normal recall. You can look at the past with `as_of` (an RFC 3339 time, or `YYYY-MM-DD`, meaning the end of that day in UTC) or `include_expired`.
 
 ## Conversation memory
 

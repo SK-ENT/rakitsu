@@ -235,7 +235,7 @@ Remove-Item -Recurse -Force internal\webui\dist -ErrorAction SilentlyContinue
 Copy-Item -Recurse web\dist internal\webui\dist
 New-Item -ItemType Directory -Force -Path bin | Out-Null
 $commit = git rev-parse --short HEAD
-go build -ldflags "-X main.Version=v0.2.0-alpha.3.$commit -X main.BuildCommit=$commit" -o bin\rakitsu.exe .\cmd\rakitsu
+go build -ldflags "-X main.Version=dev.$commit -X main.BuildCommit=$commit" -o bin\rakitsu.exe .\cmd\rakitsu
 ```
 
 #### Windows 固有の注意事項
@@ -268,11 +268,11 @@ go build -ldflags "-X main.Version=v0.2.0-alpha.3.$commit -X main.BuildCommit=$c
 ### バージョンの上書き
 
 ```bash
-make build VERSION=v0.2.0-beta.1
-# 出力: rakitsu version v0.2.0-beta.1+abc1234
+make build VERSION=v0.3.0-beta.4
+# 出力: rakitsu version v0.3.0-beta.4
 ```
 
-ビルドコミットハッシュは `git rev-parse --short HEAD` から自動的に注入されます。
+`VERSION` を明示した場合、その値がそのまま埋め込まれます。未指定の場合は `VERSION_CORE` とブランチに応じたビルド接尾辞を使います。ローカルビルドは公開リリースの配布バイナリと同一とは限りません。
 
 ### クロスコンパイル
 
@@ -307,7 +307,7 @@ Copy-Item -Recurse web\dist internal\webui\dist
 # Go バイナリのビルド
 New-Item -ItemType Directory -Force -Path bin | Out-Null
 $commit = git rev-parse --short HEAD
-go build -ldflags "-X main.Version=v0.2.0-alpha.3.$commit -X main.BuildCommit=$commit" -o bin\rakitsu.exe .\cmd\rakitsu
+go build -ldflags "-X main.Version=dev.$commit -X main.BuildCommit=$commit" -o bin\rakitsu.exe .\cmd\rakitsu
 ```
 
 ---
@@ -487,6 +487,8 @@ docker-compose up test-gemini
 | `test-ui` | ポート 8080 の Web UI | `OPENAI_API_KEY` |
 
 ---
+
+`test-ui` はコンテナ内で `0.0.0.0` にバインドするため、環境ファイルに `RAKITSU_API_TOKEN` が必要です。このリリースのブラウザー UI は Bearer トークンを送信できません。画面の確認にはローカルのループバック上で `rakitsu serve` を実行し、コンテナには認証済み API クライアントを使ってください。
 
 ## 環境変数
 

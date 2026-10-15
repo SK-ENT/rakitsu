@@ -2,7 +2,7 @@
 
 ## What it is
 
-A server-owned clock runs cheap, deterministic checks on a schedule in a long-lived `rakitsu serve` chat session. It uses zero model calls while nothing changes, starts a normal agent turn in the same session only when a check reports a change or alarm, and keeps the session alive across the wait. The session's rolling summary, per-session JSONL and `resume_id` survive crashes and restarts.
+A server-owned clock runs cheap, deterministic checks on a schedule in a long-lived `rakitsu serve` chat session. It uses zero model calls while nothing changes, starts a normal agent turn in the same session only when a check reports a change or alarm, and keeps the session alive across the wait. A normal restart with the same `resume_id` can restore the session from intact persisted files. This is not a guarantee against file corruption or power loss; live 24/7 durability has not been verified.
 
 ## Config reference
 
@@ -83,7 +83,7 @@ settings:
 **L0: Free tick** (no model call)
 - Runs all checks, updates state on disk
 - Outcome: `quiet`, `changed`, `alarm`, or `unknown` (error/timeout)
-- Emits `WAKE_TICK` event to session JSONL
+- Emits `WAKE_TICK` for non-quiet ticks and exceptional results; quiet ticks are recorded in the audit log
 
 **L1: Optional Judge** (config-only in v1; judge call not implemented)
 - Receives tick outcome and check results
@@ -119,7 +119,7 @@ settings:
 - Kill-switch file (`~/.rakitsu/wake/STOP`) stops the loop; session stays alive
 - Singleton lock: one process holds `<session-id>.lock` (flock). Every tick re-checks that the lock path still refers to the file we locked. If it was removed or replaced (for example by wiping the wake state directory while a session runs), the loop stops at once: audit line `lock_replaced`, tick result `lock_replaced`, no state or heartbeat write, and resume is refused. The lock lives in the same directory as the state files, so a wipe is detected rather than prevented; the check is per tick, so a second holder could run for up to one interval before the first notices. On Windows an open handle already blocks delete and replace, so no check is needed
 - Explicit resume via `POST /api/chat/{id}/wake/resume`; returns 409 while the kill-switch file is still present
-- Restart with same `resume_id` resumes state (cap window survives)
+- Restart with the same `resume_id` restores the cap window and check state when the persisted state is intact. Missing state starts fresh; malformed JSON is renamed with a `.corrupt` suffix and starts fresh, losing the previous cap window and check state
 - ACP cannot resume sessions (sessions in-memory only; no persistence in ACP mode)
 
 **Visibility:**
@@ -142,7 +142,7 @@ settings:
 Supervisors (monitoring a long-running session) can:
 - Poll heartbeat mtime to detect staleness (> heartbeat_stale_seconds)
 - Read audit log to track tick outcomes and escalations
-- Call `POST /api/chat/sessions/<id>/wake/resume` after removing kill-switch file to restart
+- Call `POST /api/chat/{id}/wake/resume` after removing the configured kill-switch file to restart. Include the bearer token when the server requires one
 
 Secrets are specified by env var name only; values are resolved at session start, never stored. Missing names fail `Start`, preventing session registration.
 
@@ -213,7 +213,7 @@ Rules:
 ## Status and control surfaces
 
 - `GET /api/chat/{id}/wake/status`; `POST /api/chat/{id}/wake/stop`, `.../wake/resume`, `.../wake/tasks/{task-id}/cancel`
-- A2A skills `wake_status`, `wake_stop`, `wake_resume`
+- The `/a2a` dispatcher does not expose wake control skills in this release; use REST or the slash command
 - `/wake status|stop|resume` slash command (chat TUI and serve chat)
 - Web UI status card (`MonitorStatusCard.vue`); see [monitor-autostart.md](monitor-autostart.md)
 - Alerts: `settings.wake.alerts` and the `send_alert` tool, see [monitor-autostart.md](monitor-autostart.md#alerts)
@@ -251,13 +251,13 @@ curl -X POST http://localhost:9100/api/chat/{session-id}/wake/resume
 
 ### Resuming after stop
 
-After stopping (via either method), the session stays alive. To resume the timer:
+After stopping (via either method), the session stays alive. Both methods leave a kill-switch file. Remove the configured file before calling resume (the commands below use the default path):
 
 ```bash
 curl -X POST http://localhost:9100/api/chat/{session-id}/wake/resume
 ```
 
-If you stopped using the kill-switch file, you **must** remove it first:
+The REST stop endpoint and `/wake stop` also create this file. For the default path, the complete sequence is:
 
 ```bash
 rm ~/.rakitsu/wake/STOP

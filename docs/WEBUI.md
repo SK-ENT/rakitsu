@@ -2,11 +2,13 @@
 
 ## Overview
 
-The rakitsu web UI is a full-featured agent IDE accessed via `rakitsu serve`. It provides three main views:
+The rakitsu web UI is a full-featured agent IDE accessed via `rakitsu serve`. It provides five views:
 
 - **Builder** — Visual drag-and-drop agent configuration
 - **Debugger** — Real-time execution monitoring with breakpoints
 - **Inspector** — Event stream viewer
+- **Sessions** — Session history and inspection
+- **Chat** — Interactive agent conversations
 
 Start the UI:
 ```bash
