@@ -2,6 +2,9 @@
 
 > This document captures what changed across the P0 and P1 implementation phases,
 > shown as before/after comparisons with flow diagrams.
+> Retry examples below are historical phase snapshots. In v0.3.0-beta.4,
+> runtime defaults are 5 total attempts, 1s base delay and 60s maximum delay
+> (10s base delay for rate limits); see [current retry settings](configuration.md#retrysettings).
 
 ---
 

@@ -15,8 +15,9 @@ The bridge uses the **chat-session message endpoint**, not A2A or MCP:
    `interactive: true`. `--list` prints names only.
 3. `POST /api/chat/start` with `{"config_id":"<id>"}` starts a persistent
    session and returns `id`, `name`, and `config_id` (4 KiB request limit).
-4. `POST /api/sessions/{id}/message` sends `text`, fixed
-   `from_name: "claude-code-subagent"`, `wait: true`, and `timeout_ms`.
+4. `POST /api/sessions/{id}/message` sends `text`,
+   `from_name: "claude-code-subagent;depth=N"` (incoming depth plus one),
+   `wait: true`, and `timeout_ms`. The label is an unverified sender claim.
    The target must opt into `settings.session_msg.enabled: true`.
    Text is limited to 16 KiB; server wait is clamped at 120000 ms.
    The server blocks until the turn completes or the wait expires, so there

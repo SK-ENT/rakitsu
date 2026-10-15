@@ -7,13 +7,14 @@ Progressive examples from simple to complex. Each has two variants:
 ## Quick Start
 
 ```bash
-# Set your API key (all examples default to OpenAI)
-export OPENAI_API_KEY=sk-...
+# Single-file chat defaults to local Ollama:
+ollama pull llama3.1:8b
 
 # Single-file variant
 rakitsu run examples/single/01-chat/config.yaml "Hello!"
 
-# Modular variant (same behavior, different layout)
+# Modular chat currently defaults to OpenAI:
+export OPENAI_API_KEY=sk-...
 rakitsu run examples/modular/01-chat/config.yaml "Hello!"
 
 # Multi-agent pipeline

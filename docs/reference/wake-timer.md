@@ -144,5 +144,5 @@ Files are written under `~/.rakitsu/wake/`: `<session-id>.audit.jsonl`, `.state.
 ## Limits
 
 - Not available in `rakitsu acp` (sessions are in memory only).
-- State and the hourly cap survive a restart when you restart with the same session id (`resume_id`).
+- A normal restart with the same session id (`resume_id`) restores state and the hourly cap from intact persisted files. Missing state starts fresh; malformed JSON is renamed with a `.corrupt` suffix and starts fresh, losing the previous cap/check history. Persisted-state recovery does not guarantee continuous operation or recovery after power loss.
 - Events: `WAKE_TICK`, `WAKE_ESCALATE`, `WAKE_TASK_START`, `WAKE_TASK_END`.

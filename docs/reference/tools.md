@@ -77,7 +77,7 @@ Rules (from `internal/tools/cli/tool.go`):
 - The command runs directly, with no shell, unless your template is `sh -c '...'`.
 - Only commands on the built-in allowlist run: `ls cat grep find head tail wc sort uniq diff tree git npm node go python3 pip3 kubectl helm docker sh bash`. Add more with `settings.allowed_commands`. A command that is not listed is refused with "command not in system whitelist" (for example `echo`).
 - These names are always refused, even if you allow them: `rm rmdir sudo su chmod chown chgrp dd mkfs fdisk shutdown reboot halt init kill killall pkill mv cp`.
-- The running rakitsu binary can never be called from a `cli` tool.
+- Direct invocation of the running rakitsu binary (including same-file links) is blocked. Copies, wrappers and allowed interpreters can still invoke it; this is not containment (see [security](security.md)).
 - A parameter with `argv_split: true` is split on spaces into several arguments when it is the whole part of the template (for example `command: "gh {{args}}"`). Without it, the value is one argument.
 - `rakitsu` strips `RAKITSU_API_TOKEN` and `RAKITSU_SESSION_MSG_TOKEN` from the environment of the process it starts.
 
