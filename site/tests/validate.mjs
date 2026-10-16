@@ -41,7 +41,7 @@ for (const v of files) {
 }
 ok(docVersions.length >= 1, 'at least one doc version');
 { // covers: each covered tag maps to the nearest earlier listed doc version
-  const key = t => { const m = /^v(\d+)\.(\d+)\.(\d+)(?:-alpha\.(\d+))?$/.exec(t); return m ? [+m[1], +m[2], +m[3], m[4] ? 0 : 1, +(m[4] || 0)] : null; };
+  const key = t => { const m = /^v(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)\.(\d+))?$/.exec(t); return m ? [+m[1], +m[2], +m[3], m[4] ? {alpha:0,beta:1,rc:2}[m[4]] : 3, +(m[5] || 0)] : null; };
   const cmp = (a, b) => { for (let i = 0; i < 5; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; };
   for (const v of vj.versions) ok(!!key(v), v + ' has a supported tag format');
   const sorted = [...vj.versions].sort((a, b) => cmp(key(b), key(a)));

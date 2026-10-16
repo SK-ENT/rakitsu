@@ -92,7 +92,7 @@ for (const mode of ['reject', 'missing']) {
   const p = await open();
   await p.locator('#orchestration .tabs button').nth(1).click(); await p.check('#gatecb');
   await p.locator('#memory').scrollIntoViewIfNeeded();
-  await p.fill('#memory input[type=text], #memory input:not([type])', 'rollback only'); 
+  await p.fill('#memory input[type=text], #memory input:not([type])', 'rollback only');
   await p.locator('#data-flow .nd').nth(3).click();
   const flowTitle = await p.$eval('#data-flow .info h4', e => e.textContent);
   const before = await p.evaluate(() => ({ q: document.querySelector('#memory input:not([type=checkbox])').value }));

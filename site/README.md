@@ -2,9 +2,13 @@
 
 A static, no-build site: plain HTML, CSS and JS. Teaching diagrams plus a per-release spec reference, English and Japanese.
 
-Preview locally (fetch() does not work on file:// pages, so use the server):
+Preview the generated Pages tree locally (the source HTML is a template; release-specific teaching scripts are selected by the builder):
 
-    python3 -m http.server 8765 -d site      # then open http://127.0.0.1:8765/
+    out=$(mktemp -d)
+    scripts/build-pages.sh "$out"
+    python3 -m http.server 8765 --bind 127.0.0.1 -d "$out"
+
+Then open http://127.0.0.1:8765/. The builder requires an empty output directory and refuses to overwrite existing files. Choose a fresh directory for each build.
 
 Layout: `index.html` shell, `assets/` (app.js page script, viz.js diagrams, two CSS files), `data/` (versions.json and one JSON file per release tag), `tests/`.
 
@@ -24,3 +28,12 @@ Never take it from a local `git rev-parse` in a checkout that also has the inter
 Optional check: `scripts/build-pages.sh --verify-tags <git-remote-or-url> [outdir]` runs `git ls-remote --tags` against that remote and fails if any doc version's `commit` differs from the peeled tag commit, or if a doc version or covered tag is not a public tag (read-only `ls-remote`). Without the flag the build uses no network.
 
 Tests (start the server first, or run `tests/run-all.sh`, which starts and stops it): `node site/tests/validate.mjs` (data, ids, parser), `node site/tests/functional.mjs` (Play/Step, captions), `node site/tests/ui.mjs` (links, hash, screenshots), `node site/tests/gating.mjs` (version gating), `node site/tests/pages.mjs` (Pages build, covers fixture, 404).
+
+
+## Beta.4 source and archive preservation
+
+The beta.4 reference is pinned to public release commit `89a9ba62e0f151da25a2103e10f85e096cda2d1b`. Its data is manually audited (`docsGenerated: false`), not extracted automatically from source. Existing beta.3 data and the deployed shared teaching script are retained here to reproduce that archive.
+
+The builder supports numeric alpha, beta and rc prereleases. Beta.4 alone loads `assets/app-beta4.js`; archived pages keep `assets/app.js`, preserving their teaching text and stable IDs. The site's interactive diagrams are inline SVG, not Markdown Mermaid blocks.
+
+Run the builder with `--verify-tags https://github.com/SK-ENT/rakitsu.git` before publication. Check every generated version route, the selector, root/latest redirects, EN/JA content, deep links and SVG diagrams in a real browser. A successful build or JavaScript syntax check does not establish rendered correctness. Use a reviewed contribution branch and the repository's publication policy; this preparation adds no automatic deploy workflow.
