@@ -110,7 +110,7 @@ for (const u of ['/v9.9.9/', '/v0.3.0-alpha.9/', '/v0.3.0-alpha.11/index.html'])
 { const p = await page(); await p.goto(B + '/no/such/page'); ok(await p.evaluate(() => document.getElementById('notag').hidden), 'plain 404 has no release message'); await p.context().close(); }
 
 // ---- covers: built from a throwaway copy of scripts/ and site/ (a fixture entry; nothing is written to the repo)
-const COV = 'v0.3.0-alpha.20', DOC = vj.versions[0];
+const DOC = vj.versions[0], COV = DOC.replace(/\d+$/, n => String(Number(n) + 1));
 function fixtureTree(covers) {
   const t = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-covers-src-'));
   fs.mkdirSync(path.join(t, 'scripts')); fs.copyFileSync(path.join(root, 'scripts/build-pages.sh'), path.join(t, 'scripts/build-pages.sh'));
@@ -124,10 +124,18 @@ const bad1 = tryBuild({ [COV]: vj.versions[1] }, fs.mkdtempSync(path.join(os.tmp
 ok(bad1 && /nearest earlier/.test(bad1), 'build rejects a covers value that is not the nearest earlier doc version', bad1);
 const bad2 = tryBuild({ [COV]: 'v0.3.0-alpha.9' }, fs.mkdtempSync(path.join(os.tmpdir(), 'rk-covers-bad-')));
 ok(bad2 && /not a listed doc version/.test(bad2), 'build rejects a covers value that is not a doc version', bad2);
+const occupied = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-pages-occupied-'));
+fs.writeFileSync(path.join(occupied, 'keep.txt'), 'preserve this file');
+const occupiedError = tryBuild({}, occupied);
+ok(occupiedError && /nonempty output/.test(occupiedError), 'build refuses a nonempty output directory');
+ok(fs.existsSync(path.join(occupied, 'keep.txt')) && fs.readFileSync(path.join(occupied, 'keep.txt'), 'utf8') === 'preserve this file', 'build preserves unrelated output files');
+fs.rmSync(occupied, { recursive: true, force: true });
 const out2 = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-covers-out-'));
 ok(tryBuild({ [COV]: DOC }, out2) === null, 'build with a covers fixture succeeds');
 ok(fs.existsSync(path.join(out2, COV, 'index.html')) && !fs.existsSync(path.join(out2, 'data', COV + '.json')), 'covered tag has a page and no data file');
-ok(/window\.RK_TAG="v0\.3\.0-alpha\.20"/.test(fs.readFileSync(path.join(out2, COV, 'index.html'), 'utf8')), 'covered page sets RK_TAG');
+const coveredHTML = fs.readFileSync(path.join(out2, COV, 'index.html'), 'utf8');
+ok(coveredHTML.includes('window.RK_TAG=' + JSON.stringify(COV)), 'covered page sets RK_TAG');
+if (DOC === 'v0.3.0-beta.4') ok(coveredHTML.includes('src="../assets/app-beta4.js"'), 'covered beta4 docs load the beta4 teaching script');
 ok(fs.readFileSync(path.join(out2, '404.html'), 'utf8').includes(COV), '404 lists the covered tag');
 const srv2 = http.createServer((req, res) => {
   const u = decodeURIComponent(req.url.split('?')[0]); let rel = u.slice(PFX.length) || '/'; if (rel.endsWith('/')) rel += 'index.html';
@@ -156,5 +164,3 @@ await browser.close(); srv2.close(); for (const d of [out2]) fs.rmSync(d, { recu
 srv.close(); fs.rmSync(out, { recursive: true, force: true });
 console.log(`pages: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
-
-

@@ -24,9 +24,9 @@ python3 - "$site" <<'PY'
 import json,os,re,sys
 s=sys.argv[1]; v=json.load(open(s+"/data/versions.json")); cov=v.get("covers",{})
 def key(t):
-    m=re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)(?:-alpha\.(\d+))?",t)
+    m=re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)\.(\d+))?",t)
     if not m: sys.exit("unsupported tag format "+t)
-    a=m.groups(); return (int(a[0]),int(a[1]),int(a[2]),0 if a[3] else 1,int(a[3] or 0))
+    a=m.groups(); return (int(a[0]),int(a[1]),int(a[2]),{"alpha":0,"beta":1,"rc":2,None:3}[a[3]],int(a[4] or 0))
 for t in list(v["versions"])+list(cov):
     if "/" in t or t.startswith("."): sys.exit("bad tag "+t)
     key(t)
@@ -61,9 +61,13 @@ if [ -n "$verify" ]; then
   done
   [ "$bad" = 0 ] || exit 1
 fi
-find "$out" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+if [ -n "$(find "$out" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+  echo "refusing to overwrite nonempty output directory: $out; choose an empty directory" >&2
+  exit 1
+fi
 mkdir -p "$out/assets" "$out/data" "$out/latest"
 cp "$site"/assets/{app.css,app.js,viz.css,viz.js} "$out/assets/"
+if [ -f "$site/assets/app-beta4.js" ]; then cp "$site/assets/app-beta4.js" "$out/assets/"; fi
 cp -R "$site/assets/fonts" "$out/assets/fonts"
 [ -d "$site/assets/brand" ] || { echo "missing site/assets/brand" >&2; exit 1; }
 cp -R "$site/assets/brand" "$out/assets/brand"
@@ -108,11 +112,15 @@ EOF
 } > "$out/404.html"
 for t in $tags; do
   mkdir -p "$out/$t"
-  python3 - "$site/index.html" "$t" > "$out/$t/index.html" <<'PY'
+  python3 - "$site/index.html" "$t" "$site/data/versions.json" > "$out/$t/index.html" <<'PY'
 import sys,re
 h=open(sys.argv[1]).read(); t=sys.argv[2]
 h=h.replace('href="assets/','href="../assets/').replace('src="assets/','src="../assets/')
 h=h.replace('<script src="../assets/viz.js">','<script>window.RK_TAG=%s;</script>\n<script src="../assets/viz.js">'%__import__("json").dumps(t),1)
+versions=__import__('json').load(open(sys.argv[3]))
+doc=versions.get('covers', {}).get(t, t)
+if doc == 'v0.3.0-beta.4':
+    h=h.replace('src="../assets/app.js"', 'src="../assets/app-beta4.js"')
 h=h.replace('<title>Rakitsu Spec Reference</title>','<title>Rakitsu Spec Reference %s</title>'%t,1)
 assert 'RK_TAG' in h and '"../assets/app.css' in h
 sys.stdout.write(h)
