@@ -5,5 +5,5 @@ sqlalchemy==2.0.23
 redis==5.0.1
 celery==5.3.6
 pytest==9.0.3
-black==26.10.1
+black>=26.10.1
 mypy==1.7.1
