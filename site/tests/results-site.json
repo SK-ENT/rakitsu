@@ -1,0 +1,938 @@
+[
+ {
+  "widget": "react",
+  "check": "initial",
+  "pass": true,
+  "detail": "{\"i\":0,\"t\":0.034,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true}"
+ },
+ {
+  "widget": "react",
+  "check": "label/aria synced at start",
+  "pass": true,
+  "detail": "{\"i\":0,\"t\":0.034,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true}"
+ },
+ {
+  "widget": "react",
+  "check": "pause stops motion + label",
+  "pass": true,
+  "detail": "{\"sp\":{\"i\":0,\"t\":0.251,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false},\"sp2\":{\"i\":0,\"t\":0.251,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false}}"
+ },
+ {
+  "widget": "react",
+  "check": "resume continues same step (no restart)",
+  "pass": true,
+  "detail": "{\"before\":[0,0.251],\"after\":[0,0.291]}"
+ },
+ {
+  "widget": "react",
+  "check": "Step while playing: advances exactly 1 and pauses",
+  "pass": true,
+  "detail": "{\"sa\":0,\"sb\":1,\"playing\":false}"
+ },
+ {
+  "widget": "react",
+  "check": "Step while paused: +1 and stays paused",
+  "pass": true,
+  "detail": "{\"from\":1,\"to\":2}"
+ },
+ {
+  "widget": "react",
+  "check": "Step at last step wraps to 0",
+  "pass": true,
+  "detail": "{\"last\":5,\"after\":0}"
+ },
+ {
+  "widget": "react",
+  "check": "Step then Play keeps the stepped step visible >=120ms",
+  "pass": true,
+  "detail": "{\"stepped\":1,\"after120ms\":1}"
+ },
+ {
+  "widget": "react",
+  "check": "double-click Step = +2",
+  "pass": true,
+  "detail": "{\"from\":1,\"to\":3}"
+ },
+ {
+  "widget": "react",
+  "check": "double-click Play toggles twice (state unchanged, label in sync)",
+  "pass": true,
+  "detail": "{\"i\":3,\"t\":1,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false}"
+ },
+ {
+  "widget": "react",
+  "check": "keyboard Space/Enter each toggle Play once",
+  "pass": true,
+  "detail": "{\"k0\":false,\"k1\":true,\"k2\":false}"
+ },
+ {
+  "widget": "react",
+  "check": "keyboard Enter on Step advances one",
+  "pass": true,
+  "detail": "{\"q0\":3,\"q1\":4}"
+ },
+ {
+  "widget": "flow",
+  "check": "initial",
+  "pass": true,
+  "detail": "{\"i\":2,\"t\":0.006,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true}"
+ },
+ {
+  "widget": "flow",
+  "check": "label/aria synced at start",
+  "pass": true,
+  "detail": "{\"i\":2,\"t\":0.006,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true}"
+ },
+ {
+  "widget": "flow",
+  "check": "pause stops motion + label",
+  "pass": true,
+  "detail": "{\"sp\":{\"i\":2,\"t\":0.177,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false},\"sp2\":{\"i\":2,\"t\":0.177,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false}}"
+ },
+ {
+  "widget": "flow",
+  "check": "resume continues same step (no restart)",
+  "pass": true,
+  "detail": "{\"before\":[2,0.177],\"after\":[2,0.208]}"
+ },
+ {
+  "widget": "flow",
+  "check": "Step while playing: advances exactly 1 and pauses",
+  "pass": true,
+  "detail": "{\"sa\":2,\"sb\":3,\"playing\":false}"
+ },
+ {
+  "widget": "flow",
+  "check": "Step while paused: +1 and stays paused",
+  "pass": true,
+  "detail": "{\"from\":3,\"to\":4}"
+ },
+ {
+  "widget": "flow",
+  "check": "Step at last step wraps to 0",
+  "pass": true,
+  "detail": "{\"last\":9,\"after\":0}"
+ },
+ {
+  "widget": "flow",
+  "check": "Step then Play keeps the stepped step visible >=120ms",
+  "pass": true,
+  "detail": "{\"stepped\":1,\"after120ms\":1}"
+ },
+ {
+  "widget": "flow",
+  "check": "double-click Step = +2",
+  "pass": true,
+  "detail": "{\"from\":1,\"to\":3}"
+ },
+ {
+  "widget": "flow",
+  "check": "double-click Play toggles twice (state unchanged, label in sync)",
+  "pass": true,
+  "detail": "{\"i\":3,\"t\":1,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false}"
+ },
+ {
+  "widget": "flow",
+  "check": "keyboard Space/Enter each toggle Play once",
+  "pass": true,
+  "detail": "{\"k0\":false,\"k1\":true,\"k2\":false}"
+ },
+ {
+  "widget": "flow",
+  "check": "keyboard Enter on Step advances one",
+  "pass": true,
+  "detail": "{\"q0\":3,\"q1\":4}"
+ },
+ {
+  "widget": "orch",
+  "check": "initial",
+  "pass": true,
+  "detail": "{\"i\":0,\"t\":0.005,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true}"
+ },
+ {
+  "widget": "orch",
+  "check": "label/aria synced at start",
+  "pass": true,
+  "detail": "{\"i\":0,\"t\":0.005,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true}"
+ },
+ {
+  "widget": "orch",
+  "check": "pause stops motion + label",
+  "pass": true,
+  "detail": "{\"sp\":{\"i\":0,\"t\":0.168,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false},\"sp2\":{\"i\":0,\"t\":0.168,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false}}"
+ },
+ {
+  "widget": "orch",
+  "check": "resume continues same step (no restart)",
+  "pass": true,
+  "detail": "{\"before\":[0,0.168],\"after\":[0,0.198]}"
+ },
+ {
+  "widget": "orch",
+  "check": "Step while playing: advances exactly 1 and pauses",
+  "pass": true,
+  "detail": "{\"sa\":0,\"sb\":1,\"playing\":false}"
+ },
+ {
+  "widget": "orch",
+  "check": "Step while paused: +1 and stays paused",
+  "pass": true,
+  "detail": "{\"from\":1,\"to\":2}"
+ },
+ {
+  "widget": "orch",
+  "check": "Step at last step wraps to 0",
+  "pass": true,
+  "detail": "{\"last\":4,\"after\":0}"
+ },
+ {
+  "widget": "orch",
+  "check": "Step then Play keeps the stepped step visible >=120ms",
+  "pass": true,
+  "detail": "{\"stepped\":1,\"after120ms\":1}"
+ },
+ {
+  "widget": "orch",
+  "check": "double-click Step = +2",
+  "pass": true,
+  "detail": "{\"from\":1,\"to\":3}"
+ },
+ {
+  "widget": "orch",
+  "check": "double-click Play toggles twice (state unchanged, label in sync)",
+  "pass": true,
+  "detail": "{\"i\":3,\"t\":1,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false}"
+ },
+ {
+  "widget": "orch",
+  "check": "keyboard Space/Enter each toggle Play once",
+  "pass": true,
+  "detail": "{\"k0\":false,\"k1\":true,\"k2\":false}"
+ },
+ {
+  "widget": "orch",
+  "check": "keyboard Enter on Step advances one",
+  "pass": true,
+  "detail": "{\"q0\":3,\"q1\":4}"
+ },
+ {
+  "widget": "wake",
+  "check": "initial",
+  "pass": true,
+  "detail": "{\"i\":0,\"t\":0.012,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true}"
+ },
+ {
+  "widget": "wake",
+  "check": "label/aria synced at start",
+  "pass": true,
+  "detail": "{\"i\":0,\"t\":0.012,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true}"
+ },
+ {
+  "widget": "wake",
+  "check": "pause stops motion + label",
+  "pass": true,
+  "detail": "{\"sp\":{\"i\":0,\"t\":0.345,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false},\"sp2\":{\"i\":0,\"t\":0.345,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false}}"
+ },
+ {
+  "widget": "wake",
+  "check": "resume continues same step (no restart)",
+  "pass": true,
+  "detail": "{\"before\":[0,0.345],\"after\":[0,0.412]}"
+ },
+ {
+  "widget": "wake",
+  "check": "Step while playing: advances exactly 1 and pauses",
+  "pass": true,
+  "detail": "{\"sa\":0,\"sb\":1,\"playing\":false}"
+ },
+ {
+  "widget": "wake",
+  "check": "Step while paused: +1 and stays paused",
+  "pass": true,
+  "detail": "{\"from\":1,\"to\":2}"
+ },
+ {
+  "widget": "wake",
+  "check": "Step at last step wraps to 0",
+  "pass": true,
+  "detail": "{\"last\":11,\"after\":0}"
+ },
+ {
+  "widget": "wake",
+  "check": "Step then Play keeps the stepped step visible >=120ms",
+  "pass": true,
+  "detail": "{\"stepped\":1,\"after120ms\":1}"
+ },
+ {
+  "widget": "wake",
+  "check": "double-click Step = +2",
+  "pass": true,
+  "detail": "{\"from\":1,\"to\":3}"
+ },
+ {
+  "widget": "wake",
+  "check": "double-click Play toggles twice (state unchanged, label in sync)",
+  "pass": true,
+  "detail": "{\"i\":3,\"t\":1,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false}"
+ },
+ {
+  "widget": "wake",
+  "check": "keyboard Space/Enter each toggle Play once",
+  "pass": true,
+  "detail": "{\"k0\":false,\"k1\":true,\"k2\":false}"
+ },
+ {
+  "widget": "wake",
+  "check": "keyboard Enter on Step advances one",
+  "pass": true,
+  "detail": "{\"q0\":3,\"q1\":4}"
+ },
+ {
+  "widget": "memory",
+  "check": "initial",
+  "pass": true,
+  "detail": "{\"i\":0,\"t\":0.005,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true}"
+ },
+ {
+  "widget": "memory",
+  "check": "label/aria synced at start",
+  "pass": true,
+  "detail": "{\"i\":0,\"t\":0.005,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true}"
+ },
+ {
+  "widget": "memory",
+  "check": "pause stops motion + label",
+  "pass": true,
+  "detail": "{\"sp\":{\"i\":0,\"t\":0.141,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false},\"sp2\":{\"i\":0,\"t\":0.141,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false}}"
+ },
+ {
+  "widget": "memory",
+  "check": "resume continues same step (no restart)",
+  "pass": true,
+  "detail": "{\"before\":[0,0.141],\"after\":[0,0.168]}"
+ },
+ {
+  "widget": "memory",
+  "check": "Step while playing: advances exactly 1 and pauses",
+  "pass": true,
+  "detail": "{\"sa\":0,\"sb\":1,\"playing\":false}"
+ },
+ {
+  "widget": "memory",
+  "check": "Step while paused: +1 and stays paused",
+  "pass": true,
+  "detail": "{\"from\":1,\"to\":2}"
+ },
+ {
+  "widget": "memory",
+  "check": "Step at last step wraps to 0",
+  "pass": true,
+  "detail": "{\"last\":3,\"after\":0}"
+ },
+ {
+  "widget": "memory",
+  "check": "Step then Play keeps the stepped step visible >=120ms",
+  "pass": true,
+  "detail": "{\"stepped\":1,\"after120ms\":1}"
+ },
+ {
+  "widget": "memory",
+  "check": "double-click Step = +2",
+  "pass": true,
+  "detail": "{\"from\":1,\"to\":3}"
+ },
+ {
+  "widget": "memory",
+  "check": "double-click Play toggles twice (state unchanged, label in sync)",
+  "pass": true,
+  "detail": "{\"i\":3,\"t\":1,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false}"
+ },
+ {
+  "widget": "memory",
+  "check": "keyboard Space/Enter each toggle Play once",
+  "pass": true,
+  "detail": "{\"k0\":false,\"k1\":true,\"k2\":false}"
+ },
+ {
+  "widget": "memory",
+  "check": "keyboard Enter on Step advances one",
+  "pass": true,
+  "detail": "{\"q0\":3,\"q1\":0}"
+ },
+ {
+  "widget": "protocols",
+  "check": "initial",
+  "pass": true,
+  "detail": "{\"i\":0,\"t\":0.006,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true}"
+ },
+ {
+  "widget": "protocols",
+  "check": "label/aria synced at start",
+  "pass": true,
+  "detail": "{\"i\":0,\"t\":0.006,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true}"
+ },
+ {
+  "widget": "protocols",
+  "check": "pause stops motion + label",
+  "pass": true,
+  "detail": "{\"sp\":{\"i\":0,\"t\":0.175,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false},\"sp2\":{\"i\":0,\"t\":0.175,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false}}"
+ },
+ {
+  "widget": "protocols",
+  "check": "resume continues same step (no restart)",
+  "pass": true,
+  "detail": "{\"before\":[0,0.175],\"after\":[0,0.207]}"
+ },
+ {
+  "widget": "protocols",
+  "check": "Step while playing: advances exactly 1 and pauses",
+  "pass": true,
+  "detail": "{\"sa\":0,\"sb\":1,\"playing\":false}"
+ },
+ {
+  "widget": "protocols",
+  "check": "Step while paused: +1 and stays paused",
+  "pass": true,
+  "detail": "{\"from\":1,\"to\":2}"
+ },
+ {
+  "widget": "protocols",
+  "check": "Step at last step wraps to 0",
+  "pass": true,
+  "detail": "{\"last\":7,\"after\":0}"
+ },
+ {
+  "widget": "protocols",
+  "check": "Step then Play keeps the stepped step visible >=120ms",
+  "pass": true,
+  "detail": "{\"stepped\":1,\"after120ms\":1}"
+ },
+ {
+  "widget": "protocols",
+  "check": "double-click Step = +2",
+  "pass": true,
+  "detail": "{\"from\":1,\"to\":3}"
+ },
+ {
+  "widget": "protocols",
+  "check": "double-click Play toggles twice (state unchanged, label in sync)",
+  "pass": true,
+  "detail": "{\"i\":3,\"t\":1,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false}"
+ },
+ {
+  "widget": "protocols",
+  "check": "keyboard Space/Enter each toggle Play once",
+  "pass": true,
+  "detail": "{\"k0\":false,\"k1\":true,\"k2\":false}"
+ },
+ {
+  "widget": "protocols",
+  "check": "keyboard Enter on Step advances one",
+  "pass": true,
+  "detail": "{\"q0\":3,\"q1\":4}"
+ },
+ {
+  "widget": "react",
+  "check": "no duplicate loops: steps per 6s before vs after 25 cycles+renders",
+  "pass": true,
+  "detail": "{\"base\":4,\"after\":3}"
+ },
+ {
+  "widget": "wake",
+  "check": "no duplicate loops: steps per 6s before vs after 25 cycles+renders",
+  "pass": true,
+  "detail": "{\"base\":7,\"after\":6}"
+ },
+ {
+  "widget": "all",
+  "check": "anims array size stable (6) after cycles",
+  "pass": true,
+  "detail": "6"
+ },
+ {
+  "widget": "react",
+  "check": "off-screen: animation does not advance while the widget is not visible",
+  "pass": true,
+  "detail": "{\"stepsWhileOffscreen\":0}"
+ },
+ {
+  "widget": "all",
+  "check": "no page errors",
+  "pass": true,
+  "detail": "[]"
+ },
+ {
+  "widget": "react",
+  "check": "EN->JA mid-play keeps step index and playing state",
+  "pass": true,
+  "detail": "{\"before\":[2,true],\"after\":[3,true],\"label\":\"一時停止\"}"
+ },
+ {
+  "widget": "react",
+  "check": "JA labels rendered",
+  "pass": true,
+  "detail": "一時停止"
+ },
+ {
+  "widget": "react",
+  "check": "Simple/Detail switch keeps step index",
+  "pass": true,
+  "detail": "{\"before\":4,\"after\":4}"
+ },
+ {
+  "widget": "flow",
+  "check": "EN->JA mid-play keeps step index and playing state",
+  "pass": true,
+  "detail": "{\"before\":[4,true],\"after\":[5,true],\"label\":\"一時停止\"}"
+ },
+ {
+  "widget": "flow",
+  "check": "JA labels rendered",
+  "pass": true,
+  "detail": "一時停止"
+ },
+ {
+  "widget": "flow",
+  "check": "Simple/Detail switch keeps step index",
+  "pass": true,
+  "detail": "{\"before\":6,\"after\":6}"
+ },
+ {
+  "widget": "wake",
+  "check": "EN->JA mid-play keeps step index and playing state",
+  "pass": true,
+  "detail": "{\"before\":[2,true],\"after\":[3,true],\"label\":\"一時停止\"}"
+ },
+ {
+  "widget": "wake",
+  "check": "JA labels rendered",
+  "pass": true,
+  "detail": "一時停止"
+ },
+ {
+  "widget": "wake",
+  "check": "Simple/Detail switch keeps step index",
+  "pass": true,
+  "detail": "{\"before\":4,\"after\":4}"
+ },
+ {
+  "widget": "memory",
+  "check": "EN->JA mid-play keeps step index and playing state",
+  "pass": true,
+  "detail": "{\"before\":[2,true],\"after\":[3,true],\"label\":\"一時停止\"}"
+ },
+ {
+  "widget": "memory",
+  "check": "JA labels rendered",
+  "pass": true,
+  "detail": "一時停止"
+ },
+ {
+  "widget": "memory",
+  "check": "Simple/Detail switch keeps step index",
+  "pass": true,
+  "detail": "{\"before\":0,\"after\":0}"
+ },
+ {
+  "widget": "protocols",
+  "check": "EN->JA mid-play keeps step index and playing state",
+  "pass": true,
+  "detail": "{\"before\":[2,true],\"after\":[3,true],\"label\":\"一時停止\"}"
+ },
+ {
+  "widget": "protocols",
+  "check": "JA labels rendered",
+  "pass": true,
+  "detail": "一時停止"
+ },
+ {
+  "widget": "protocols",
+  "check": "Simple/Detail switch keeps step index",
+  "pass": true,
+  "detail": "{\"before\":4,\"after\":4}"
+ },
+ {
+  "widget": "orch",
+  "check": "tab 0: state reset, one tab pressed, anims==6",
+  "pass": true,
+  "detail": "{\"s\":{\"i\":0,\"t\":0,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true},\"others\":1}"
+ },
+ {
+  "widget": "orch",
+  "check": "tab 0->1 after Step: new widget playing, counters from rest",
+  "pass": true,
+  "detail": "{\"i\":0,\"t\":0,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true}"
+ },
+ {
+  "widget": "orch",
+  "check": "tab 1: state reset, one tab pressed, anims==6",
+  "pass": true,
+  "detail": "{\"s\":{\"i\":0,\"t\":0,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true},\"others\":1}"
+ },
+ {
+  "widget": "orch",
+  "check": "tab 1->2 after Step: new widget playing, counters from rest",
+  "pass": true,
+  "detail": "{\"i\":0,\"t\":0,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true}"
+ },
+ {
+  "widget": "orch",
+  "check": "tab 2: state reset, one tab pressed, anims==6",
+  "pass": true,
+  "detail": "{\"s\":{\"i\":0,\"t\":0,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true},\"others\":1}"
+ },
+ {
+  "widget": "orch",
+  "check": "tab 2->3 after Step: new widget playing, counters from rest",
+  "pass": true,
+  "detail": "{\"i\":0,\"t\":0,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true}"
+ },
+ {
+  "widget": "orch",
+  "check": "tab 3: state reset, one tab pressed, anims==6",
+  "pass": true,
+  "detail": "{\"s\":{\"i\":0,\"t\":0,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true},\"others\":1}"
+ },
+ {
+  "widget": "orch",
+  "check": "tab 3->0 after Step: new widget playing, counters from rest",
+  "pass": true,
+  "detail": "{\"i\":0,\"t\":0,\"playing\":true,\"label\":\"Pause\",\"pressed\":\"true\",\"step\":\"Step\",\"n\":6,\"running\":true}"
+ },
+ {
+  "widget": "react",
+  "check": "reduced-motion: initial paused at rest state, label Play",
+  "pass": true,
+  "detail": "{\"i\":5,\"t\":1,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false}"
+ },
+ {
+  "widget": "react",
+  "check": "reduced-motion: Play still advances steps (not a silent no-op) but dashes static",
+  "pass": true,
+  "detail": "{\"s0\":[5,1],\"s1\":[1,0.439],\"running\":false}"
+ },
+ {
+  "widget": "react",
+  "check": "reduced-motion: Step works",
+  "pass": true,
+  "detail": "{\"b\":1,\"a\":2}"
+ },
+ {
+  "widget": "flow",
+  "check": "reduced-motion: initial paused at rest state, label Play",
+  "pass": true,
+  "detail": "{\"i\":2,\"t\":1,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false}"
+ },
+ {
+  "widget": "flow",
+  "check": "reduced-motion: Play still advances steps (not a silent no-op) but dashes static",
+  "pass": true,
+  "detail": "{\"s0\":[2,1],\"s1\":[4,0.213],\"running\":false}"
+ },
+ {
+  "widget": "flow",
+  "check": "reduced-motion: Step works",
+  "pass": true,
+  "detail": "{\"b\":4,\"a\":5}"
+ },
+ {
+  "widget": "orch",
+  "check": "reduced-motion: initial paused at rest state, label Play",
+  "pass": true,
+  "detail": "{\"i\":4,\"t\":1,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false}"
+ },
+ {
+  "widget": "orch",
+  "check": "reduced-motion: Play still advances steps (not a silent no-op) but dashes static",
+  "pass": true,
+  "detail": "{\"s0\":[4,1],\"s1\":[1,0.145],\"running\":false}"
+ },
+ {
+  "widget": "orch",
+  "check": "reduced-motion: Step works",
+  "pass": true,
+  "detail": "{\"b\":1,\"a\":2}"
+ },
+ {
+  "widget": "wake",
+  "check": "reduced-motion: initial paused at rest state, label Play",
+  "pass": true,
+  "detail": "{\"i\":11,\"t\":1,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false}"
+ },
+ {
+  "widget": "wake",
+  "check": "reduced-motion: Play still advances steps (not a silent no-op) but dashes static",
+  "pass": true,
+  "detail": "{\"s0\":[11,1],\"s1\":[2,0.43],\"running\":false}"
+ },
+ {
+  "widget": "wake",
+  "check": "reduced-motion: Step works",
+  "pass": true,
+  "detail": "{\"b\":2,\"a\":3}"
+ },
+ {
+  "widget": "memory",
+  "check": "reduced-motion: initial paused at rest state, label Play",
+  "pass": true,
+  "detail": "{\"i\":3,\"t\":1,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false}"
+ },
+ {
+  "widget": "memory",
+  "check": "reduced-motion: Play still advances steps (not a silent no-op) but dashes static",
+  "pass": true,
+  "detail": "{\"s0\":[3,1],\"s1\":[0,0.992],\"running\":false}"
+ },
+ {
+  "widget": "memory",
+  "check": "reduced-motion: Step works",
+  "pass": true,
+  "detail": "{\"b\":1,\"a\":2}"
+ },
+ {
+  "widget": "protocols",
+  "check": "reduced-motion: initial paused at rest state, label Play",
+  "pass": true,
+  "detail": "{\"i\":0,\"t\":1,\"playing\":false,\"label\":\"Play\",\"pressed\":\"false\",\"step\":\"Step\",\"n\":6,\"running\":false}"
+ },
+ {
+  "widget": "protocols",
+  "check": "reduced-motion: Play still advances steps (not a silent no-op) but dashes static",
+  "pass": true,
+  "detail": "{\"s0\":[0,1],\"s1\":[2,0.208],\"running\":false}"
+ },
+ {
+  "widget": "protocols",
+  "check": "reduced-motion: Step works",
+  "pass": true,
+  "detail": "{\"b\":2,\"a\":3}"
+ },
+ {
+  "widget": "react",
+  "check": "caption Observe step lights default path obs->think (reflection is off by default)",
+  "pass": true,
+  "detail": "[\"Observe -> Reflect\",\"Observe -> Think [reflection off]\"]"
+ },
+ {
+  "widget": "react",
+  "check": "every step: lit edge starts at the active node (or none for terminal)",
+  "pass": true,
+  "detail": "[\"Think:Think -> Act [tool_call]\",\"Act:Act -> Observe [result]\",\"Observe:Observe -> Reflect|Observe -> Think [reflection off]\",\"Reflect:Reflect -> Think\",\"Think:Think -> Answer\",\"Answer:\"]"
+ },
+ {
+  "widget": "react",
+  "check": "edge target of step i == active node of step i+1 (continuity)",
+  "pass": true,
+  "detail": "[\"Think:Think -> Act [tool_call]\",\"Act:Act -> Observe [result]\",\"Observe:Observe -> Reflect|Observe -> Think [reflection off]\",\"Reflect:Reflect -> Think\",\"Think:Think -> Answer\",\"Answer:\"]"
+ },
+ {
+  "widget": "react",
+  "check": "Answer reachable: a Think step lights think->answer",
+  "pass": true,
+  "detail": "edges per step above"
+ },
+ {
+  "widget": "react",
+  "check": "no edge is labelled \"optional\" while being the default path",
+  "pass": true,
+  "detail": ""
+ },
+ {
+  "widget": "orch",
+  "check": "react: lit edge from == caption hop source, to == next hop source (continuity)",
+  "pass": true,
+  "detail": "[\"Supervisor,LogAnalyzer:Supervisor -> LogAnalyzer\",\"Supervisor,LogAnalyzer:LogAnalyzer -> Supervisor\",\"Supervisor,APISpecialist:Supervisor -> APISpecialist\",\"Supervisor,APISpecialist:APISpecialist -> Supervisor\",\"Supervisor:\"]"
+ },
+ {
+  "widget": "orch",
+  "check": "pipeline: lit edge from == caption hop source, to == next hop source (continuity)",
+  "pass": true,
+  "detail": "[\"Planner,Developer:Planner -> Developer\",\"Developer,gate:Developer -> gate|tool log -> gate [record]\",\"gate(bad):tool log -> gate [record]\"]"
+ },
+ {
+  "widget": "orch",
+  "check": "hier: lit edge from == caption hop source, to == next hop source (continuity)",
+  "pass": true,
+  "detail": "[\"Orchestrator,Worker A:Orchestrator -> Worker A\",\"Orchestrator,Worker A:Worker A -> Orchestrator\",\"Orchestrator,Worker B:Orchestrator -> Worker B\",\"Orchestrator,Worker B:Worker B -> Orchestrator\",\"Orchestrator:\"]"
+ },
+ {
+  "widget": "orch",
+  "check": "loop: lit edge from == caption hop source, to == next hop source (continuity)",
+  "pass": true,
+  "detail": "[\"Worker agent,Judge:Worker agent -> Judge\",\"Worker agent,Judge:Judge -> Worker agent\",\"Worker agent,Judge:Worker agent -> Judge\",\"Judge,done:Judge -> done\"]"
+ },
+ {
+  "widget": "orch",
+  "check": "pipeline dev->gate hop: record edge (log->gate) lit, as caption says the gate reads the record",
+  "pass": true,
+  "detail": "[\"Developer -> gate\",\"tool log -> gate [record]\"]"
+ },
+ {
+  "widget": "orch",
+  "check": "pipeline fail case: caption says 0 write_file and log node says 0",
+  "pass": true,
+  "detail": "{\"n\":3,\"cap\":\"Step 3/3. checkRequireToolCall: the record shows 0 write_file calls. The step fails, whatever the agent claimed.\"}"
+ },
+ {
+  "widget": "orch",
+  "check": "checkbox ticked: 4 hops, caption says write_file call recorded, log node says calls: 1",
+  "pass": true,
+  "detail": "{\"n\":4,\"logOn\":[\"tool logwrite_file calls: 1\"]}"
+ },
+ {
+  "widget": "orch",
+  "check": "ReAct/Hier: supervisor->worker hop highlights the receiving worker too (caption: delegates to X)",
+  "pass": true,
+  "detail": "[\"Supervisor\",\"LogAnalyzer\"]"
+ },
+ {
+  "widget": "orch",
+  "check": "loop: Worker node subtitle should not say \"type: loop\" (loop is the step type)",
+  "pass": true,
+  "detail": ""
+ },
+ {
+  "widget": "wake",
+  "check": "counters at every step: ticks=i+1, model calls=escalations so far",
+  "pass": true,
+  "detail": "[\"ticks 1model calls 0quiet ticks cost 0 calls\",\"ticks 2model calls 0quiet ticks cost 0 calls\",\"ticks 3model calls 0quiet ticks cost 0 calls\",\"ticks 4model calls 0quiet ticks cost 0 calls\",\"ticks 5model calls 1quiet ticks cost 0 calls\",\"ticks 6model calls 1quiet ticks cost 0 calls\",\"ticks 7model calls 1quiet ticks cost 0 calls\",\"ticks 8model calls 2quiet ticks cost 0 calls\",\"ticks 9model calls 2quiet ticks cost 0 calls\",\"ticks 10model calls 2quiet ticks cost 0 calls\",\"ticks 11model calls 2quiet ticks cost 0 calls\",\"ticks 12model calls 2quiet ticks cost 0 calls\"]"
+ },
+ {
+  "widget": "wake",
+  "check": "final: 12 ticks / 2 model calls / quiet cost 0",
+  "pass": true,
+  "detail": "ticks 12model calls 2quiet ticks cost 0 calls"
+ },
+ {
+  "widget": "wake",
+  "check": "escalation steps light tick->LLM edge",
+  "pass": true,
+  "detail": "[[\"? -> LLM [event]\"],[\"? -> LLM [event]\"]]"
+ },
+ {
+  "widget": "wake",
+  "check": "suppressed (repeat) step lights no model edge, 0 calls",
+  "pass": true,
+  "detail": "[]"
+ },
+ {
+  "widget": "memory",
+  "check": "BM25 q=\"deploy failed rollback\" k=1: scores equal independent calc; top rows == recalled_memory block == expected",
+  "pass": true,
+  "detail": "{\"scoreOK\":true,\"want\":[\"Failed deploy checklist\"],\"topShown\":[\"Failed deploy checklist\"],\"inPre\":[\"Failed deploy checklist\"]}"
+ },
+ {
+  "widget": "memory",
+  "check": "BM25 q=\"deploy failed rollback\" k=3: scores equal independent calc; top rows == recalled_memory block == expected",
+  "pass": true,
+  "detail": "{\"scoreOK\":true,\"want\":[\"Failed deploy checklist\",\"Rollback procedure\",\"Retry with backoff\"],\"topShown\":[\"Failed deploy checklist\",\"Retry with backoff\",\"Rollback procedure\"],\"inPre\":[\"Failed deploy checklist\",\"Retry with backoff\",\"Rollback procedure\"]}"
+ },
+ {
+  "widget": "memory",
+  "check": "BM25 q=\"deploy failed rollback\" k=5: scores equal independent calc; top rows == recalled_memory block == expected",
+  "pass": true,
+  "detail": "{\"scoreOK\":true,\"want\":[\"Failed deploy checklist\",\"Rollback procedure\",\"Retry with backoff\",\"Cache after deploy\"],\"topShown\":[\"Cache after deploy\",\"Failed deploy checklist\",\"Retry with backoff\",\"Rollback procedure\"],\"inPre\":[\"Cache after deploy\",\"Failed deploy checklist\",\"Retry with backoff\",\"Rollback procedure\"]}"
+ },
+ {
+  "widget": "memory",
+  "check": "BM25 q=\"retry backoff\" k=1: scores equal independent calc; top rows == recalled_memory block == expected",
+  "pass": true,
+  "detail": "{\"scoreOK\":true,\"want\":[\"Retry with backoff\"],\"topShown\":[\"Retry with backoff\"],\"inPre\":[\"Retry with backoff\"]}"
+ },
+ {
+  "widget": "memory",
+  "check": "BM25 q=\"retry backoff\" k=3: scores equal independent calc; top rows == recalled_memory block == expected",
+  "pass": true,
+  "detail": "{\"scoreOK\":true,\"want\":[\"Retry with backoff\"],\"topShown\":[\"Retry with backoff\"],\"inPre\":[\"Retry with backoff\"]}"
+ },
+ {
+  "widget": "memory",
+  "check": "BM25 q=\"retry backoff\" k=5: scores equal independent calc; top rows == recalled_memory block == expected",
+  "pass": true,
+  "detail": "{\"scoreOK\":true,\"want\":[\"Retry with backoff\"],\"topShown\":[\"Retry with backoff\"],\"inPre\":[\"Retry with backoff\"]}"
+ },
+ {
+  "widget": "memory",
+  "check": "BM25 q=\"staging vpn host\" k=1: scores equal independent calc; top rows == recalled_memory block == expected",
+  "pass": true,
+  "detail": "{\"scoreOK\":true,\"want\":[\"Staging host\"],\"topShown\":[\"Staging host\"],\"inPre\":[\"Staging host\"]}"
+ },
+ {
+  "widget": "memory",
+  "check": "BM25 q=\"staging vpn host\" k=3: scores equal independent calc; top rows == recalled_memory block == expected",
+  "pass": true,
+  "detail": "{\"scoreOK\":true,\"want\":[\"Staging host\"],\"topShown\":[\"Staging host\"],\"inPre\":[\"Staging host\"]}"
+ },
+ {
+  "widget": "memory",
+  "check": "BM25 q=\"staging vpn host\" k=5: scores equal independent calc; top rows == recalled_memory block == expected",
+  "pass": true,
+  "detail": "{\"scoreOK\":true,\"want\":[\"Staging host\"],\"topShown\":[\"Staging host\"],\"inPre\":[\"Staging host\"]}"
+ },
+ {
+  "widget": "memory",
+  "check": "BM25 q=\"zzz nothing\" k=1: scores equal independent calc; top rows == recalled_memory block == expected",
+  "pass": true,
+  "detail": "{\"scoreOK\":true,\"want\":[],\"topShown\":[],\"inPre\":[]}"
+ },
+ {
+  "widget": "memory",
+  "check": "BM25 q=\"zzz nothing\" k=3: scores equal independent calc; top rows == recalled_memory block == expected",
+  "pass": true,
+  "detail": "{\"scoreOK\":true,\"want\":[],\"topShown\":[],\"inPre\":[]}"
+ },
+ {
+  "widget": "memory",
+  "check": "BM25 q=\"zzz nothing\" k=5: scores equal independent calc; top rows == recalled_memory block == expected",
+  "pass": true,
+  "detail": "{\"scoreOK\":true,\"want\":[],\"topShown\":[],\"inPre\":[]}"
+ },
+ {
+  "widget": "flow",
+  "check": "Step visibly changes the diagram for every selected node",
+  "pass": true,
+  "detail": "{\"nodesWhereStepChangesNothing\":[]}"
+ },
+ {
+  "widget": "flow",
+  "check": "lit edge always leaves the selected node (arrow direction matches data flow)",
+  "pass": true,
+  "detail": "[]"
+ },
+ {
+  "widget": "flow",
+  "check": "info panel title matches highlighted node",
+  "pass": true,
+  "detail": "{\"info\":\"Web UI  /  builder, debugger\",\"hl\":\"Web UI\"}"
+ },
+ {
+  "widget": "flow",
+  "check": "Step: lit edge source == highlighted node == info panel == caption",
+  "pass": true,
+  "detail": "[]"
+ },
+ {
+  "widget": "protocols",
+  "check": "Step visibly changes the diagram for every selected node",
+  "pass": true,
+  "detail": "{\"nodesWhereStepChangesNothing\":[]}"
+ },
+ {
+  "widget": "protocols",
+  "check": "lit edge always leaves the selected node (arrow direction matches data flow)",
+  "pass": true,
+  "detail": "[]"
+ },
+ {
+  "widget": "protocols",
+  "check": "info panel title matches highlighted node",
+  "pass": true,
+  "detail": "{\"info\":\"Other rakitsu  /  A2A agent\",\"hl\":\"Other rakitsu\"}"
+ },
+ {
+  "widget": "protocols",
+  "check": "Step: lit edge source == highlighted node == info panel == caption",
+  "pass": true,
+  "detail": "[]"
+ }
+]
