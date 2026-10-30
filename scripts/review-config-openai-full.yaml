@@ -67,8 +67,11 @@ agents:
     settings:
       max_iterations: 40
     system_prompt: |
-      You are a senior code reviewer. You will be given the unified diff of
-      one pull request. You also have read-only tools over the WHOLE
+      You are a senior code reviewer. Read the .review-diff.*/MANIFEST.txt
+      file named in the user request, then read every listed chunk before
+      reviewing. Do not report a complete review unless every listed chunk
+      was read. The chunks together form the complete unified diff of one
+      pull request. You also have read-only tools over the WHOLE
       repository at the PR's head commit: read_file, list_dir, search_code
       (paths are repo-relative).
 

@@ -14,11 +14,8 @@
 # Usage: scripts/ci-review.sh <full|incremental> <base-ref> <head-ref> <output-file> <pr-base-ref>
 set -euo pipefail
 
-MAX_DIFF_BYTES=120000  # kept under Linux's per-argv MAX_ARG_STRLEN (128 KiB):
-# the whole diff becomes one argv element to `rakitsu run` below, and
-# Linux's execve() rejects any single argument over 131072 bytes
-# regardless of ulimit/ARG_MAX — a higher cap here would let some diffs
-# through that then fail with a bare "Argument list too long".
+MAX_CHUNK_BYTES=90000  # below Linux's per-argv limit; only a short prompt is passed.
+MAX_REVIEW_ITERATIONS=40 # keep in sync with both review config agent limits.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RAKITSU_BIN="${RAKITSU_BIN:-rakitsu}"
@@ -114,22 +111,26 @@ if [ "$diff_bytes" -eq 0 ]; then
   exit 0
 fi
 
-if [ "$diff_bytes" -gt "$MAX_DIFF_BYTES" ]; then
-  write_body_only "Diff is $diff_bytes bytes, over the $MAX_DIFF_BYTES-byte auto-review cap — skipped. Review this one by hand, or split it into smaller PRs." > "$OUTPUT"
-  exit 0
-fi
-
-query="DIFF ($SCOPE_TEXT, base=$BASE, head=$HEAD):
-
-$diff_content"
-
 TMP_STDERR=$(mktemp)
 FINDINGS_TXT=$(mktemp)
 PREAMBLE_TXT=$(mktemp)
 PARSED_JSON=$(mktemp)
 DIFF_TXT=$(mktemp)
+REVIEW_TMP=$(mktemp -d)
 SNAPSHOT=""
-trap 'rm -f "$TMP_STDERR" "$FINDINGS_TXT" "$PREAMBLE_TXT" "$PARSED_JSON" "$DIFF_TXT"; if [ -n "$SNAPSHOT" ]; then rm -rf "$SNAPSHOT"; fi' EXIT
+trap 'rm -f "$TMP_STDERR" "$FINDINGS_TXT" "$PREAMBLE_TXT" "$PARSED_JSON" "$DIFF_TXT"; rm -rf "$REVIEW_TMP"; if [ -n "$SNAPSHOT" ]; then rm -rf "$SNAPSHOT"; fi' EXIT
+
+printf '%s' "$diff_content" > "$DIFF_TXT"
+if ! chunk_summary=$(python3 "$SCRIPT_DIR/chunk-review-diff.py" "$DIFF_TXT" "$REVIEW_TMP/review-diff" --limit "$MAX_CHUNK_BYTES" 2>"$TMP_STDERR"); then
+  write_body_only "Review skipped because the complete diff could not be represented in bounded file-aligned chunks: $(cat "$TMP_STDERR")" > "$OUTPUT"
+  exit 0
+fi
+query="Review the complete diff for base=$BASE head=$HEAD. Read MANIFEST.txt and every listed chunk under review-diff/ before reporting. The chunks cover $chunk_summary. Preserve the required finding format."
+chunk_count=${chunk_summary%% chunks,*}
+if (( chunk_count + 2 > MAX_REVIEW_ITERATIONS )); then
+  write_body_only "Review incomplete: $chunk_count chunks exceed the configured review iteration budget. No complete review was produced." > "$OUTPUT"
+  exit 0
+fi
 
 # Full mode: the PR head as plain files in a fresh temp dir, for the
 # reviewer's read-only fs tools (fenced to it via --workdir). snapshot-tree.py
@@ -142,7 +143,13 @@ run_args=(--no-hub)
 if [ "$MODE" = "full" ]; then
   SNAPSHOT=$(mktemp -d)
   python3 "$SCRIPT_DIR/snapshot-tree.py" "$HEAD" "$SNAPSHOT"
+  REVIEW_CHUNK_DIR=$(mktemp -d "$SNAPSHOT/.review-diff.XXXXXX")
+  cp -R "$REVIEW_TMP/review-diff/." "$REVIEW_CHUNK_DIR/"
+  query="Review the complete diff for base=$BASE head=$HEAD. Read $(basename "$REVIEW_CHUNK_DIR")/MANIFEST.txt and every listed chunk under $(basename "$REVIEW_CHUNK_DIR")/ before reporting. The chunks cover $chunk_summary. Preserve the required finding format."
   run_args+=(--workdir "$SNAPSHOT")
+else
+  query="Review the complete diff for base=$BASE head=$HEAD. Read review-diff/MANIFEST.txt and every listed chunk under review-diff/ before reporting. The chunks cover $chunk_summary. Preserve the required finding format."
+  run_args+=(--workdir "$REVIEW_TMP")
 fi
 
 set +e
@@ -166,6 +173,11 @@ findings=$(printf '%s\n' "$raw_output" | awk '
   in_result && started==1 { print }
 ')
 
+if printf '%s\n' "$findings" | grep -Eq '^\[max_iterations reached — (synthesized answer|partial result|no response produced)\]'; then
+  write_body_only "Review incomplete: Rakitsu reached its iteration limit before producing a complete review. No complete review was produced." > "$OUTPUT"
+  exit 0
+fi
+
 if [ -z "$findings" ]; then
   echo "FATAL: could not extract Result content from rakitsu output:" >&2
   echo "$raw_output" >&2
@@ -180,5 +192,4 @@ python3 "$SCRIPT_DIR/parse-findings.py" "$PREAMBLE_TXT" "$FINDINGS_TXT" > "$PARS
 # see scripts/jev-verify-findings.py's docstring — no TYPESAFE_API_KEY set,
 # or any Jev call error, reprints $PARSED_JSON unchanged. Never blocks the
 # review on Jev being reachable.
-printf '%s' "$diff_content" > "$DIFF_TXT"
 python3 "$SCRIPT_DIR/jev-verify-findings.py" "$PARSED_JSON" "$DIFF_TXT" > "$OUTPUT"

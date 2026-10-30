@@ -39,7 +39,9 @@ name: AI PR Review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    # ready_for_review is an explicit closure signal: unlike ordinary
+    # synchronize events, it runs a full diff against the final PR state.
+    types: [opened, synchronize, reopened, ready_for_review]
   issue_comment:
     types: [created]
   workflow_dispatch:
@@ -158,7 +160,9 @@ jobs:
       # pre-push commit is actually reachable: a force-push/rebase/amend on
       # the PR branch leaves `before` unreachable from the new head, and
       # GitHub doesn't keep it fetchable in that case. Falls back to a full
-      # diff instead of failing the whole job on that commit.
+      # diff instead of failing the whole job on that commit. Only a normal
+      # synchronize event is incremental; ready_for_review is full so the
+      # closing review covers the complete final base-to-head diff.
       - name: Determine diff mode
         id: mode
         if: steps.resolve.outputs.skip != 'true'
@@ -187,30 +191,40 @@ jobs:
             echo "head=$RESOLVED_HEAD" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Install latest rakitsu release
+      # Internal-repo deviation from the public workflow: the binary is
+      # always the latest release of the PUBLIC repo (SK-ENT/rakitsu),
+      # not this repo's own. Internal releases are cut rarely and lag the
+      # features scripts/review-config-openai.yaml depends on; the public
+      # release is the one that is actually kept current. The public repo
+      # is public, so the default token can download from it. Only the
+      # binary + checksums are fetched; the scripts run are still this
+      # repo's own (SECURITY INVARIANT 2 above).
+      - name: Install latest public rakitsu release
         if: steps.resolve.outputs.skip != 'true'
         env:
-          REPO: ${{ github.repository }}
+          PUBLIC_REPO: SK-ENT/rakitsu
         run: |
-          TAG=$(gh release list --repo "$REPO" --limit 1 --json tagName -q '.[0].tagName')
+          TAG=$(gh release list --repo "$PUBLIC_REPO" --limit 1 --json tagName -q '.[0].tagName')
           if [ -z "$TAG" ]; then
-            echo "FATAL: no release found on $REPO (rebuild in progress? nothing tagged yet?) — nothing to install." >&2
+            echo "FATAL: no release found on $PUBLIC_REPO — nothing to install." >&2
             exit 1
           fi
+          echo "Installing rakitsu $TAG from $PUBLIC_REPO"
           # Download by release id, not `gh release download <tag>`: GitHub's
           # by-tag endpoint can return the release with an empty asset list
           # (seen on v0.3.0-alpha.11) while the assets endpoint lists them all.
-          REL_ID=$(gh api "repos/$REPO/releases/tags/$TAG" -q .id)
+          REL_ID=$(gh api "repos/$PUBLIC_REPO/releases/tags/$TAG" -q .id)
           for f in rakitsu-linux-amd64 checksums.txt; do
-            AID=$(gh api "repos/$REPO/releases/$REL_ID/assets?per_page=100" -q ".[] | select(.name == \"$f\") | .id")
+            AID=$(gh api "repos/$PUBLIC_REPO/releases/$REL_ID/assets?per_page=100" -q ".[] | select(.name == \"$f\") | .id")
             if [ -z "$AID" ]; then
               echo "FATAL: $f not found in release $TAG" >&2
               exit 1
             fi
-            gh api -H 'Accept: application/octet-stream' "repos/$REPO/releases/assets/$AID" > "$f"
+            gh api -H 'Accept: application/octet-stream' "repos/$PUBLIC_REPO/releases/assets/$AID" > "$f"
           done
           grep linux-amd64 checksums.txt | shasum -a 256 -c -
           sudo install -m 755 rakitsu-linux-amd64 /usr/local/bin/rakitsu
+          rakitsu version
 
       - name: Run review
         if: steps.resolve.outputs.skip != 'true'

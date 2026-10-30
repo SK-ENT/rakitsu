@@ -53,6 +53,21 @@ settings:
     # has ample room above this.
     timeout_seconds: 540
 
+# Incremental reviews are fenced to a temporary directory containing only
+# the bounded diff chunks and manifest. The prompt is short; diff text is
+# read through this read-only tool instead of being passed as one argv.
+tools:
+  - name: read_file
+    type: fs
+    operation: read
+    allowed_paths: ["review-diff"]
+    description: Read one staged diff chunk or its manifest
+    parameters:
+      path: { type: string, description: "Path under review-diff", required: true }
+    sandbox:
+      resource_limits:
+        max_output_bytes: 100000
+
 agents:
   - name: Reviewer
     role: worker
@@ -94,10 +109,18 @@ agents:
     # intent, not the actual mechanism.
     tools: []
     settings:
-      max_iterations: 1
+      # A chunked review needs one response to read the manifest, another
+      # to read its listed chunks, and a final response. Forty iterations
+      # also leaves room for bounded sequential reads and reasoning.
+      max_iterations: 40
     system_prompt: |
-      You are a senior code reviewer. You will be given a unified diff from
-      one pull request — it may touch multiple files. Find real correctness
+      You are a senior code reviewer. First read review-diff/MANIFEST.txt.
+      Then read every listed chunk file under review-diff/ before reviewing.
+      Request all listed chunk files in parallel in one tool response when
+      possible. The chunks together form the complete unified diff from one
+      pull request. Do not report a complete review unless every listed chunk
+      was read.
+      Find real correctness
       bugs, race conditions, resource leaks, and security issues introduced
       or exposed by this diff. Do not comment on style.
 
