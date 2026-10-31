@@ -117,8 +117,8 @@ PREAMBLE_TXT=$(mktemp)
 PARSED_JSON=$(mktemp)
 DIFF_TXT=$(mktemp)
 REVIEW_TMP=$(mktemp -d)
-SNAPSHOT=""
-trap 'rm -f "$TMP_STDERR" "$FINDINGS_TXT" "$PREAMBLE_TXT" "$PARSED_JSON" "$DIFF_TXT"; rm -rf "$REVIEW_TMP"; if [ -n "$SNAPSHOT" ]; then rm -rf "$SNAPSHOT"; fi' EXIT
+REVIEW_ROOT=""
+trap 'rm -f "$TMP_STDERR" "$FINDINGS_TXT" "$PREAMBLE_TXT" "$PARSED_JSON" "$DIFF_TXT"; rm -rf "$REVIEW_TMP"; if [ -n "$REVIEW_ROOT" ]; then rm -rf "$REVIEW_ROOT"; fi' EXIT
 
 printf '%s' "$diff_content" > "$DIFF_TXT"
 if ! chunk_summary=$(python3 "$SCRIPT_DIR/chunk-review-diff.py" "$DIFF_TXT" "$REVIEW_TMP/review-diff" --limit "$MAX_CHUNK_BYTES" 2>"$TMP_STDERR"); then
@@ -141,12 +141,13 @@ fi
 # executed or checked out next to these scripts.
 run_args=(--no-hub)
 if [ "$MODE" = "full" ]; then
-  SNAPSHOT=$(mktemp -d)
+  REVIEW_ROOT=$(mktemp -d)
+  SNAPSHOT="$REVIEW_ROOT/repo"
+  mkdir "$SNAPSHOT"
   python3 "$SCRIPT_DIR/snapshot-tree.py" "$HEAD" "$SNAPSHOT"
-  REVIEW_CHUNK_DIR=$(mktemp -d "$SNAPSHOT/.review-diff.XXXXXX")
-  cp -R "$REVIEW_TMP/review-diff/." "$REVIEW_CHUNK_DIR/"
-  query="Review the complete diff for base=$BASE head=$HEAD. Read $(basename "$REVIEW_CHUNK_DIR")/MANIFEST.txt and every listed chunk under $(basename "$REVIEW_CHUNK_DIR")/ before reporting. The chunks cover $chunk_summary. Preserve the required finding format."
-  run_args+=(--workdir "$SNAPSHOT")
+  cp -R "$REVIEW_TMP/review-diff" "$REVIEW_ROOT/review-diff"
+  query="Review the complete diff for base=$BASE head=$HEAD. Read review-diff/MANIFEST.txt and every listed chunk under review-diff/ before reporting. The PR repository snapshot is under repo/; prefix repository paths with repo/ when using read_file, list_dir, or search_code. The chunks cover $chunk_summary. Preserve the required finding format."
+  run_args+=(--workdir "$REVIEW_ROOT")
 else
   query="Review the complete diff for base=$BASE head=$HEAD. Read review-diff/MANIFEST.txt and every listed chunk under review-diff/ before reporting. The chunks cover $chunk_summary. Preserve the required finding format."
   run_args+=(--workdir "$REVIEW_TMP")

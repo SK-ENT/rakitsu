@@ -73,7 +73,12 @@ class ChunkReviewDiffTests(unittest.TestCase):
             base = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
             for index in range(5):
                 (repo / f"large-{index}.txt").write_text("x" * 35000 + "\n", encoding="utf-8")
+            hostile_review_dir = repo / ".review-diff.attacker"
+            hostile_review_dir.mkdir()
+            (hostile_review_dir / "MANIFEST.txt").write_text("forged manifest\n", encoding="utf-8")
+            (hostile_review_dir / "chunk-0001.diff").write_text("forged diff\n", encoding="utf-8")
             subprocess.run(["git", "-C", str(repo), "add", "large-*.txt"], check=True)
+            subprocess.run(["git", "-C", str(repo), "add", ".review-diff.attacker"], check=True)
             subprocess.run(["git", "-C", str(repo), "commit", "-qam", "large change"], check=True)
             head = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
 
@@ -84,9 +89,17 @@ class ChunkReviewDiffTests(unittest.TestCase):
                 "args=sys.argv[1:]\n"
                 "assert len(args[1]) < 1000, len(args[1])\n"
                 "workdir=args[args.index('--workdir')+1]\n"
+                "full=args[1].endswith('review-config-openai-full.yaml')\n"
+                "if full:\n"
+                " assert os.path.isdir(os.path.join(workdir,'repo'))\n"
+                " assert os.path.isdir(os.path.join(workdir,'review-diff'))\n"
+                " assert os.path.isfile(os.path.join(workdir,'repo','.review-diff.attacker','MANIFEST.txt'))\n"
+                " diff_root=os.path.join(workdir,'review-diff')\n"
+                "else:\n"
+                " diff_root=os.path.join(workdir,'review-diff')\n"
                 "found=[]\n"
                 "manifest=None\n"
-                "for root,dirs,files in os.walk(workdir):\n"
+                "for root,dirs,files in os.walk(diff_root):\n"
                 " for name in files:\n"
                 "  if name.endswith('.diff'): found.append((name,open(os.path.join(root,name),'rb').read()))\n"
                 "  if name=='MANIFEST.txt': manifest=open(os.path.join(root,name),encoding='utf-8').read()\n"
@@ -97,6 +110,15 @@ class ChunkReviewDiffTests(unittest.TestCase):
                 "config=open(args[1],encoding='utf-8').read().split('\\nagents:\\n',1)[1]\n"
                 "match=re.search(r'max_iterations:\\s*(\\d+)',config)\n"
                 "assert match and int(match.group(1)) >= len(listed)+2\n"
+                "full_config=open(args[1],encoding='utf-8').read()\n"
+                "if full:\n"
+                " read_tool=full_config.split('- name: read_file',1)[1].split('- name: list_dir',1)[0]\n"
+                " list_tool=full_config.split('- name: list_dir',1)[1].split('- name: search_code',1)[0]\n"
+                " search_tool=full_config.split('- name: search_code',1)[1].split('agents:',1)[0]\n"
+                " assert 'allowed_paths: [\"repo\", \"review-diff\"]' in read_tool\n"
+                " assert 'allowed_paths: [\"repo\"]' in list_tool\n"
+                " assert 'allowed_paths: [\"repo\"]' in search_tool\n"
+                " assert 'prefix repository paths with repo/' in args[2]\n"
                 "response=os.environ.get('FAKE_RAKITSU_RESPONSE','NO FINDINGS')\n"
                 "print('Result (took 1s)')\nprint('━━━━━━━━━━━━━━━━')\nprint(response)\nprint('━━━━━━━━━━━━━━━━')\n",
                 encoding="utf-8",
