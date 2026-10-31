@@ -85,10 +85,12 @@ class ChunkReviewDiffTests(unittest.TestCase):
             fake = Path(td) / "rakitsu"
             fake.write_text(
                 "#!/usr/bin/env python3\n"
-                "import os,re,sys\n"
+                "import json,os,re,sys\n"
                 "args=sys.argv[1:]\n"
                 "assert len(args[1]) < 1000, len(args[1])\n"
                 "workdir=args[args.index('--workdir')+1]\n"
+                "sessions_dir=args[args.index('--sessions-dir')+1] if '--sessions-dir' in args else os.environ['FAKE_RAKITSU_SESSIONS']\n"
+                "os.makedirs(sessions_dir,exist_ok=True)\n"
                 "full=args[1].endswith('review-config-openai-full.yaml')\n"
                 "if full:\n"
                 " assert os.path.isdir(os.path.join(workdir,'repo'))\n"
@@ -119,26 +121,86 @@ class ChunkReviewDiffTests(unittest.TestCase):
                 " assert 'allowed_paths: [\"repo\"]' in list_tool\n"
                 " assert 'allowed_paths: [\"repo\"]' in search_tool\n"
                 " assert 'prefix repository paths with repo/' in args[2]\n"
+                "required=['review-diff/MANIFEST.txt']+['review-diff/'+name for name in listed]\n"
+                "read_mode=os.environ.get('FAKE_RAKITS_READ_CHUNKS','all')\n"
+                "read_paths=required[:-1] if read_mode=='omit-last' else required[1:] if read_mode=='omit-manifest' else required\n"
+                "path_style=os.environ.get('FAKE_RAKITS_READ_PATH_STYLE','relative')\n"
+                "if path_style=='dot': read_paths=['./'+path for path in read_paths]\n"
+                "if path_style=='absolute': read_paths=[os.path.join(workdir,path) for path in read_paths]\n"
+                "events=[]\n"
+                "for index,path in enumerate(read_paths):\n"
+                " call_id='call-'+str(index)\n"
+                " events.append({'agent_name':'Reviewer','event_type':'TOOL_CALL_START','payload':{'tool_call_id':call_id,'tool_name':'read_file','arguments':{'path':path}}})\n"
+                " end={'tool_call_id':call_id,'tool_name':'read_file','output':'read ok','output_truncated':False}\n"
+                " if read_mode=='failed-last' and path==required[-1]: end['error']='read failed'\n"
+                " if read_mode=='truncated-last' and path==required[-1]: end['output_truncated']=True\n"
+                " if read_mode=='empty-output-last' and path==required[-1]: end['output']=''\n"
+                " events.append({'agent_name':'Reviewer','event_type':'TOOL_CALL_END','payload':end})\n"
+                "session_status='error' if read_mode=='session-error' else 'success'\n"
+                "events.append({'event_type':'SESSION_END','payload':{'status':session_status}})\n"
+                "with open(os.path.join(sessions_dir,'session.jsonl'),'w',encoding='utf-8') as stream:\n"
+                " if read_mode=='malformed': stream.write('not json\\n')\n"
+                " for event in events: stream.write(json.dumps(event)+'\\n')\n"
                 "response=os.environ.get('FAKE_RAKITSU_RESPONSE','NO FINDINGS')\n"
                 "print('Result (took 1s)')\nprint('━━━━━━━━━━━━━━━━')\nprint(response)\nprint('━━━━━━━━━━━━━━━━')\n",
                 encoding="utf-8",
             )
             fake.chmod(0o755)
-            env = dict(os.environ, OPENAI_API_KEY="test-only", RAKITSU_BIN=str(fake))
+            env = dict(
+                os.environ,
+                OPENAI_API_KEY="test-only",
+                RAKITSU_BIN=str(fake),
+                FAKE_RAKITSU_SESSIONS=str(Path(td) / "fallback-sessions"),
+            )
             for mode in ("full", "incremental"):
-                output = Path(td) / f"{mode}-result.json"
+                for path_style in ("relative", "dot", "absolute"):
+                    success_env = dict(env, FAKE_RAKITS_READ_PATH_STYLE=path_style)
+                    output = Path(td) / f"{mode}-{path_style}-result.json"
+                    result = subprocess.run(
+                        [str(CI_REVIEW), mode, base, head, str(output), base],
+                        cwd=repo,
+                        env=success_env,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("No issues found", output.read_text(encoding="utf-8"))
+
+            incomplete_env = dict(env, FAKE_RAKITSU_RESPONSE="[max_iterations reached — synthesized answer]\\n\\nNO FINDINGS")
+            for read_mode in ("omit-last", "omit-manifest"):
+                missing_read_env = dict(env, FAKE_RAKITS_READ_CHUNKS=read_mode)
+                for mode in ("full", "incremental"):
+                    output = Path(td) / f"{mode}-{read_mode}-result.json"
+                    result = subprocess.run(
+                        [str(CI_REVIEW), mode, base, head, str(output), base],
+                        cwd=repo,
+                        env=missing_read_env,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    body = output.read_text(encoding="utf-8")
+                    self.assertIn("Review incomplete", body)
+                    self.assertNotIn("No issues found", body)
+
+            for read_mode in ("failed-last", "truncated-last", "empty-output-last", "session-error", "malformed"):
+                invalid_session_env = dict(env, FAKE_RAKITS_READ_CHUNKS=read_mode)
+                output = Path(td) / f"full-{read_mode}-result.json"
                 result = subprocess.run(
-                    [str(CI_REVIEW), mode, base, head, str(output), base],
+                    [str(CI_REVIEW), "full", base, head, str(output), base],
                     cwd=repo,
-                    env=env,
+                    env=invalid_session_env,
                     check=False,
                     capture_output=True,
                     text=True,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn("No issues found", output.read_text(encoding="utf-8"))
+                body = output.read_text(encoding="utf-8")
+                self.assertIn("Review incomplete", body)
+                self.assertNotIn("No issues found", body)
 
-            incomplete_env = dict(env, FAKE_RAKITSU_RESPONSE="[max_iterations reached — synthesized answer]\\n\\nNO FINDINGS")
             incomplete_output = Path(td) / "incomplete-result.json"
             result = subprocess.run(
                 [str(CI_REVIEW), "incremental", base, head, str(incomplete_output), base],

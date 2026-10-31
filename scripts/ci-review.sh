@@ -139,9 +139,10 @@ fi
 # reads. It writes no symlinks, so no path in the snapshot leads outside it
 # (the fs tool's fence also resolves symlinks). Nothing from the PR is ever
 # executed or checked out next to these scripts.
-run_args=(--no-hub)
+run_args=(--no-hub --sessions-dir "$REVIEW_TMP/sessions")
 if [ "$MODE" = "full" ]; then
   REVIEW_ROOT=$(mktemp -d)
+  REVIEW_WORKDIR="$REVIEW_ROOT"
   SNAPSHOT="$REVIEW_ROOT/repo"
   mkdir "$SNAPSHOT"
   python3 "$SCRIPT_DIR/snapshot-tree.py" "$HEAD" "$SNAPSHOT"
@@ -149,6 +150,7 @@ if [ "$MODE" = "full" ]; then
   query="Review the complete diff for base=$BASE head=$HEAD. Read review-diff/MANIFEST.txt and every listed chunk under review-diff/ before reporting. The PR repository snapshot is under repo/; prefix repository paths with repo/ when using read_file, list_dir, or search_code. The chunks cover $chunk_summary. Preserve the required finding format."
   run_args+=(--workdir "$REVIEW_ROOT")
 else
+  REVIEW_WORKDIR="$REVIEW_TMP"
   query="Review the complete diff for base=$BASE head=$HEAD. Read review-diff/MANIFEST.txt and every listed chunk under review-diff/ before reporting. The chunks cover $chunk_summary. Preserve the required finding format."
   run_args+=(--workdir "$REVIEW_TMP")
 fi
@@ -176,6 +178,11 @@ findings=$(printf '%s\n' "$raw_output" | awk '
 
 if printf '%s\n' "$findings" | grep -Eq '^\[max_iterations reached — (synthesized answer|partial result|no response produced)\]'; then
   write_body_only "Review incomplete: Rakitsu reached its iteration limit before producing a complete review. No complete review was produced." > "$OUTPUT"
+  exit 0
+fi
+
+if ! python3 "$SCRIPT_DIR/verify-review-chunk-reads.py" "$REVIEW_TMP/review-diff/MANIFEST.txt" "$REVIEW_TMP/sessions" "$REVIEW_WORKDIR"; then
+  write_body_only "Review incomplete: Rakitsu did not successfully read the manifest and every diff chunk. No complete review was produced." > "$OUTPUT"
   exit 0
 fi
 
