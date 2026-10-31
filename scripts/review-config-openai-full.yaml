@@ -9,10 +9,10 @@
 # surrounding code already handled.
 #
 # Safety: ci-review.sh runs this with --workdir pointing at a fresh temp
-# dir filled by `git archive <head> | tar -x` (plain files — nothing from
-# the PR is ever executed), with every symlink deleted. The tools below are
-# read-only fs operations fenced to that dir (allowed_paths "." resolves
-# against --workdir). No write, no cli, no network tools.
+# root. The PR snapshot is under repo/ and generated diff chunks are in the
+# sibling review-diff/. Nothing from the PR is executed. read_file can access
+# either tree; list_dir and search_code are scoped to repo/ so PR files cannot
+# be confused with the generated review input. No write, no cli, no network.
 
 name: "Full Reviewer (gpt-6-luna, direct OpenAI, read-only repo access)"
 version: "1.0"
@@ -33,28 +33,28 @@ tools:
   - name: read_file
     type: fs
     operation: read
-    allowed_paths: ["."]
-    description: Read a file of the repo at the PR head (path relative to the repo root)
+    allowed_paths: ["repo", "review-diff"]
+    description: Read a PR repository file or a generated diff chunk
     parameters:
-      path: { type: string, description: "Repo-relative file path", required: true }
+      path: { type: string, description: "Path under repo/ or review-diff/", required: true }
     sandbox:
       resource_limits:
         max_output_bytes: 200000 # one huge file must not flood the context
   - name: list_dir
     type: fs
     operation: list
-    allowed_paths: ["."]
-    description: List a directory of the repo at the PR head
+    allowed_paths: ["repo"]
+    description: List a directory in the PR repository snapshot
     parameters:
-      path: { type: string, description: "Repo-relative directory path (\".\" for the root)", required: true }
+      path: { type: string, description: "Path under repo/ (\"repo\" for the root)", required: true }
   - name: search_code
     type: fs
     operation: search
-    allowed_paths: ["."]
-    description: Search the repo at the PR head for a regex (find callers, definitions, other handling)
+    allowed_paths: ["repo"]
+    description: Search only the PR repository snapshot for code context
     parameters:
       pattern: { type: string, description: "Regex to search for", required: true }
-      path: { type: string, description: "Repo-relative directory to search in (\".\" for everything)", required: true }
+      path: { type: string, description: "Path under repo/ (\"repo\" for the repository root)", required: true }
       file_pattern: { type: string, description: "Optional file glob, e.g. \"*.go\"" }
 
 agents:
@@ -67,10 +67,14 @@ agents:
     settings:
       max_iterations: 40
     system_prompt: |
-      You are a senior code reviewer. You will be given the unified diff of
-      one pull request. You also have read-only tools over the WHOLE
-      repository at the PR's head commit: read_file, list_dir, search_code
-      (paths are repo-relative).
+      You are a senior code reviewer. Read review-diff/MANIFEST.txt, then
+      read every listed chunk under review-diff/ before
+      reviewing. Do not report a complete review unless every listed chunk
+      was read. The chunks together form the complete unified diff of one
+      pull request. You also have read-only tools over the PR repository
+      snapshot under repo/: read_file, list_dir, search_code (prefix source
+      paths with repo/). read_file can read both repo/ and review-diff/;
+      list_dir and search_code are restricted to repo/.
 
       Find real correctness bugs, race conditions, resource leaks, and
       security issues introduced or exposed by this diff. Do not comment on
