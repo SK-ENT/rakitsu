@@ -479,7 +479,7 @@ function checkGate(){
  var p=parseToken(location.hash);if(p.id||!p.raw)return;
  var need=needOf(p.raw);if(!need||has(need))return;
  var tag=null;VERSIONS.forEach(function(v){if(!tag&&DATA[v].features.some(function(f){return f.id===need;}))tag=v;});
- if(DEFAULT_VER&&DATA[DEFAULT_VER]&&DATA[DEFAULT_VER].features.some(function(f){return f.id===need;}))tag=DEFAULT_VER;
+ if(DEFAULT_VER&&DATA[docOf(DEFAULT_VER)]&&DATA[docOf(DEFAULT_VER)].features.some(function(f){return f.id===need;}))tag=DEFAULT_VER;
  var u=UI[st.lang],n=el("div","notice",u.gate.replace("%TAG%",st.ver));n.id="gatenote";n.setAttribute("role","status");
  if(tag){n.appendChild(document.createTextNode(" "));var a=el("a",null,u.gateGo.replace("%TAG%",tag));
   a.href=window.RK_TAG?"../"+encodeURIComponent(tag)+"/"+location.hash:location.hash;

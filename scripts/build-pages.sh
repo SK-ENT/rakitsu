@@ -30,7 +30,7 @@ def key(t):
 for t in list(v["versions"])+list(cov):
     if "/" in t or t.startswith("."): sys.exit("bad tag "+t)
     key(t)
-if v["default"] not in v["versions"]: sys.exit("default tag %s is not a doc version" % v["default"])
+if v["default"] not in v["versions"] and v["default"] not in cov: sys.exit("default tag %s is neither a doc version nor a covered release" % v["default"])
 for t in v["versions"]:
     if not os.path.isfile("%s/data/%s.json"%(s,t)): sys.exit("missing data file for "+t)
 have=sorted(f[:-5] for f in os.listdir(s+"/data") if f.endswith(".json") and f!="versions.json")
