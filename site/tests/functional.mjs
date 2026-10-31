@@ -55,7 +55,8 @@ const INIT = (SIDMAP) => {
 const SID = { react: 'agent-loop', flow: 'data-flow', orch: 'orchestration', wake: 'wake', memory: 'memory', protocols: 'protocols' };
 // The wake widget exists only in releases that have the wake feature; skip its checks when the served default tag lacks it (gating.mjs covers wake with a fixture tag).
 const vj0 = await (await fetch(URL_ + 'data/versions.json')).json();
-const HAS_WAKE = (await (await fetch(URL_ + 'data/' + vj0.default + '.json')).json()).features.some(f => f.id === 'wake');
+const defaultDoc = (vj0.covers || {})[vj0.default] || vj0.default;
+const HAS_WAKE = (await (await fetch(URL_ + 'data/' + defaultDoc + '.json')).json()).features.some(f => f.id === 'wake');
 if (!HAS_WAKE) console.log('functional: wake widget not in default tag ' + vj0.default + ', wake checks skipped');
 const WAKEIDS = a => a.filter(w => HAS_WAKE || w !== 'wake');
 const WIDS = ['react', 'flow', 'orch', 'wake', 'memory', 'protocols'].filter(w => HAS_WAKE || w !== 'wake');

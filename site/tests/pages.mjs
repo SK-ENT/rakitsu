@@ -35,7 +35,10 @@ const B = 'http://127.0.0.1:' + srv.address().port + PFX;
 
 // static checks
 ok(fs.existsSync(path.join(out, '.nojekyll')), '.nojekyll present');
-for (const t of vj.versions) { ok(fs.existsSync(path.join(out, t, 'index.html')), 'dir for ' + t); ok(fs.existsSync(path.join(out, 'data', t + '.json')), 'data for ' + t); }
+for (const t of [...vj.versions, ...Object.keys(vj.covers || {})]) {
+  ok(fs.existsSync(path.join(out, t, 'index.html')), 'dir for ' + t);
+  ok(fs.existsSync(path.join(out, 'data', t + '.json')) === vj.versions.includes(t), 'data presence matches doc-version status for ' + t);
+}
 for (const f of ['index.html', 'latest/index.html', '404.html']) ok(fs.existsSync(path.join(out, f)), f + ' present');
 for (const a of ['app.css', 'app.js', 'viz.css', 'viz.js']) ok(fs.existsSync(path.join(out, 'assets', a)), 'assets/' + a);
 for (const f of ['ibm-plex-sans-latin-400-normal.woff2', 'ibm-plex-sans-latin-500-normal.woff2', 'ibm-plex-sans-latin-600-normal.woff2', 'ibm-plex-mono-latin-400-normal.woff2', 'ibm-plex-mono-latin-500-normal.woff2', 'LICENSE-IBM-Plex.txt']) ok(fs.existsSync(path.join(out, 'assets/fonts', f)), 'assets/fonts/' + f + ' in Pages output');
@@ -47,7 +50,7 @@ for (const f of walk(out).filter(f => /\.(html|js|css)$/.test(f))) {
 }
 ok(!fs.existsSync(path.join(out, 'v0.3.0-alpha.9')) && !fs.existsSync(path.join(out, 'data/v0.3.0-alpha.9.json')), 'no placeholder tag output');
 const sv = JSON.parse(fs.readFileSync(path.join(out, 'data/versions.json'), 'utf8'));
-ok(sv.default === vj.default && sv.versions.length === vj.versions.length, 'versions.json copied');
+ok(sv.default === vj.default && sv.versions.length === vj.versions.length && JSON.stringify(sv.covers) === JSON.stringify(vj.covers), 'versions.json copied');
 
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM || (process.env.HOME + '/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell') });
 async function page() { const ctx = await browser.newContext(); const p = await ctx.newPage(); p.__errs = []; p.on('pageerror', e => p.__errs.push(String(e))); return p; }
@@ -107,31 +110,41 @@ for (const u of ['/v9.9.9/', '/v0.3.0-alpha.9/', '/v0.3.0-alpha.11/index.html'])
   const t = await p.textContent('#notag'); ok(t.includes('No docs for this release. Docs start at ' + first + '.') && t.includes('このリリースのドキュメントはありません'), u + ' message EN/JA', t);
   await p.context().close();
 }
+for (const [t, doc] of Object.entries(vj.covers || {})) {
+  const p = await page();
+  await p.goto(`${B}/${t}/`); await loaded(p);
+  ok(await p.evaluate(() => document.getElementById('verSel').value) === t, 'covered selector shows ' + t);
+  ok((await p.textContent('#notice')).includes(`Showing the docs for ${doc}.`), 'covered page explains inherited docs for ' + t);
+  const data = JSON.parse(fs.readFileSync(path.join(out, 'data', doc + '.json'), 'utf8'));
+  ok(await p.evaluate(() => document.querySelectorAll('#feats .feat').length) === data.features.length, 'covered page renders ' + doc + ' data');
+  ok(p.__errs.length === 0, t + ' no page errors', p.__errs);
+  await p.context().close();
+}
 { const p = await page(); await p.goto(B + '/no/such/page'); ok(await p.evaluate(() => document.getElementById('notag').hidden), 'plain 404 has no release message'); await p.context().close(); }
 
 // ---- covers: built from a throwaway copy of scripts/ and site/ (a fixture entry; nothing is written to the repo)
 const DOC = vj.versions[0], COV = DOC.replace(/\d+$/, n => String(Number(n) + 1));
-function fixtureTree(covers) {
+function fixtureTree(covers, defaultTag = vj.default) {
   const t = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-covers-src-'));
   fs.mkdirSync(path.join(t, 'scripts')); fs.copyFileSync(path.join(root, 'scripts/build-pages.sh'), path.join(t, 'scripts/build-pages.sh'));
   fs.cpSync(path.join(root, 'site'), path.join(t, 'site'), { recursive: true, filter: s => !s.includes('/tests') });
-  fs.writeFileSync(path.join(t, 'site/data/versions.json'), JSON.stringify({ ...vj, covers }));
+  fs.writeFileSync(path.join(t, 'site/data/versions.json'), JSON.stringify({ ...vj, default: defaultTag, covers }));
   execFileSync('git', ['init', '-q', t]);
   return t;
 }
-const tryBuild = (covers, o) => { const t = fixtureTree(covers); try { execFileSync(path.join(t, 'scripts/build-pages.sh'), [o], { stdio: 'pipe' }); return null; } catch (e) { return String(e.stderr); } finally { fs.rmSync(t, { recursive: true, force: true }); } };
+const tryBuild = (covers, o, defaultTag = vj.default) => { const t = fixtureTree(covers, defaultTag); try { execFileSync(path.join(t, 'scripts/build-pages.sh'), [o], { stdio: 'pipe' }); return null; } catch (e) { return String(e.stderr); } finally { fs.rmSync(t, { recursive: true, force: true }); } };
 const bad1 = tryBuild({ [COV]: vj.versions[1] }, fs.mkdtempSync(path.join(os.tmpdir(), 'rk-covers-bad-')));
 ok(bad1 && /nearest earlier/.test(bad1), 'build rejects a covers value that is not the nearest earlier doc version', bad1);
 const bad2 = tryBuild({ [COV]: 'v0.3.0-alpha.9' }, fs.mkdtempSync(path.join(os.tmpdir(), 'rk-covers-bad-')));
 ok(bad2 && /not a listed doc version/.test(bad2), 'build rejects a covers value that is not a doc version', bad2);
 const occupied = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-pages-occupied-'));
 fs.writeFileSync(path.join(occupied, 'keep.txt'), 'preserve this file');
-const occupiedError = tryBuild({}, occupied);
+const occupiedError = tryBuild(vj.covers || {}, occupied);
 ok(occupiedError && /nonempty output/.test(occupiedError), 'build refuses a nonempty output directory');
 ok(fs.existsSync(path.join(occupied, 'keep.txt')) && fs.readFileSync(path.join(occupied, 'keep.txt'), 'utf8') === 'preserve this file', 'build preserves unrelated output files');
 fs.rmSync(occupied, { recursive: true, force: true });
 {
-  const t = fixtureTree({});
+  const t = fixtureTree(vj.covers || {});
   const inside = fs.mkdtempSync(path.join(t, '.rk-pages-symlink-target-'));
   const linkedOut = path.join(os.tmpdir(), `rk-pages-symlink-${process.pid}-${Date.now()}`);
   fs.symlinkSync(inside, linkedOut, 'dir');
@@ -146,6 +159,17 @@ fs.rmSync(occupied, { recursive: true, force: true });
   fs.rmSync(linkedOut, { force: true });
   fs.rmSync(t, { recursive: true, force: true });
 }
+const defaultCoveredOut = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-pages-default-covered-'));
+const defaultCoveredError = tryBuild({ [COV]: DOC }, defaultCoveredOut, COV);
+ok(defaultCoveredError === null, 'build accepts a covered release as default', defaultCoveredError);
+if (defaultCoveredError === null) {
+  for (const f of ['index.html', 'latest/index.html']) {
+    const html = fs.readFileSync(path.join(defaultCoveredOut, f), 'utf8');
+    ok(html.includes(COV + '/'), f + ' redirects to the covered default release');
+  }
+  ok(fs.existsSync(path.join(defaultCoveredOut, COV, 'index.html')) && !fs.existsSync(path.join(defaultCoveredOut, 'data', COV + '.json')), 'covered default has a page without duplicate doc data');
+}
+fs.rmSync(defaultCoveredOut, { recursive: true, force: true });
 const out2 = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-covers-out-'));
 ok(tryBuild({ [COV]: DOC }, out2) === null, 'build with a covers fixture succeeds');
 ok(fs.existsSync(path.join(out2, COV, 'index.html')) && !fs.existsSync(path.join(out2, 'data', COV + '.json')), 'covered tag has a page and no data file');

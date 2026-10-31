@@ -16,7 +16,7 @@ const dataDir = path.join(site, 'data');
 const vj = JSON.parse(fs.readFileSync(path.join(dataDir, 'versions.json'), 'utf8'));
 const files = fs.readdirSync(dataDir).filter(f => f.endsWith('.json') && f !== 'versions.json').map(f => f.replace(/\.json$/, '')).sort();
 ok(JSON.stringify([...vj.versions].sort()) === JSON.stringify(files), 'versions.json lists exactly the data files present');
-ok(vj.versions.includes(vj.default), 'versions.default is in versions');
+ok(vj.versions.includes(vj.default) || Object.hasOwn(vj.covers || {}, vj.default), 'versions.default is a doc version or covered release');
 const bi = o => o && typeof o === 'object' && typeof o.en === 'string' && o.en && typeof o.ja === 'string' && o.ja;
 const docVersions = [];
 for (const v of files) {
