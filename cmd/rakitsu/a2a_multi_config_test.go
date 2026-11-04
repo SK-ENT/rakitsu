@@ -111,6 +111,116 @@ func TestA2AConfigHandlerRejectsUnknownConfigID(t *testing.T) {
 	}
 }
 
+func TestA2AConfigHandlerScopesTasksToConfigEndpoint(t *testing.T) {
+	dir := t.TempDir()
+	writeA2ATestConfig(t, filepath.Join(dir, "alpha.yaml"), "Alpha Config", "Alpha")
+	writeA2ATestConfig(t, filepath.Join(dir, "beta.yaml"), "Beta Config", "Beta")
+
+	store, err := server.NewConfigStore([]string{dir})
+	if err != nil {
+		t.Fatalf("NewConfigStore: %v", err)
+	}
+	t.Cleanup(store.Cleanup)
+	entries, err := store.List()
+	if err != nil {
+		t.Fatalf("List configs: %v", err)
+	}
+	entries = entriesWithin(entries, dir)
+	ids := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		ids[entry.Agents[0]] = entry.ID
+	}
+	alphaID, betaID := ids["Alpha"], ids["Beta"]
+	if alphaID == "" || betaID == "" {
+		t.Fatalf("config IDs missing: %v", ids)
+	}
+
+	started := make(chan struct{})
+	canceled := make(chan struct{})
+	handler := a2aConfigHandlerFunc(store, func(ctx context.Context, _ *config.Config, _ string) (string, error) {
+		close(started)
+		<-ctx.Done()
+		close(canceled)
+		return "", ctx.Err()
+	})
+
+	sent := postA2APath(t, handler, "/a2a/"+alphaID, "SendMessage", "send", srvSendMessageParams{
+		Tenant:  "Alpha",
+		Message: srvA2AMessage{MessageID: "message", Role: roleUser, Parts: []srvA2APart{{Text: "hold until canceled"}}},
+	})
+	if sent.Error != nil {
+		t.Fatalf("SendMessage error: %+v", sent.Error)
+	}
+	var sendResult srvSendMessageResult
+	if err := json.Unmarshal(sent.Result, &sendResult); err != nil {
+		t.Fatalf("decode SendMessage result: %v", err)
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("agent run did not start")
+	}
+
+	otherGet := postA2APath(t, handler, "/a2a/"+betaID, "GetTask", "other-get", srvGetTaskParams{ID: sendResult.Task.ID})
+	if otherGet.Error == nil || otherGet.Error.Code != -32001 {
+		t.Errorf("GetTask through another config = %+v, want task-not-found error -32001", otherGet.Error)
+	}
+	otherCancel := postA2APath(t, handler, "/a2a/"+betaID, "CancelTask", "other-cancel", srvCancelTaskParams{ID: sendResult.Task.ID})
+	if otherCancel.Error == nil || otherCancel.Error.Code != -32001 {
+		t.Errorf("CancelTask through another config = %+v, want task-not-found error -32001", otherCancel.Error)
+	}
+
+	originGet := postA2APath(t, handler, "/a2a/"+alphaID, "GetTask", "origin-get", srvGetTaskParams{ID: sendResult.Task.ID})
+	if originGet.Error != nil {
+		t.Errorf("GetTask through originating config: %+v", originGet.Error)
+	} else {
+		var task srvA2ATask
+		if err := json.Unmarshal(originGet.Result, &task); err != nil {
+			t.Fatalf("decode originating task: %v", err)
+		}
+		if task.Status.State != taskStateWorking {
+			t.Errorf("task state after cross-config requests = %q, want %q", task.Status.State, taskStateWorking)
+		}
+	}
+
+	originCancel := postA2APath(t, handler, "/a2a/"+alphaID, "CancelTask", "origin-cancel", srvCancelTaskParams{ID: sendResult.Task.ID})
+	if originCancel.Error != nil {
+		t.Fatalf("CancelTask through originating config: %+v", originCancel.Error)
+	}
+	var canceledTask srvA2ATask
+	if err := json.Unmarshal(originCancel.Result, &canceledTask); err != nil {
+		t.Fatalf("decode canceled task: %v", err)
+	}
+	if canceledTask.Status.State != taskStateCanceled {
+		t.Errorf("originating CancelTask state = %q, want %q", canceledTask.Status.State, taskStateCanceled)
+	}
+	select {
+	case <-canceled:
+	case <-time.After(time.Second):
+		t.Error("originating CancelTask did not stop the agent run")
+	}
+}
+
+func postA2APath(t *testing.T, handler http.HandlerFunc, path, method, requestID string, params interface{}) testA2AResponse {
+	t.Helper()
+	body, err := json.Marshal(map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      requestID,
+		"method":  method,
+		"params":  params,
+	})
+	if err != nil {
+		t.Fatalf("marshal %s request: %v", method, err)
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body)))
+	var result testA2AResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatalf("decode %s response: %v", method, err)
+	}
+	return result
+}
+
 func TestA2AReloadingHandlerPicksUpConfigEditsWithoutRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "team.yaml")
 	writeA2ATestConfig(t, path, "Team v1", "Writer")

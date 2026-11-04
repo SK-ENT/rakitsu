@@ -200,12 +200,13 @@ const maxStoredA2ATasks = 500
 type a2aTaskStore struct {
 	mu      sync.Mutex
 	tasks   map[string]*srvA2ATask
+	owners  map[string]string // endpoint path that created each task
 	order   []string
 	cancels map[string]context.CancelFunc // running task id -> stops its background run
 }
 
 func newA2ATaskStore() *a2aTaskStore {
-	return &a2aTaskStore{tasks: make(map[string]*srvA2ATask), cancels: make(map[string]context.CancelFunc)}
+	return &a2aTaskStore{tasks: make(map[string]*srvA2ATask), owners: make(map[string]string), cancels: make(map[string]context.CancelFunc)}
 }
 
 // setCancel records the cancel func for a task's background run, so a later
@@ -251,29 +252,42 @@ func cloneTask(t *srvA2ATask) *srvA2ATask {
 // put stores a copy of t, never the caller's pointer — so a caller mutating
 // its own copy afterward can never reach into the store unsynchronized.
 func (s *a2aTaskStore) put(t *srvA2ATask) {
+	s.putForEndpoint("", t)
+}
+
+func (s *a2aTaskStore) putForEndpoint(endpoint string, t *srvA2ATask) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cp := cloneTask(t)
+	if s.owners == nil {
+		s.owners = make(map[string]string)
+	}
 	if _, exists := s.tasks[cp.ID]; !exists {
 		s.order = append(s.order, cp.ID)
 		if len(s.order) > maxStoredA2ATasks {
 			oldest := s.order[0]
 			s.order = s.order[1:]
 			delete(s.tasks, oldest)
+			delete(s.owners, oldest)
 			delete(s.cancels, oldest) // its own run, if still going, is orphaned but keeps running to completion — just no longer cancelable/observable
 		}
 	}
 	s.tasks[cp.ID] = cp
+	s.owners[cp.ID] = endpoint
 }
 
 // get returns a copy of the stored task, never the internal pointer — so a
 // concurrent write can never race with a caller reading (e.g. marshaling)
 // what get returned.
 func (s *a2aTaskStore) get(id string) (*srvA2ATask, bool) {
+	return s.getForEndpoint("", id)
+}
+
+func (s *a2aTaskStore) getForEndpoint(endpoint, id string) (*srvA2ATask, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t, ok := s.tasks[id]
-	if !ok {
+	if !ok || s.owners[id] != endpoint {
 		return nil, false
 	}
 	return cloneTask(t), true
@@ -309,10 +323,14 @@ func (s *a2aTaskStore) finishIfNotCanceled(id string, status srvA2AStatus, artif
 // the in-flight run — not just a stored-state flip that leaves the run
 // going.
 func (s *a2aTaskStore) cancelIfPossible(id string) (task *srvA2ATask, found bool, alreadyTerminal bool) {
+	return s.cancelForEndpoint("", id)
+}
+
+func (s *a2aTaskStore) cancelForEndpoint(endpoint, id string) (task *srvA2ATask, found bool, alreadyTerminal bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t, ok := s.tasks[id]
-	if !ok {
+	if !ok || s.owners[id] != endpoint {
 		return nil, false, false
 	}
 	if isTerminalTaskState(t.Status.State) {
@@ -461,11 +479,11 @@ func a2aHandlerWithConfig(resolve func(*http.Request) (*config.Config, error), r
 				writeErr(req.ID, -32602, "Invalid config: "+err.Error())
 				return
 			}
-			handleA2ASendMessage(r.Context(), cfg, run, store, req, writeResult, writeErr)
+			handleA2ASendMessageForEndpoint(r.Context(), cfg, run, store, r.URL.Path, req, writeResult, writeErr)
 		case "GetTask":
-			handleA2AGetTask(store, req, writeResult, writeErr)
+			handleA2AGetTaskForEndpoint(store, r.URL.Path, req, writeResult, writeErr)
 		case "CancelTask":
-			handleA2ACancelTask(store, req, writeResult, writeErr)
+			handleA2ACancelTaskForEndpoint(store, r.URL.Path, req, writeResult, writeErr)
 		default:
 			writeErr(req.ID, -32601, "Method not found")
 		}
@@ -477,6 +495,19 @@ func handleA2ASendMessage(
 	cfg *config.Config,
 	run a2aRunFunc,
 	store *a2aTaskStore,
+	req srvA2ARequest,
+	writeResult func(json.RawMessage, interface{}),
+	writeErr func(json.RawMessage, int, string),
+) {
+	handleA2ASendMessageForEndpoint(ctx, cfg, run, store, "", req, writeResult, writeErr)
+}
+
+func handleA2ASendMessageForEndpoint(
+	ctx context.Context,
+	cfg *config.Config,
+	run a2aRunFunc,
+	store *a2aTaskStore,
+	endpoint string,
 	req srvA2ARequest,
 	writeResult func(json.RawMessage, interface{}),
 	writeErr func(json.RawMessage, int, string),
@@ -532,7 +563,7 @@ func handleA2ASendMessage(
 		History:   []srvA2AMessage{params.Message},
 		Status:    srvA2AStatus{State: taskStateWorking, Timestamp: time.Now().UTC().Format(time.RFC3339)},
 	}
-	store.put(task)
+	store.putForEndpoint(endpoint, task)
 
 	// A detached context, not ctx (== r.Context()): SendMessage now returns
 	// as soon as the task is stored, well before run finishes, and Go
@@ -599,6 +630,16 @@ func handleA2AGetTask(
 	writeResult func(json.RawMessage, interface{}),
 	writeErr func(json.RawMessage, int, string),
 ) {
+	handleA2AGetTaskForEndpoint(store, "", req, writeResult, writeErr)
+}
+
+func handleA2AGetTaskForEndpoint(
+	store *a2aTaskStore,
+	endpoint string,
+	req srvA2ARequest,
+	writeResult func(json.RawMessage, interface{}),
+	writeErr func(json.RawMessage, int, string),
+) {
 	var params srvGetTaskParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		writeErr(req.ID, -32602, "Invalid parameters: "+err.Error())
@@ -608,7 +649,7 @@ func handleA2AGetTask(
 		writeErr(req.ID, -32602, "Invalid parameters: id is required")
 		return
 	}
-	task, ok := store.get(params.ID)
+	task, ok := store.getForEndpoint(endpoint, params.ID)
 	if !ok {
 		writeErr(req.ID, -32001, "Task not found")
 		return
@@ -618,6 +659,16 @@ func handleA2AGetTask(
 
 func handleA2ACancelTask(
 	store *a2aTaskStore,
+	req srvA2ARequest,
+	writeResult func(json.RawMessage, interface{}),
+	writeErr func(json.RawMessage, int, string),
+) {
+	handleA2ACancelTaskForEndpoint(store, "", req, writeResult, writeErr)
+}
+
+func handleA2ACancelTaskForEndpoint(
+	store *a2aTaskStore,
+	endpoint string,
 	req srvA2ARequest,
 	writeResult func(json.RawMessage, interface{}),
 	writeErr func(json.RawMessage, int, string),
@@ -637,7 +688,7 @@ func handleA2ACancelTask(
 	// Unreachable in practice today — a2aHandlerFunc runs SendMessage
 	// synchronously, so a task is always already terminal by the time it's
 	// stored — but kept correct for when/if async execution lands.
-	task, found, alreadyTerminal := store.cancelIfPossible(params.ID)
+	task, found, alreadyTerminal := store.cancelForEndpoint(endpoint, params.ID)
 	if !found {
 		writeErr(req.ID, -32001, "Task not found")
 		return
