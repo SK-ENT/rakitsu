@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/SK-ENT/rakitsu/internal/tools"
+	"github.com/google/uuid"
 )
 
 // ─── Protocol versions ────────────────────────────────────────────────────────
@@ -85,9 +85,10 @@ const mcpSessionIdleTTL = 24 * time.Hour
 // transport, JSON-RPC 2.0). External MCP clients — Claude Desktop, Cursor,
 // Zed — POST to /mcp and can discover and invoke all registered tools.
 type MCPServer struct {
-	registry *tools.ToolRegistry
-	version  string
-	now      func() time.Time // clock, swappable in tests
+	registry   *tools.ToolRegistry
+	registryMu sync.RWMutex
+	version    string
+	now        func() time.Time // clock, swappable in tests
 
 	mu       sync.Mutex
 	sessions map[string]time.Time // session id → last request time
@@ -99,12 +100,28 @@ func NewMCPServer(registry *tools.ToolRegistry, version string) *MCPServer {
 	return &MCPServer{registry: registry, version: version, now: time.Now, sessions: map[string]time.Time{}}
 }
 
+// SetRegistry replaces the tools exposed by this server while preserving
+// negotiated MCP sessions. It waits for active requests to finish before
+// closing tools from the previous registry.
+func (s *MCPServer) SetRegistry(registry *tools.ToolRegistry) {
+	s.registryMu.Lock()
+	old := s.registry
+	s.registry = registry
+	s.registryMu.Unlock()
+	if old != nil && old != registry {
+		old.CloseAll()
+	}
+}
+
 // ServeHTTP handles all MCP JSON-RPC requests. Mount this on any path — the
 // recommended convention is /mcp. It has no auth check of its own and
 // executes arbitrary registered tools (tools/call) — whichever path this
 // gets mounted on MUST be added to requiresAuth (auth.go) in the same
 // change, before it's reachable.
 func (s *MCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.registryMu.RLock()
+	defer s.registryMu.RUnlock()
+
 	// DNS-rebinding guard: the spec requires Origin validation on every
 	// connection, 403 when the header is present and not allowed. Non-browser
 	// clients send no Origin and pass.

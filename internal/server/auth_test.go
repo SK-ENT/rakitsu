@@ -85,6 +85,7 @@ func TestRequiresAuth(t *testing.T) {
 		{"POST", "/mcp"},                     // MCP executes arbitrary registered tools, no auth of its own
 		{"POST", "/mcp/anything"},            // standalone --mcp-port server has nothing else mounted on it
 		{"POST", "/a2a"},                     // same shape as MCP: full tool-execution surface
+		{"POST", "/a2a/abc123"},              // config-addressed A2A routes share the same auth boundary
 		{"GET", "/api/providers/models"},     // outbound-request proxy, SSRF-adjacent
 		{"GET", "/api/providers/model-info"}, // same endpoint shape as above
 		// Persisted-session history: discloses queries,

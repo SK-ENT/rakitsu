@@ -327,8 +327,8 @@ Start the SSE hub, web UI, runner, and debugger. Also serves an MCP server at `/
 | `--port, -p` | 9100 | Hub/UI port |
 | `--host` | localhost | Bind host (non-loopback requires `RAKITSU_API_TOKEN` — see [SECURITY.md](SECURITY.md)) |
 | `--mcp-port N` | 0 (disabled) | Start the MCP HTTP server on this port (requires `--config`) |
-| `--config PATH` | — | YAML config to load tools/agents from, for the MCP server and A2A endpoint |
-| `--config-dir` | — | Extra directory to scan for agent configs in the UI |
+| `--config PATH` | — | Config for MCP tools, monitors, health checks, and the default A2A endpoint; A2A reloads it per task and MCP refreshes tools when their definitions change |
+| `--config-dir` | — | Extra directory to scan for agent configs in the UI and addressable A2A endpoints |
 | `--sessions-dir PATH` | `~/.rakitsu/sessions` | Session file directory (also `settings.sessions_dir`). Running several instances: give each its own dir (and `settings.memory.dir`); see [configuration.md](configuration.md#running-isolated-instances). Also on `run` and `sessions`. |
 
 ### `rakitsu ui` — deprecated alias for `rakitsu serve`
@@ -1329,6 +1329,10 @@ DNS-rebinding guard (403 on a disallowed origin). The **modern MCP era**
 listener mounts the MCP server at `/mcp` only (`server.MCPListenerHandler`),
 so every other path on that listener is a 404 and the token gate cannot be
 sidestepped by path.
+The listener reloads the `--config` file on requests and replaces its tool
+registry when `tools` or `settings.allowed_commands` changes, keeping active
+MCP sessions intact. Listener ports, monitor setup, and health-check setup
+remain startup settings.
 
 ### MCP client — tool type `mcp_server`
 
@@ -1343,7 +1347,17 @@ PascalCase methods — `SendMessage`, `GetTask`, `CancelTask`) plus Agent Card
 discovery at `GET /.well-known/agent-card.json`. Implementation:
 `cmd/rakitsu/a2a_serve.go`. A remote request selects which local agent to
 run via the spec's `tenant` field, repurposed for that; task state is
-tracked in a capped in-memory store (no persistence across restarts).
+tracked in a capped in-memory store (no persistence across restarts). The
+default `/a2a` endpoint reloads its `--config` file for each new task and
+the default card reloads on each discovery request. Other discovered configs
+are exposed at `POST /a2a/{config-id}` with discovery at
+`GET /.well-known/agent-card.json/{config-id}`. Config IDs come from
+`GET /api/configs`; each endpoint resolves and validates the current YAML on
+request, so edits and additions under the scanned config directories do not
+require a server restart. Existing in-flight tasks keep the config snapshot
+they started with. The ID-specific routes require the same API token as
+`/a2a` when authentication is configured; agent-card discovery remains public,
+matching the default card route.
 Streaming (`SendStreamingMessage`), push-notification config, and AgentCard
 JWS signing are out of scope. The `a2a` tool type (§8, §4) is the client
 side — an agent delegates to a named agent in a different rakitsu process,

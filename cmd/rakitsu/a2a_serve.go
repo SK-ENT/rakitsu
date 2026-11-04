@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -362,7 +363,72 @@ type a2aRunFunc func(ctx context.Context, cfg *config.Config, query string) (str
 // auditing every caller in the agent graph — an interactive sub-agent
 // mid-pipeline would block the whole RPC on a non-existent human prompt.
 func a2aHandlerFunc(cfg *config.Config, run a2aRunFunc) http.HandlerFunc {
-	store := newA2ATaskStore()
+	return a2aHandlerWithConfig(func(*http.Request) (*config.Config, error) { return cfg, nil }, run, newA2ATaskStore())
+}
+
+// a2aReloadingHandlerFunc reloads the configured YAML for each new A2A task.
+// Existing task state stays in the handler, while config edits take effect on
+// the next SendMessage request.
+func a2aReloadingHandlerFunc(load func() (*config.Config, error), run a2aRunFunc) http.HandlerFunc {
+	return a2aHandlerWithConfig(func(*http.Request) (*config.Config, error) { return load() }, run, newA2ATaskStore())
+}
+
+// a2aConfigHandlerFunc serves one request-addressable config from the live
+// ConfigStore. ConfigStore.List rescans the configured directories and Get
+// reloads the YAML, so newly added and edited configs are visible without
+// restarting serve.
+func a2aConfigHandlerFunc(configs *server.ConfigStore, run a2aRunFunc) http.HandlerFunc {
+	return a2aHandlerWithConfig(func(r *http.Request) (*config.Config, error) {
+		configID := strings.TrimPrefix(r.URL.Path, "/a2a/")
+		return loadServedConfig(configs, configID)
+	}, run, newA2ATaskStore())
+}
+
+func loadServedConfig(configs *server.ConfigStore, configID string) (*config.Config, error) {
+	if configID == "" || strings.Contains(configID, "/") {
+		return nil, fmt.Errorf("invalid config id")
+	}
+	entries, err := configs.List()
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range entries {
+		if entry.ID == configID {
+			cfg, _, err := configs.Get(configID)
+			return cfg, err
+		}
+	}
+	return nil, fmt.Errorf("config %q not found", configID)
+}
+
+// a2aConfigAgentCardHandlerFunc exposes discovery for one live config at
+// /.well-known/agent-card.json/{configID}.
+func a2aConfigAgentCardHandlerFunc(configs *server.ConfigStore, fallbackURL string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		configID := strings.TrimPrefix(r.URL.Path, "/.well-known/agent-card.json/")
+		cfg, err := loadServedConfig(configs, configID)
+		if err != nil {
+			http.Error(w, "config not found", http.StatusNotFound)
+			return
+		}
+		selfURL := fallbackURL
+		if r.Host != "" {
+			scheme := "http"
+			if r.TLS != nil {
+				scheme = "https"
+			}
+			selfURL = fmt.Sprintf("%s://%s/a2a/%s", scheme, r.Host, configID)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(buildAgentCard(cfg, selfURL, server.TokenConfigured())) //nolint:errcheck
+	}
+}
+
+func a2aHandlerWithConfig(resolve func(*http.Request) (*config.Config, error), run a2aRunFunc, store *a2aTaskStore) http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		writeResult := func(id json.RawMessage, result interface{}) {
@@ -390,6 +456,11 @@ func a2aHandlerFunc(cfg *config.Config, run a2aRunFunc) http.HandlerFunc {
 
 		switch req.Method {
 		case "SendMessage":
+			cfg, err := resolve(r)
+			if err != nil {
+				writeErr(req.ID, -32602, "Invalid config: "+err.Error())
+				return
+			}
 			handleA2ASendMessage(r.Context(), cfg, run, store, req, writeResult, writeErr)
 		case "GetTask":
 			handleA2AGetTask(store, req, writeResult, writeErr)
@@ -594,9 +665,22 @@ func handleA2ACancelTask(
 // the address it actually used to reach this server, which is always the
 // right answer regardless of how rakitsu was told to bind.
 func agentCardHandlerFunc(cfg *config.Config, fallbackURL string) http.HandlerFunc {
+	return agentCardWithConfig(func() (*config.Config, error) { return cfg, nil }, fallbackURL)
+}
+
+func agentCardReloadingHandlerFunc(load func() (*config.Config, error), fallbackURL string) http.HandlerFunc {
+	return agentCardWithConfig(load, fallbackURL)
+}
+
+func agentCardWithConfig(load func() (*config.Config, error), fallbackURL string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		cfg, err := load()
+		if err != nil {
+			http.Error(w, "config unavailable", http.StatusServiceUnavailable)
 			return
 		}
 		selfURL := fallbackURL
