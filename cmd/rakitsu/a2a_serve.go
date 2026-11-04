@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -199,12 +200,13 @@ const maxStoredA2ATasks = 500
 type a2aTaskStore struct {
 	mu      sync.Mutex
 	tasks   map[string]*srvA2ATask
+	owners  map[string]string // endpoint path that created each task
 	order   []string
 	cancels map[string]context.CancelFunc // running task id -> stops its background run
 }
 
 func newA2ATaskStore() *a2aTaskStore {
-	return &a2aTaskStore{tasks: make(map[string]*srvA2ATask), cancels: make(map[string]context.CancelFunc)}
+	return &a2aTaskStore{tasks: make(map[string]*srvA2ATask), owners: make(map[string]string), cancels: make(map[string]context.CancelFunc)}
 }
 
 // setCancel records the cancel func for a task's background run, so a later
@@ -250,29 +252,42 @@ func cloneTask(t *srvA2ATask) *srvA2ATask {
 // put stores a copy of t, never the caller's pointer — so a caller mutating
 // its own copy afterward can never reach into the store unsynchronized.
 func (s *a2aTaskStore) put(t *srvA2ATask) {
+	s.putForEndpoint("", t)
+}
+
+func (s *a2aTaskStore) putForEndpoint(endpoint string, t *srvA2ATask) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cp := cloneTask(t)
+	if s.owners == nil {
+		s.owners = make(map[string]string)
+	}
 	if _, exists := s.tasks[cp.ID]; !exists {
 		s.order = append(s.order, cp.ID)
 		if len(s.order) > maxStoredA2ATasks {
 			oldest := s.order[0]
 			s.order = s.order[1:]
 			delete(s.tasks, oldest)
+			delete(s.owners, oldest)
 			delete(s.cancels, oldest) // its own run, if still going, is orphaned but keeps running to completion — just no longer cancelable/observable
 		}
 	}
 	s.tasks[cp.ID] = cp
+	s.owners[cp.ID] = endpoint
 }
 
 // get returns a copy of the stored task, never the internal pointer — so a
 // concurrent write can never race with a caller reading (e.g. marshaling)
 // what get returned.
 func (s *a2aTaskStore) get(id string) (*srvA2ATask, bool) {
+	return s.getForEndpoint("", id)
+}
+
+func (s *a2aTaskStore) getForEndpoint(endpoint, id string) (*srvA2ATask, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t, ok := s.tasks[id]
-	if !ok {
+	if !ok || s.owners[id] != endpoint {
 		return nil, false
 	}
 	return cloneTask(t), true
@@ -308,10 +323,14 @@ func (s *a2aTaskStore) finishIfNotCanceled(id string, status srvA2AStatus, artif
 // the in-flight run — not just a stored-state flip that leaves the run
 // going.
 func (s *a2aTaskStore) cancelIfPossible(id string) (task *srvA2ATask, found bool, alreadyTerminal bool) {
+	return s.cancelForEndpoint("", id)
+}
+
+func (s *a2aTaskStore) cancelForEndpoint(endpoint, id string) (task *srvA2ATask, found bool, alreadyTerminal bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t, ok := s.tasks[id]
-	if !ok {
+	if !ok || s.owners[id] != endpoint {
 		return nil, false, false
 	}
 	if isTerminalTaskState(t.Status.State) {
@@ -362,7 +381,72 @@ type a2aRunFunc func(ctx context.Context, cfg *config.Config, query string) (str
 // auditing every caller in the agent graph — an interactive sub-agent
 // mid-pipeline would block the whole RPC on a non-existent human prompt.
 func a2aHandlerFunc(cfg *config.Config, run a2aRunFunc) http.HandlerFunc {
-	store := newA2ATaskStore()
+	return a2aHandlerWithConfig(func(*http.Request) (*config.Config, error) { return cfg, nil }, run, newA2ATaskStore())
+}
+
+// a2aReloadingHandlerFunc reloads the configured YAML for each new A2A task.
+// Existing task state stays in the handler, while config edits take effect on
+// the next SendMessage request.
+func a2aReloadingHandlerFunc(load func() (*config.Config, error), run a2aRunFunc) http.HandlerFunc {
+	return a2aHandlerWithConfig(func(*http.Request) (*config.Config, error) { return load() }, run, newA2ATaskStore())
+}
+
+// a2aConfigHandlerFunc serves one request-addressable config from the live
+// ConfigStore. ConfigStore.List rescans the configured directories and Get
+// reloads the YAML, so newly added and edited configs are visible without
+// restarting serve.
+func a2aConfigHandlerFunc(configs *server.ConfigStore, run a2aRunFunc) http.HandlerFunc {
+	return a2aHandlerWithConfig(func(r *http.Request) (*config.Config, error) {
+		configID := strings.TrimPrefix(r.URL.Path, "/a2a/")
+		return loadServedConfig(configs, configID)
+	}, run, newA2ATaskStore())
+}
+
+func loadServedConfig(configs *server.ConfigStore, configID string) (*config.Config, error) {
+	if configID == "" || strings.Contains(configID, "/") {
+		return nil, fmt.Errorf("invalid config id")
+	}
+	entries, err := configs.List()
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range entries {
+		if entry.ID == configID {
+			cfg, _, err := configs.Get(configID)
+			return cfg, err
+		}
+	}
+	return nil, fmt.Errorf("config %q not found", configID)
+}
+
+// a2aConfigAgentCardHandlerFunc exposes discovery for one live config at
+// /.well-known/agent-card.json/{configID}.
+func a2aConfigAgentCardHandlerFunc(configs *server.ConfigStore, fallbackURL string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		configID := strings.TrimPrefix(r.URL.Path, "/.well-known/agent-card.json/")
+		cfg, err := loadServedConfig(configs, configID)
+		if err != nil {
+			http.Error(w, "config not found", http.StatusNotFound)
+			return
+		}
+		selfURL := fallbackURL
+		if r.Host != "" {
+			scheme := "http"
+			if r.TLS != nil {
+				scheme = "https"
+			}
+			selfURL = fmt.Sprintf("%s://%s/a2a/%s", scheme, r.Host, configID)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(buildAgentCard(cfg, selfURL, server.TokenConfigured())) //nolint:errcheck
+	}
+}
+
+func a2aHandlerWithConfig(resolve func(*http.Request) (*config.Config, error), run a2aRunFunc, store *a2aTaskStore) http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		writeResult := func(id json.RawMessage, result interface{}) {
@@ -390,11 +474,16 @@ func a2aHandlerFunc(cfg *config.Config, run a2aRunFunc) http.HandlerFunc {
 
 		switch req.Method {
 		case "SendMessage":
-			handleA2ASendMessage(r.Context(), cfg, run, store, req, writeResult, writeErr)
+			cfg, err := resolve(r)
+			if err != nil {
+				writeErr(req.ID, -32602, "Invalid config: "+err.Error())
+				return
+			}
+			handleA2ASendMessageForEndpoint(r.Context(), cfg, run, store, r.URL.Path, req, writeResult, writeErr)
 		case "GetTask":
-			handleA2AGetTask(store, req, writeResult, writeErr)
+			handleA2AGetTaskForEndpoint(store, r.URL.Path, req, writeResult, writeErr)
 		case "CancelTask":
-			handleA2ACancelTask(store, req, writeResult, writeErr)
+			handleA2ACancelTaskForEndpoint(store, r.URL.Path, req, writeResult, writeErr)
 		default:
 			writeErr(req.ID, -32601, "Method not found")
 		}
@@ -406,6 +495,19 @@ func handleA2ASendMessage(
 	cfg *config.Config,
 	run a2aRunFunc,
 	store *a2aTaskStore,
+	req srvA2ARequest,
+	writeResult func(json.RawMessage, interface{}),
+	writeErr func(json.RawMessage, int, string),
+) {
+	handleA2ASendMessageForEndpoint(ctx, cfg, run, store, "", req, writeResult, writeErr)
+}
+
+func handleA2ASendMessageForEndpoint(
+	ctx context.Context,
+	cfg *config.Config,
+	run a2aRunFunc,
+	store *a2aTaskStore,
+	endpoint string,
 	req srvA2ARequest,
 	writeResult func(json.RawMessage, interface{}),
 	writeErr func(json.RawMessage, int, string),
@@ -461,7 +563,7 @@ func handleA2ASendMessage(
 		History:   []srvA2AMessage{params.Message},
 		Status:    srvA2AStatus{State: taskStateWorking, Timestamp: time.Now().UTC().Format(time.RFC3339)},
 	}
-	store.put(task)
+	store.putForEndpoint(endpoint, task)
 
 	// A detached context, not ctx (== r.Context()): SendMessage now returns
 	// as soon as the task is stored, well before run finishes, and Go
@@ -528,6 +630,16 @@ func handleA2AGetTask(
 	writeResult func(json.RawMessage, interface{}),
 	writeErr func(json.RawMessage, int, string),
 ) {
+	handleA2AGetTaskForEndpoint(store, "", req, writeResult, writeErr)
+}
+
+func handleA2AGetTaskForEndpoint(
+	store *a2aTaskStore,
+	endpoint string,
+	req srvA2ARequest,
+	writeResult func(json.RawMessage, interface{}),
+	writeErr func(json.RawMessage, int, string),
+) {
 	var params srvGetTaskParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		writeErr(req.ID, -32602, "Invalid parameters: "+err.Error())
@@ -537,7 +649,7 @@ func handleA2AGetTask(
 		writeErr(req.ID, -32602, "Invalid parameters: id is required")
 		return
 	}
-	task, ok := store.get(params.ID)
+	task, ok := store.getForEndpoint(endpoint, params.ID)
 	if !ok {
 		writeErr(req.ID, -32001, "Task not found")
 		return
@@ -547,6 +659,16 @@ func handleA2AGetTask(
 
 func handleA2ACancelTask(
 	store *a2aTaskStore,
+	req srvA2ARequest,
+	writeResult func(json.RawMessage, interface{}),
+	writeErr func(json.RawMessage, int, string),
+) {
+	handleA2ACancelTaskForEndpoint(store, "", req, writeResult, writeErr)
+}
+
+func handleA2ACancelTaskForEndpoint(
+	store *a2aTaskStore,
+	endpoint string,
 	req srvA2ARequest,
 	writeResult func(json.RawMessage, interface{}),
 	writeErr func(json.RawMessage, int, string),
@@ -566,7 +688,7 @@ func handleA2ACancelTask(
 	// Unreachable in practice today — a2aHandlerFunc runs SendMessage
 	// synchronously, so a task is always already terminal by the time it's
 	// stored — but kept correct for when/if async execution lands.
-	task, found, alreadyTerminal := store.cancelIfPossible(params.ID)
+	task, found, alreadyTerminal := store.cancelForEndpoint(endpoint, params.ID)
 	if !found {
 		writeErr(req.ID, -32001, "Task not found")
 		return
@@ -594,9 +716,22 @@ func handleA2ACancelTask(
 // the address it actually used to reach this server, which is always the
 // right answer regardless of how rakitsu was told to bind.
 func agentCardHandlerFunc(cfg *config.Config, fallbackURL string) http.HandlerFunc {
+	return agentCardWithConfig(func() (*config.Config, error) { return cfg, nil }, fallbackURL)
+}
+
+func agentCardReloadingHandlerFunc(load func() (*config.Config, error), fallbackURL string) http.HandlerFunc {
+	return agentCardWithConfig(load, fallbackURL)
+}
+
+func agentCardWithConfig(load func() (*config.Config, error), fallbackURL string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		cfg, err := load()
+		if err != nil {
+			http.Error(w, "config unavailable", http.StatusServiceUnavailable)
 			return
 		}
 		selfURL := fallbackURL

@@ -124,13 +124,13 @@ func requiresAuth(r *http.Request) bool {
 }
 
 // MCPListenerHandler builds the handler for the standalone --mcp-port
-// listener: the MCP server mounted at /mcp only, behind the same CORS and
+// listener: the MCP handler mounted at /mcp only, behind the same CORS and
 // token middleware as the hub. MCPServer.ServeHTTP itself ignores the request
 // path, so mounting it as the listener's root handler would answer — and
 // execute tools for — any path; requiresAuth is default-deny, but the mux is
 // what guarantees nothing other than /mcp can reach the handler regardless
 // of how the auth policy evolves.
-func MCPListenerHandler(bindHost string, mcp *MCPServer) http.Handler {
+func MCPListenerHandler(bindHost string, mcp http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", mcp)
 	return GuardMiddleware(bindHost, CorsMiddleware(AuthMiddleware(mux)))

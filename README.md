@@ -151,7 +151,7 @@ Recorded against a local model with the [Code Reviewer config](#example-config) 
 - `rakitsu acp` reads one JSON-RPC message per line, capped at 16 MiB per line
 - `rakitsu acp` keeps at most `--max-sessions` sessions (default 256) and drops one unused for `--session-idle-timeout` (default 24h); a session with a running prompt is never dropped
 - `rakitsu serve --config tools.yaml --mcp-port 9200` exposes an MCP server at `http://localhost:9200/mcp` on a separate listener (legacy era, ≤2025-11-25 revision) so external MCP clients can discover and call rakitsu's tools
-- `rakitsu serve --config team.yaml` exposes an A2A endpoint at `/a2a` (real A2A v1.0.1) plus agent-card discovery, so a rakitsu agent can delegate to a named agent in a different rakitsu process
+- `rakitsu serve --config team.yaml` reloads the A2A config and sibling skills for each new task. Other discovered configs are addressable at `/a2a/{config-id}` with cards at `/.well-known/agent-card.json/{config-id}`; an optional MCP listener refreshes its tool registry when tool definitions change. Adding or editing agent configs no longer requires restarting the service
 - Tool types `mcp_server`, `a2a`, and `jev` let a rakitsu agent call *out* to other MCP servers, A2A agents, or TypeSafe AI's Jev model for typed yes/no, pick-one, or scored questions
 
 ## Long-running monitors

@@ -81,9 +81,9 @@ func init() {
 	serveCmd.Flags().IntVarP(&servePort, "port", "p", 9100, "Port to run the hub on")
 	serveCmd.Flags().StringVar(&serveHost, "host", "localhost", "Host to bind to (non-loopback requires RAKITSU_API_TOKEN — see docs/SECURITY.md)")
 	serveCmd.Flags().IntVar(&mcpPort, "mcp-port", 0, "Start MCP HTTP server on this port (requires --config)")
-	serveCmd.Flags().StringVar(&mcpConfig, "config", "", "YAML config for MCP server and A2A endpoint")
+	serveCmd.Flags().StringVar(&mcpConfig, "config", "", "Config for MCP tools, monitors, health checks, and the default A2A endpoint")
 	serveCmd.Flags().StringVar(&sessionsDirFlag, "sessions-dir", "", sessionsDirFlagHelp)
-	serveCmd.Flags().StringVar(&serveConfigDir, "config-dir", "", "Extra directory to scan for agent configs in the UI")
+	serveCmd.Flags().StringVar(&serveConfigDir, "config-dir", "", "Extra directory to scan for agent configs in the UI and A2A service")
 }
 
 func startServe() {
@@ -136,8 +136,9 @@ func startServe() {
 	if serveConfigDir != "" {
 		searchPaths = append([]string{serveConfigDir}, searchPaths...)
 	}
-	if configStore, err := server.NewConfigStore(searchPaths); err != nil {
-		log.Printf("Warning: config store unavailable: %v (agent runner disabled)", err)
+	configStore, configStoreErr := server.NewConfigStore(searchPaths)
+	if configStoreErr != nil {
+		log.Printf("Warning: config store unavailable: %v (agent runner disabled)", configStoreErr)
 	} else {
 		sseServer.SetConfigStore(configStore)
 		defer configStore.Cleanup()
@@ -187,16 +188,28 @@ func startServe() {
 	}
 
 	mux := sseServer.Mux()
+	if configStore != nil {
+		// Serve discovered configs as addressable agents. The handlers reload
+		// the selected file on each new A2A task, so adding or editing a config
+		// does not require restarting the service.
+		mux.Handle("/a2a/", a2aConfigHandlerFunc(configStore, func(ctx context.Context, cfg *config.Config, query string) (string, error) {
+			return executeConfig(ctx, cfg, eventBus, nil, query, nil)
+		}))
+		mux.Handle("/.well-known/agent-card.json/", a2aConfigAgentCardHandlerFunc(configStore, fmt.Sprintf("http://%s/a2a", addr)))
+	}
 
-	// MCP + A2A (optional, requires --config)
+	// MCP + default A2A endpoint (optional, requires --config). The default
+	// A2A handlers reload this file for each new task/card request; additional
+	// discovered configs are served at /a2a/{config-id} independently.
 	if mcpConfig != "" {
+		loadServeConfig := func() (*config.Config, error) {
+			cfg, _, err := server.LoadServeConfig(mcpConfig)
+			return cfg, err
+		}
 		if mcpPort > 0 {
-			mcpCtx := context.Background()
-			registry := createToolRegistry(mcpCtx, serveCfg)
-			mcpSrv := server.NewMCPServer(registry, Version)
 			mcpHTTP := &http.Server{
 				Addr:         fmt.Sprintf("%s:%d", serveHost, mcpPort),
-				Handler:      server.MCPListenerHandler(serveHost, mcpSrv),
+				Handler:      server.MCPListenerHandler(serveHost, newMCPReloadingHandler(loadServeConfig, Version, nil)),
 				ReadTimeout:  30 * time.Second,
 				WriteTimeout: 30 * time.Second,
 				IdleTimeout:  60 * time.Second,
@@ -209,10 +222,10 @@ func startServe() {
 			}()
 		}
 
-		mux.Handle("/a2a", a2aHandlerFunc(serveCfg, func(ctx context.Context, cfg *config.Config, query string) (string, error) {
+		mux.Handle("/a2a", a2aReloadingHandlerFunc(loadServeConfig, func(ctx context.Context, cfg *config.Config, query string) (string, error) {
 			return executeConfig(ctx, cfg, eventBus, nil, query, nil)
 		}))
-		mux.Handle("/.well-known/agent-card.json", agentCardHandlerFunc(serveCfg, fmt.Sprintf("http://%s/a2a", addr)))
+		mux.Handle("/.well-known/agent-card.json", agentCardReloadingHandlerFunc(loadServeConfig, fmt.Sprintf("http://%s/a2a", addr)))
 		log.Printf("A2A endpoint ready at http://%s/a2a", addr)
 		log.Printf("A2A agent card at http://%s/.well-known/agent-card.json", addr)
 	}
