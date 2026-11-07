@@ -671,6 +671,83 @@ func TestDuplicatePersistedTaskIDsFailClosed(t *testing.T) {
 	}
 }
 
+func TestPersistedTaskIDTraversalFailsClosed(t *testing.T) {
+	m, e, dir := newBareManager(t, 5, func(context.Context, TaskSpec) (string, error) {
+		return "", nil
+	}, nil)
+	m.Close()
+
+	outsideMarker := filepath.Join(dir, "outside.complete.json")
+	marker := []byte(`{"version":1,"status":"done"}`)
+	if err := os.WriteFile(outsideMarker, marker, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(m.d.LogDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	state := persistedTaskState{Version: 1, Tasks: []TaskStatus{{
+		ID: "../outside", Config: "alert-handler", Status: "running",
+	}}}
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(m.taskStatePath(), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	restarted := NewTaskManager(TaskDeps{Engine: e, Cfg: taskCfg(dir), LogDir: m.d.LogDir})
+	defer restarted.Close()
+	if restarted.persistErr == nil || !strings.Contains(restarted.persistErr.Error(), "invalid task id") {
+		t.Fatalf("traversal task state error = %v; want task ID rejection", restarted.persistErr)
+	}
+	if got := restarted.List(); len(got) != 0 {
+		t.Fatalf("partially loaded traversal task state = %+v; want no records", got)
+	}
+	if got, err := os.ReadFile(outsideMarker); err != nil || !bytes.Equal(got, marker) {
+		t.Fatalf("outside marker changed during recovery: %q, %v", got, err)
+	}
+}
+
+func TestRecoveryCleanupRemovesOnlyPersistedTaskMarkers(t *testing.T) {
+	m, e, dir := newBareManager(t, 5, func(context.Context, TaskSpec) (string, error) {
+		return "", nil
+	}, nil)
+	m.Close()
+	if err := os.MkdirAll(m.d.LogDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	state := persistedTaskState{Version: 1, Tasks: []TaskStatus{{
+		ID: "finished", Config: "alert-handler", Status: "done",
+	}}}
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(m.taskStatePath(), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ownedMarker := m.completionPath("finished")
+	foreignMarker := filepath.Join(m.d.LogDir, "foreign.complete.json")
+	for _, path := range []string{ownedMarker, foreignMarker} {
+		if err := os.WriteFile(path, []byte(`{"version":1,"status":"done"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	restarted := NewTaskManager(TaskDeps{Engine: e, Cfg: taskCfg(dir), LogDir: m.d.LogDir})
+	defer restarted.Close()
+	if restarted.persistErr != nil {
+		t.Fatalf("recovery failed: %v", restarted.persistErr)
+	}
+	if _, err := os.Stat(ownedMarker); !os.IsNotExist(err) {
+		t.Fatalf("owned completion marker should be removed, stat error = %v", err)
+	}
+	if _, err := os.Stat(foreignMarker); err != nil {
+		t.Fatalf("unowned completion marker should be preserved, stat error = %v", err)
+	}
+}
+
 func TestCompletionMarkerRecoversTerminalStatusAfterIndexWriteFailure(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})

@@ -35,6 +35,7 @@ const (
 var (
 	ErrTaskRefused = errors.New("start_task refused")
 	pathValue      = regexp.MustCompile(`^[A-Za-z0-9_./-]{1,200}$`)
+	taskIDValue    = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 )
 
 type taskCtxKey struct{}
@@ -204,9 +205,8 @@ func (m *TaskManager) taskStatePath() string { return filepath.Join(m.d.LogDir, 
 func (m *TaskManager) loadPersistedTasks() {
 	data, err := os.ReadFile(m.taskStatePath())
 	if os.IsNotExist(err) {
-		if err := m.cleanupCompletionMarkers(); err != nil {
-			m.persistErr = fmt.Errorf("clean stale task completion markers: %w", err)
-		}
+		// Without a task index there is no trusted list of files owned by this
+		// manager. Leave completion markers untouched rather than deleting by name.
 		return
 	}
 	if err != nil {
@@ -223,8 +223,8 @@ func (m *TaskManager) loadPersistedTasks() {
 	}
 	seen := make(map[string]struct{}, len(state.Tasks))
 	for _, status := range state.Tasks {
-		if status.ID == "" || status.Config == "" {
-			m.persistErr = errors.New("decode task state: task id and config are required")
+		if !validTaskID(status.ID) || status.Config == "" {
+			m.persistErr = errors.New("decode task state: invalid task id or missing config")
 			return
 		}
 		if _, ok := seen[status.ID]; ok {
@@ -272,7 +272,7 @@ func (m *TaskManager) loadPersistedTasks() {
 	m.mu.Unlock()
 	if err != nil {
 		m.persistErr = fmt.Errorf("persist recovered task state: %w", err)
-	} else if err := m.cleanupCompletionMarkers(); err != nil {
+	} else if err := m.cleanupCompletionMarkers(seen); err != nil {
 		m.persistErr = fmt.Errorf("clean stale task completion markers: %w", err)
 	}
 	for _, status := range recovered {
@@ -284,25 +284,19 @@ func (m *TaskManager) completionPath(id string) string {
 	return filepath.Join(m.d.LogDir, id+".complete.json")
 }
 
-// cleanupCompletionMarkers removes markers once recovery state has been saved.
-// Callers must leave them in place when the task index cannot be persisted.
-func (m *TaskManager) cleanupCompletionMarkers() error {
-	entries, err := os.ReadDir(m.d.LogDir)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".complete.json") {
-			continue
-		}
-		if err := os.Remove(filepath.Join(m.d.LogDir, entry.Name())); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove %s: %w", entry.Name(), err)
+// cleanupCompletionMarkers removes markers for validated IDs from the persisted
+// task index, and only after recovered state has been saved successfully.
+func (m *TaskManager) cleanupCompletionMarkers(taskIDs map[string]struct{}) error {
+	for id := range taskIDs {
+		if err := m.removeCompletionMarker(id); err != nil {
+			return fmt.Errorf("remove %s: %w", id+".complete.json", err)
 		}
 	}
 	return nil
+}
+
+func validTaskID(id string) bool {
+	return taskIDValue.MatchString(id)
 }
 
 func (m *TaskManager) removeCompletionMarker(id string) error {
@@ -425,12 +419,16 @@ func (m *TaskManager) Start(ctx context.Context, name string, args map[string]an
 		m.mu.Unlock()
 		return m.refuse(name, "max_concurrent_tasks reached")
 	}
+	id := m.d.NewID()
+	if !validTaskID(id) {
+		m.mu.Unlock()
+		return m.refuse(name, "task ID generator returned an invalid ID")
+	}
 	reservation, err := m.d.Engine.ReserveTask(m.d.Cfg.MaxTasksPerHour)
 	if err != nil {
 		m.mu.Unlock()
 		return m.refuse(name, err.Error())
 	}
-	id := m.d.NewID()
 	tctx, cancel := context.WithCancel(m.root)
 	rec := &taskRec{TaskStatus: TaskStatus{ID: id, Config: name, Status: "running"}, cancel: cancel}
 	m.tasks[id] = rec
