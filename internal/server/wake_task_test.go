@@ -141,6 +141,87 @@ func TestWakeTaskStartsIndependentRunWithEvents(t *testing.T) {
 	}
 }
 
+func TestWakeTaskRecoverySurfacesOnMonitorStart(t *testing.T) {
+	dir := t.TempDir()
+	wd := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(wd, "tasks"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wd, "tasks", "alert.yaml"), []byte(wakeTaskYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := wakeTestCfg(dir, true)
+	cfg.Settings.Wake.Allow.Configs = []config.WakeAllowConfig{{
+		Name: "alert-handler", Path: "tasks/alert.yaml", Task: "Handle it.",
+		Params: map[string]config.WakeTaskParam{"severity": {Type: "enum", Enum: []string{"low", "high"}}},
+	}}
+	inner := makeFakeChatBuildFunc("a1", nil, nil)
+	var handle *wake.TaskHandle
+	build := func(ctx context.Context, c *config.Config, bus *telemetry.EventBus, rq chan userinput.InputRequest, rs chan string, sid, self string) (agent.Runner, agent.Runner, func(), string, string, error) {
+		handle = wake.TaskHandleFrom(ctx)
+		return inner(ctx, c, bus, rq, rs, sid, self)
+	}
+	sess, err := StartChatSession(context.Background(), ChatSessionOptions{ConfigID: "t", Cfg: cfg, BuildFunc: build})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sess.Close()
+	if handle == nil {
+		t.Fatal("wake session must expose task status tools")
+	}
+	operatorEvents := sess.eventBus.Subscribe()
+	defer sess.eventBus.Unsubscribe(operatorEvents)
+
+	stateDir := filepath.Join(dir, sess.ID+".tasks")
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	state := `{"version":1,"tasks":[{"id":"task-crashed","config":"alert-handler","status":"running"}]}`
+	if err := os.WriteFile(filepath.Join(stateDir, "tasks.json"), []byte(state), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var replayCount atomic.Int32
+	after, _ := manualAfter()
+	if err := sess.StartWake(WakeOptions{
+		Dir: dir, Workdir: wd, Checks: func(context.Context, config.WakeCheck) wake.Observation { return wake.Observation{Exists: true} },
+		After: after, TaskRun: func(context.Context, wake.TaskSpec) (string, error) { replayCount.Add(1); return "unexpected", nil },
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case ev := <-operatorEvents:
+		if ev.EventType != telemetry.EventWakeTaskEnd {
+			t.Fatalf("recovery event type = %s, want %s", ev.EventType, telemetry.EventWakeTaskEnd)
+		}
+		var p telemetry.WakeTaskPayload
+		if err := json.Unmarshal(ev.Payload, &p); err != nil {
+			t.Fatal(err)
+		}
+		if p.TaskID != "task-crashed" || p.Status != "interrupted" {
+			t.Fatalf("recovery event payload = %+v", p)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("monitor start must emit the interrupted task to operators")
+	}
+	if got := sess.WakeStatus().Tasks; len(got) != 1 || got[0].Status != "interrupted" {
+		t.Fatalf("operator wake status tasks = %+v", got)
+	}
+	var statusTool tools.Tool
+	for _, tool := range handle.Tools() {
+		if tool.GetName() == "get_task_status" {
+			statusTool = tool
+		}
+	}
+	listed, err := statusTool.Execute(context.Background(), map[string]interface{}{})
+	if err != nil || !strings.Contains(listed, `"status":"interrupted"`) || !strings.Contains(listed, "task-crashed") {
+		t.Fatalf("wake-session task list = %q, %v", listed, err)
+	}
+	if replayCount.Load() != 0 {
+		t.Fatalf("monitor recovery replayed an interrupted task %d times", replayCount.Load())
+	}
+}
+
 func TestWakeTaskStopRouteCancelsAndBlocksNewStarts(t *testing.T) {
 	e := newWakeTaskEnv(t)
 	if _, err := e.start(t, "low"); err != nil {

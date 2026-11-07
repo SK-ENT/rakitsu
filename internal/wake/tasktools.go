@@ -90,13 +90,12 @@ type taskStatusTool struct{ h *TaskHandle }
 
 func (t *taskStatusTool) GetName() string { return "get_task_status" }
 func (t *taskStatusTool) GetDescription() string {
-	return "Get the short status (running, done, error, timeout, cancelled) and a bounded summary of a task started by start_task."
+	return "Get the short status (running, done, error, timeout, cancelled, interrupted) and a bounded summary of a task started by start_task. Omit task_id to list retained tasks, including tasks interrupted by a server restart. Inspect interrupted task side effects before starting replacement work; Rakitsu does not automatically retry them."
 }
 func (t *taskStatusTool) GetParametersSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":       "object",
-		"properties": map[string]interface{}{"task_id": map[string]interface{}{"type": "string"}},
-		"required":   []string{"task_id"},
+		"properties": map[string]interface{}{"task_id": map[string]interface{}{"type": "string", "description": "Task to inspect; omit to list retained tasks."}},
 	}
 }
 func (t *taskStatusTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
@@ -104,7 +103,15 @@ func (t *taskStatusTool) Execute(ctx context.Context, args map[string]interface{
 	if err != nil {
 		return "", err
 	}
-	id, _ := args["task_id"].(string)
+	rawID, provided := args["task_id"]
+	if !provided {
+		b, err := json.Marshal(m.List())
+		return string(b), err
+	}
+	id, ok := rawID.(string)
+	if !ok || id == "" {
+		return "", errors.New("task_id must be a non-empty string when provided")
+	}
 	st, ok := m.Status(id)
 	if !ok {
 		return "", fmt.Errorf("unknown task %q", id)

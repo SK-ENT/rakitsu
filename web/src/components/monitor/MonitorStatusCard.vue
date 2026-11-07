@@ -21,6 +21,14 @@ const canStop = computed(() => !!status.value && ['ok', 'stale', 'starting'].inc
       <dt>Running tasks</dt><dd>{{ status.running_tasks }}</dd>
       <dt>Next tick</dt><dd>{{ status.next_tick_in_seconds }}s</dd>
     </dl>
+    <div v-if="status?.tasks?.length" class="tasks">
+      <strong>Recent tasks</strong>
+      <ul>
+        <li v-for="task in status?.tasks ?? []" :key="task.id" :data-state="task.status">
+          {{ task.config }} — {{ task.status }}
+        </li>
+      </ul>
+    </div>
     <p v-if="error" class="err">{{ error }}</p>
     <div class="actions">
       <button :disabled="busy || !canStop" @click="stop">Stop</button>
@@ -41,6 +49,9 @@ const canStop = computed(() => !!status.value && ['ok', 'stale', 'starting'].inc
 dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0 0 8px; font-size: 13px; }
 dt { opacity: 0.7; }
 dd { margin: 0; }
+.tasks { font-size: 13px; margin-bottom: 8px; }
+.tasks ul { margin: 4px 0 0; padding-left: 20px; }
+.tasks [data-state='interrupted'] { color: #d98b1f; }
 .err { color: #c0392b; font-size: 12px; margin: 0 0 8px; }
 .actions { display: flex; gap: 8px; }
 </style>

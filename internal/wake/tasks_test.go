@@ -1,10 +1,13 @@
 package wake
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -477,6 +480,10 @@ func TestStartTaskToolsRoundTrip(t *testing.T) {
 	if err != nil || !strings.Contains(st, `"status":"running"`) {
 		t.Fatalf("status: %q %v", st, err)
 	}
+	all, err := statusTool.Execute(context.Background(), map[string]interface{}{})
+	if err != nil || !strings.Contains(all, `"id":"t1"`) || !strings.Contains(all, `"status":"running"`) {
+		t.Fatalf("list statuses: %q %v", all, err)
+	}
 	if _, err := statusTool.Execute(context.Background(), map[string]interface{}{"task_id": "zzz"}); err == nil {
 		t.Fatal("unknown id must error")
 	}
@@ -559,6 +566,601 @@ func TestTaskRecordsBounded(t *testing.T) {
 	}
 	if s, _ := m.Status("t21"); s.Status != "done" {
 		t.Fatalf("newest record must be kept: %+v", s)
+	}
+}
+
+func TestTaskRunningStateIsDurableBeforeRunnerStarts(t *testing.T) {
+	started := make(chan error, 1)
+	var dir string
+	run := func(context.Context, TaskSpec) (string, error) {
+		data, err := os.ReadFile(filepath.Join(dir, "s1.tasks", "tasks.json"))
+		if err != nil {
+			started <- err
+			return "", err
+		}
+		var state persistedTaskState
+		if err := json.Unmarshal(data, &state); err != nil {
+			started <- err
+			return "", err
+		}
+		if len(state.Tasks) != 1 || state.Tasks[0].Status != "running" {
+			started <- fmt.Errorf("persisted state before runner: %+v", state.Tasks)
+			return "", errors.New("task state missing before runner")
+		}
+		started <- nil
+		return "done", nil
+	}
+	m, _, d := newBareManager(t, 5, run, nil)
+	dir = d
+	if _, err := m.Start(context.Background(), "alert-handler", goodArgs()); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-started; err != nil {
+		t.Fatal(err)
+	}
+	m.Wait()
+}
+
+func TestRunningTaskIsInterruptedWhenManagerRestarts(t *testing.T) {
+	started := make(chan struct{})
+	run := func(ctx context.Context, _ TaskSpec) (string, error) {
+		close(started)
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+	m, e, dir := newBareManager(t, 5, run, nil)
+	st, err := m.Start(context.Background(), "alert-handler", goodArgs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	// Simulate a crash after the result file reached disk but before the
+	// terminal status update did. Recovery must remain conservative.
+	if err := os.WriteFile(filepath.Join(m.d.LogDir, st.ID+".log"), []byte("partial window result"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// A new manager on the same state directory represents a server restart.
+	// The old manager is deliberately left running, as it would be lost with
+	// the process; recovery must report the task without replaying it.
+	cfg := taskCfg(dir)
+	restarted := NewTaskManager(TaskDeps{Engine: e, Cfg: cfg, Allow: m.d.Allow, Run: run, LogDir: m.d.LogDir})
+	got, ok := restarted.Status(st.ID)
+	if !ok || got.Status != "interrupted" {
+		t.Fatalf("restarted status = %+v, %v; want interrupted", got, ok)
+	}
+	restarted.Close()
+	restartedAgain := NewTaskManager(TaskDeps{Engine: e, Cfg: cfg, Allow: m.d.Allow, Run: run, LogDir: m.d.LogDir})
+	got, ok = restartedAgain.Status(st.ID)
+	if !ok || got.Status != "interrupted" || !strings.Contains(got.Summary, "inspect side effects") {
+		t.Fatalf("restarted-again status = %+v, %v; want actionable interrupted state", got, ok)
+	}
+	restartedAgain.Close()
+	m.Close()
+}
+
+func TestDuplicatePersistedTaskIDsFailClosed(t *testing.T) {
+	m, e, dir := newBareManager(t, 5, func(context.Context, TaskSpec) (string, error) {
+		return "", nil
+	}, nil)
+	m.Close()
+
+	state := persistedTaskState{Version: 1, Tasks: []TaskStatus{
+		{ID: "duplicate", Config: "alert-handler", Status: "done"},
+		{ID: "duplicate", Config: "alert-handler", Status: "error"},
+	}}
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statePath := filepath.Join(m.d.LogDir, "tasks.json")
+	if err := os.MkdirAll(m.d.LogDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statePath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	restarted := NewTaskManager(TaskDeps{Engine: e, Cfg: taskCfg(dir), LogDir: m.d.LogDir})
+	defer restarted.Close()
+	if restarted.persistErr == nil || !strings.Contains(restarted.persistErr.Error(), "duplicate task id") {
+		t.Fatalf("duplicate task state error = %v; want duplicate ID rejection", restarted.persistErr)
+	}
+	if got := restarted.List(); len(got) != 0 {
+		t.Fatalf("partially loaded duplicate task state = %+v; want no records", got)
+	}
+}
+
+func TestPersistedTaskIDTraversalFailsClosed(t *testing.T) {
+	m, e, dir := newBareManager(t, 5, func(context.Context, TaskSpec) (string, error) {
+		return "", nil
+	}, nil)
+	m.Close()
+
+	outsideMarker := filepath.Join(dir, "outside.complete.json")
+	marker := []byte(`{"version":1,"status":"done"}`)
+	if err := os.WriteFile(outsideMarker, marker, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(m.d.LogDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	state := persistedTaskState{Version: 1, Tasks: []TaskStatus{{
+		ID: "../outside", Config: "alert-handler", Status: "running",
+	}}}
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(m.taskStatePath(), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	restarted := NewTaskManager(TaskDeps{Engine: e, Cfg: taskCfg(dir), LogDir: m.d.LogDir})
+	defer restarted.Close()
+	if restarted.persistErr == nil || !strings.Contains(restarted.persistErr.Error(), "invalid task id") {
+		t.Fatalf("traversal task state error = %v; want task ID rejection", restarted.persistErr)
+	}
+	if got := restarted.List(); len(got) != 0 {
+		t.Fatalf("partially loaded traversal task state = %+v; want no records", got)
+	}
+	if got, err := os.ReadFile(outsideMarker); err != nil || !bytes.Equal(got, marker) {
+		t.Fatalf("outside marker changed during recovery: %q, %v", got, err)
+	}
+}
+
+func TestRecoveryCleanupRemovesOnlyPersistedTaskMarkers(t *testing.T) {
+	m, e, dir := newBareManager(t, 5, func(context.Context, TaskSpec) (string, error) {
+		return "", nil
+	}, nil)
+	m.Close()
+	if err := os.MkdirAll(m.d.LogDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	state := persistedTaskState{Version: 1, Tasks: []TaskStatus{{
+		ID: "finished", Config: "alert-handler", Status: "done",
+	}}}
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(m.taskStatePath(), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ownedMarker := m.completionPath("finished")
+	foreignMarker := filepath.Join(m.d.LogDir, "foreign.complete.json")
+	for _, path := range []string{ownedMarker, foreignMarker} {
+		if err := os.WriteFile(path, []byte(`{"version":1,"status":"done"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	restarted := NewTaskManager(TaskDeps{Engine: e, Cfg: taskCfg(dir), LogDir: m.d.LogDir})
+	defer restarted.Close()
+	if restarted.persistErr != nil {
+		t.Fatalf("recovery failed: %v", restarted.persistErr)
+	}
+	if _, err := os.Stat(ownedMarker); !os.IsNotExist(err) {
+		t.Fatalf("owned completion marker should be removed, stat error = %v", err)
+	}
+	if _, err := os.Stat(foreignMarker); err != nil {
+		t.Fatalf("unowned completion marker should be preserved, stat error = %v", err)
+	}
+}
+
+func TestCompletionMarkerRecoversTerminalStatusAfterIndexWriteFailure(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	m, e, dir := newBareManager(t, 5, func(context.Context, TaskSpec) (string, error) {
+		close(started)
+		<-release
+		return "durable result", nil
+	}, nil)
+	defer m.Close()
+
+	st, err := m.Start(context.Background(), "alert-handler", goodArgs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	statePath := filepath.Join(m.d.LogDir, "tasks.json")
+	state, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(statePath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(statePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	m.Wait()
+	if m.persistErr == nil {
+		t.Fatal("status index write failure was not recorded")
+	}
+	if got, ok := m.Status(st.ID); !ok || got.Status != "done" {
+		t.Fatalf("live task status = %+v, %v; want done backed by completion marker", got, ok)
+	}
+	m.mu.Lock()
+	rec := m.tasks[st.ID]
+	m.mu.Unlock()
+	m.finish(rec, "cancelled", "late output", "late cancellation")
+	if got, ok := m.loadPersistedCompletion(st.ID); !ok || got != "done" {
+		t.Fatalf("late finish changed completion marker to %q, %v; want done", got, ok)
+	}
+
+	if err := os.Remove(statePath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statePath, state, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	restarted := NewTaskManager(TaskDeps{Engine: e, Cfg: taskCfg(dir), LogDir: m.d.LogDir})
+	defer restarted.Close()
+	if got, ok := restarted.Status(st.ID); !ok || got.Status != "done" {
+		t.Fatalf("recovered task status = %+v, %v; want done", got, ok)
+	}
+	if restarted.persistErr != nil {
+		t.Fatalf("recovered task state could not be persisted: %v", restarted.persistErr)
+	}
+	if _, err := os.Stat(m.completionPath(st.ID)); !os.IsNotExist(err) {
+		t.Fatalf("recovered completion marker should be removed after state persistence, stat error = %v", err)
+	}
+}
+
+func TestRecoveredInterruptedTaskIsEmittedAndListed(t *testing.T) {
+	started := make(chan struct{})
+	run := func(ctx context.Context, _ TaskSpec) (string, error) {
+		close(started)
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+	m, e, dir := newBareManager(t, 5, run, nil)
+	st, err := m.Start(context.Background(), "alert-handler", goodArgs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-started
+
+	recovered := make(chan TaskEvent, 4)
+	restarted := NewTaskManager(TaskDeps{Engine: e, Cfg: taskCfg(dir), Allow: m.d.Allow, Run: run,
+		LogDir: m.d.LogDir, Emit: func(ev TaskEvent) { recovered <- ev }})
+	defer restarted.Close()
+	defer m.Close()
+
+	select {
+	case ev := <-recovered:
+		if ev.Phase != "end" || ev.TaskID != st.ID || ev.Status != "interrupted" || ev.Reason == "" {
+			t.Fatalf("recovery event = %+v", ev)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("restart must emit the interrupted task to the operator event stream")
+	}
+
+	listed := restarted.List()
+	if len(listed) != 1 || listed[0].ID != st.ID || listed[0].Status != "interrupted" {
+		t.Fatalf("recovered tasks = %+v; want interrupted task %q", listed, st.ID)
+	}
+}
+
+func TestRecoveredInterruptedTaskIsEmittedWhenPersistenceFails(t *testing.T) {
+	m, e, dir := newBareManager(t, 5, func(context.Context, TaskSpec) (string, error) {
+		return "", nil
+	}, nil)
+	m.Close()
+
+	stateDir := m.d.LogDir
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	state := persistedTaskState{Version: 1, Tasks: []TaskStatus{{ID: "recover-me", Config: "alert-handler", Status: "running"}}}
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "tasks.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(stateDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(stateDir, 0o700) })
+
+	recovered := make(chan TaskEvent, 1)
+	restarted := NewTaskManager(TaskDeps{Engine: e, Cfg: taskCfg(dir), Allow: m.d.Allow,
+		LogDir: stateDir, Emit: func(ev TaskEvent) { recovered <- ev }})
+	defer restarted.Close()
+	if restarted.persistErr == nil {
+		t.Skip("filesystem permissions did not prevent state writes; run as a non-root user to exercise this failure")
+	}
+
+	select {
+	case ev := <-recovered:
+		if ev.Phase != "end" || ev.TaskID != "recover-me" || ev.Status != "interrupted" {
+			t.Fatalf("recovery event = %+v", ev)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("recovery persistence failure must not suppress the interrupted-task event")
+	}
+	if status, ok := restarted.Status("recover-me"); !ok || status.Status != "interrupted" {
+		t.Fatalf("recovered status = %+v, %v; want interrupted", status, ok)
+	}
+	if restarted.persistErr == nil {
+		t.Fatal("failed persistence must continue to block new task starts")
+	}
+}
+
+func TestTaskStartPersistenceFailureBlocksFurtherStartsAndReleasesCap(t *testing.T) {
+	h := newTaskHarness(t)
+	if err := os.MkdirAll(h.m.d.LogDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(h.m.d.LogDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(h.m.d.LogDir, 0o700) })
+
+	if _, err := h.m.Start(context.Background(), "alert-handler", goodArgs()); err == nil {
+		t.Fatal("start must fail when task state cannot be persisted")
+	}
+	if h.m.persistErr == nil {
+		t.Skip("filesystem permissions did not prevent state writes; run as a non-root user to exercise this failure")
+	}
+	if got := len(h.m.List()); got != 0 {
+		t.Fatalf("in-memory tasks after failed start = %d; want none", got)
+	}
+	if _, err := os.Stat(filepath.Join(h.m.d.LogDir, "tasks.json")); !os.IsNotExist(err) {
+		t.Fatalf("task state after failed first write: stat error = %v; want no state file", err)
+	}
+	select {
+	case spec := <-h.started:
+		t.Fatalf("runner started despite failed persistence: %+v", spec)
+	default:
+	}
+
+	if _, err := h.m.Start(context.Background(), "alert-handler", goodArgs()); !errors.Is(err, ErrTaskRefused) {
+		t.Fatalf("subsequent start error = %v; want fail-closed refusal", err)
+	}
+	h.e.mu.Lock()
+	defer h.e.mu.Unlock()
+	if got := len(h.e.state.TaskWindow); got != 0 {
+		t.Fatalf("task launch reservations after failed persistence = %d; want 0", got)
+	}
+}
+
+func TestTaskReservationRollbackRemovesExactReservation(t *testing.T) {
+	h := newTaskHarness(t)
+	first, err := h.e.ReserveTask(h.m.d.Cfg.MaxTasksPerHour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := h.e.ReserveTask(h.m.d.Cfg.MaxTasksPerHour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.e.rollbackTaskReservation(first); err != nil {
+		t.Fatalf("rollback first reservation: %v", err)
+	}
+
+	h.e.mu.Lock()
+	defer h.e.mu.Unlock()
+	if got := h.e.taskWindowIDs; len(got) != 1 || got[0] != second {
+		t.Fatalf("remaining reservation IDs = %v; want only %d", got, second)
+	}
+}
+
+func TestTaskWindowRestoresAfterPrunedReservationWriteFails(t *testing.T) {
+	h := newTaskHarness(t)
+	firstReservation, err := h.e.ReserveTask(h.m.d.Cfg.MaxTasksPerHour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.e.mu.Lock()
+	firstTimestamp := h.e.state.TaskWindow[0]
+	h.e.mu.Unlock()
+
+	h.clk.Advance(61 * time.Minute)
+	if err := os.Chmod(h.e.Dir(), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(h.e.Dir(), 0o700) })
+	if _, err := h.e.ReserveTask(h.m.d.Cfg.MaxTasksPerHour); err == nil {
+		t.Skip("filesystem permissions did not prevent state writes; run as a non-root user to exercise this failure")
+	}
+
+	h.e.mu.Lock()
+	defer h.e.mu.Unlock()
+	if len(h.e.state.TaskWindow) != 1 || h.e.state.TaskWindow[0] != firstTimestamp {
+		t.Fatalf("task window after failed pruned write = %v; want original timestamp %d", h.e.state.TaskWindow, firstTimestamp)
+	}
+	if len(h.e.taskWindowIDs) != 1 || h.e.taskWindowIDs[0] != firstReservation {
+		t.Fatalf("task-window IDs after failed pruned write = %v; want original reservation %d", h.e.taskWindowIDs, firstReservation)
+	}
+}
+
+func TestTaskCapRefusalPersistsPrunedWindow(t *testing.T) {
+	h := newTaskHarness(t)
+	for i := 0; i < 3; i++ {
+		if i > 0 {
+			h.clk.Advance(10 * time.Minute)
+		}
+		if _, err := h.e.ReserveTask(3); err != nil {
+			t.Fatalf("reserve %d: %v", i+1, err)
+		}
+	}
+	h.clk.Advance(41 * time.Minute)
+	if _, err := h.e.ReserveTask(2); !errors.Is(err, ErrTaskCap) {
+		t.Fatalf("reserve at lowered cap error = %v; want ErrTaskCap", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(h.e.Dir(), "s1.state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved persisted
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.TaskWindow) != 2 || saved.TaskWindow[0] != h.clk.Now().Add(-51*time.Minute).UnixNano() || saved.TaskWindow[1] != h.clk.Now().Add(-41*time.Minute).UnixNano() {
+		t.Fatalf("persisted task window after cap refusal = %v; want only the two recent reservations", saved.TaskWindow)
+	}
+}
+
+func TestRunningTaskIsInterruptedAfterProcessExit(t *testing.T) {
+	const helperEnv = "RAKITSU_WAKE_TASK_CRASH_HELPER"
+	if os.Getenv(helperEnv) == "1" {
+		dir := os.Getenv("RAKITSU_WAKE_TASK_CRASH_DIR")
+		cfg := taskCfg(dir)
+		taskPath := filepath.Join(dir, "alert.yaml")
+		if err := os.WriteFile(taskPath, []byte(taskYAML), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		allow := ResolvedConfig{Name: "alert-handler", Path: taskPath, SHA256: hashBytes([]byte(taskYAML)),
+			Task: cfg.Allow.Configs[0].Task, Params: cfg.Allow.Configs[0].Params}
+		e, err := New(Deps{Cfg: cfg, SessionID: "s1", Dir: dir, Clock: NewFakeClock(time.Unix(1_700_000_000, 0)),
+			Checks: (&fakeProbe{}).fn, Rand: func() float64 { return 0.5 }, Getenv: func(string) string { return "" }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		started := make(chan struct{})
+		m := NewTaskManager(TaskDeps{Engine: e, Cfg: cfg, Allow: map[string]ResolvedConfig{"alert-handler": allow}, Run: func(ctx context.Context, _ TaskSpec) (string, error) {
+			close(started)
+			<-ctx.Done()
+			return "", ctx.Err()
+		}, NewID: func() string { return "crashed-task" }, LogDir: filepath.Join(dir, "tasks")})
+		if _, err := m.Start(context.Background(), "alert-handler", goodArgs()); err != nil {
+			t.Fatal(err)
+		}
+		<-started
+		os.Exit(0) // simulate process loss without running manager cleanup
+	}
+
+	dir := t.TempDir()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRunningTaskIsInterruptedAfterProcessExit$")
+	cmd.Env = append(os.Environ(), helperEnv+"=1", "RAKITSU_WAKE_TASK_CRASH_DIR="+dir)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("crash helper: %v\n%s", err, output)
+	}
+
+	cfg := taskCfg(dir)
+	taskPath := filepath.Join(dir, "alert.yaml")
+	if err := os.WriteFile(taskPath, []byte(taskYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	allow := ResolvedConfig{Name: "alert-handler", Path: taskPath, SHA256: hashBytes([]byte(taskYAML)),
+		Task: cfg.Allow.Configs[0].Task, Params: cfg.Allow.Configs[0].Params}
+	e, err := New(Deps{Cfg: cfg, SessionID: "s1", Dir: dir, Clock: NewFakeClock(time.Unix(1_700_000_000, 0)),
+		Checks: (&fakeProbe{}).fn, Rand: func() float64 { return 0.5 }, Getenv: func(string) string { return "" }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.Close()
+	var replayCount atomic.Int32
+	m := NewTaskManager(TaskDeps{Engine: e, Cfg: cfg, Allow: map[string]ResolvedConfig{"alert-handler": allow}, Run: func(context.Context, TaskSpec) (string, error) { replayCount.Add(1); return "unexpected", nil },
+		LogDir: filepath.Join(dir, "tasks")})
+	defer m.Close()
+	got, ok := m.Status("crashed-task")
+	if !ok || got.Status != "interrupted" {
+		t.Fatalf("post-process-exit status = %+v, %v; want interrupted", got, ok)
+	}
+	if replayCount.Load() != 0 {
+		t.Fatalf("recovery replayed the interrupted task %d times", replayCount.Load())
+	}
+}
+
+func TestCompletedTaskAndResultSurviveManagerRestart(t *testing.T) {
+	run := func(context.Context, TaskSpec) (string, error) { return "durable result", nil }
+	m, e, dir := newBareManager(t, 5, run, nil)
+	st, err := m.Start(context.Background(), "alert-handler", goodArgs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Wait()
+
+	restarted := NewTaskManager(TaskDeps{Engine: e, Cfg: taskCfg(dir), Allow: m.d.Allow, Run: run, LogDir: m.d.LogDir})
+	got, ok := restarted.Status(st.ID)
+	if !ok || got.Status != "done" {
+		t.Fatalf("restarted status = %+v, %v; want done", got, ok)
+	}
+	result, err := os.ReadFile(filepath.Join(m.d.LogDir, st.ID+".log"))
+	if err != nil || string(result) != "durable result" {
+		t.Fatalf("durable result = %q, %v", result, err)
+	}
+	state, err := os.ReadFile(filepath.Join(m.d.LogDir, "tasks.json"))
+	if err != nil || bytes.Contains(state, []byte("durable result")) {
+		t.Fatalf("task recovery state contains task output: %s (%v)", state, err)
+	}
+	restarted.Close()
+	m.Close()
+}
+
+func TestCompletedTaskMarkerIsRemovedAfterStatePersists(t *testing.T) {
+	run := func(context.Context, TaskSpec) (string, error) { return "durable result", nil }
+	m, _, _ := newBareManager(t, 5, run, nil)
+	defer m.Close()
+
+	st, err := m.Start(context.Background(), "alert-handler", goodArgs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Wait()
+
+	if _, err := os.Stat(m.completionPath(st.ID)); !os.IsNotExist(err) {
+		t.Fatalf("completion marker should be removed after terminal state persistence, stat error = %v", err)
+	}
+}
+
+func TestStaleCompletionMarkerIsRemovedAfterStartupPersistence(t *testing.T) {
+	m, e, dir := newBareManager(t, 5, func(context.Context, TaskSpec) (string, error) {
+		return "", nil
+	}, nil)
+	m.Close()
+
+	state, err := json.Marshal(persistedTaskState{Version: 1, Tasks: []TaskStatus{{
+		ID: "finished", Config: "alert-handler", Status: "done",
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(m.d.LogDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(m.taskStatePath(), state, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(m.completionPath("finished"), []byte(`{"version":1,"status":"done"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	restarted := NewTaskManager(TaskDeps{Engine: e, Cfg: taskCfg(dir), LogDir: m.d.LogDir})
+	defer restarted.Close()
+	if restarted.persistErr != nil {
+		t.Fatalf("restarted task state could not be persisted: %v", restarted.persistErr)
+	}
+	if _, err := os.Stat(m.completionPath("finished")); !os.IsNotExist(err) {
+		t.Fatalf("stale completion marker should be removed on startup, stat error = %v", err)
+	}
+}
+
+func TestTaskIsNotDoneWhenResultCannotBePersisted(t *testing.T) {
+	run := func(context.Context, TaskSpec) (string, error) { return "unwritable result", nil }
+	m, _, _ := newBareManager(t, 5, run, nil)
+	m.d.NewID = func() string { return "blocked-log" }
+	if err := os.MkdirAll(m.d.LogDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(m.d.LogDir, "blocked-log.log"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	st, err := m.Start(context.Background(), "alert-handler", goodArgs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Wait()
+	got, ok := m.Status(st.ID)
+	if !ok || got.Status != "error" {
+		t.Fatalf("status after result persistence failure = %+v, %v; want error", got, ok)
 	}
 }
 

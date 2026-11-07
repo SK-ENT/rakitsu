@@ -1,5 +1,12 @@
 // Mirrors internal/server/wake_status.go (WakeStatus).
 export type WakeState = 'ok' | 'stale' | 'stopped' | 'failed' | 'starting'
+export type WakeTaskState = 'running' | 'done' | 'error' | 'timeout' | 'cancelled' | 'interrupted'
+
+export interface WakeTaskStatus {
+  id: string
+  config: string
+  status: WakeTaskState
+}
 
 export interface WakeStatus {
   id: string
@@ -12,4 +19,5 @@ export interface WakeStatus {
   running_tasks: number
   next_tick_in_seconds: number
   interval_seconds: number
+  tasks?: WakeTaskStatus[]
 }

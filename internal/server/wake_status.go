@@ -16,19 +16,27 @@ const (
 )
 
 // WakeStatus is the read-only status of one wake session. It is the JSON
-// body of GET /api/chat/{id}/wake/status. It must never carry check paths,
-// URLs, error text or secret names. Task B owns the real implementation.
+// body of GET /api/chat/{id}/wake/status. It never carries check paths,
+// URLs, error text, secret names, task prompts or task summaries.
 type WakeStatus struct {
-	ID                string     `json:"id"`
-	State             string     `json:"state"`
-	Label             string     `json:"label,omitempty"`
-	LastTick          *time.Time `json:"last_tick,omitempty"`
-	LastAlarm         *time.Time `json:"last_alarm,omitempty"`
-	TurnsLastHour     int        `json:"turns_last_hour"`
-	MaxTurnsPerHour   int        `json:"max_turns_per_hour"`
-	RunningTasks      int        `json:"running_tasks"`
-	NextTickInSeconds int        `json:"next_tick_in_seconds"`
-	IntervalSeconds   int        `json:"interval_seconds"`
+	ID                string           `json:"id"`
+	State             string           `json:"state"`
+	Label             string           `json:"label,omitempty"`
+	LastTick          *time.Time       `json:"last_tick,omitempty"`
+	LastAlarm         *time.Time       `json:"last_alarm,omitempty"`
+	TurnsLastHour     int              `json:"turns_last_hour"`
+	MaxTurnsPerHour   int              `json:"max_turns_per_hour"`
+	RunningTasks      int              `json:"running_tasks"`
+	NextTickInSeconds int              `json:"next_tick_in_seconds"`
+	IntervalSeconds   int              `json:"interval_seconds"`
+	Tasks             []WakeTaskStatus `json:"tasks,omitempty"`
+}
+
+// WakeTaskStatus contains only fields safe for the operator status API.
+type WakeTaskStatus struct {
+	ID     string `json:"id"`
+	Config string `json:"config"`
+	Status string `json:"status"`
 }
 
 // WakeStatus returns the session's wake status.
@@ -52,9 +60,11 @@ func (s *ChatSession) WakeStatus() WakeStatus {
 
 	s.wakeMu.Lock()
 	var eng *wake.Engine
+	var tasks *wake.TaskManager
 	var started time.Time
 	if s.wake != nil {
 		eng = s.wake.eng
+		tasks = s.wake.tasks
 		started = s.wake.started
 		if clock := s.wake.opts.Clock; clock != nil {
 			now = clock.Now()
@@ -101,8 +111,14 @@ func (s *ChatSession) WakeStatus() WakeStatus {
 		}
 	}
 
-	// RunningTasks: currently 0 as task manager not implemented
-	st.RunningTasks = 0
+	if tasks != nil {
+		for _, task := range tasks.List() {
+			st.Tasks = append(st.Tasks, WakeTaskStatus{ID: task.ID, Config: task.Config, Status: task.Status})
+			if task.Status == "running" {
+				st.RunningTasks++
+			}
+		}
+	}
 
 	return st
 }
