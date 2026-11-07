@@ -22,6 +22,45 @@ func TestWakeStatusJSONShape(t *testing.T) {
 	}
 }
 
+func TestWakeStatusIncludesRecoveredTaskStatesSafely(t *testing.T) {
+	dir := t.TempDir()
+	sessionID := "monitor-recovery"
+	taskDir := filepath.Join(dir, sessionID+".tasks")
+	if err := os.MkdirAll(taskDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	state := `{"version":1,"tasks":[{"id":"task-crashed","config":"alert-handler","status":"running"}]}`
+	if err := os.WriteFile(filepath.Join(taskDir, "tasks.json"), []byte(state), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	wakeCfg := config.WakeConfig{Enabled: true, IntervalSeconds: 60, MaxTurnsPerHour: 4}
+	eng, err := wake.New(wake.Deps{Cfg: wakeCfg, SessionID: sessionID, Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer eng.Close()
+	tasks := wake.NewTaskManager(wake.TaskDeps{Engine: eng, Cfg: wakeCfg, LogDir: taskDir})
+	defer tasks.Close()
+
+	sess := &ChatSession{ID: sessionID, cfg: &config.Config{Settings: config.Settings{Wake: wakeCfg}},
+		wake: &wakeRunner{eng: eng, tasks: tasks}}
+	status := sess.WakeStatus()
+	if len(status.Tasks) != 1 || status.Tasks[0].ID != "task-crashed" || status.Tasks[0].Status != "interrupted" {
+		t.Fatalf("recovered task status = %+v", status.Tasks)
+	}
+	if status.RunningTasks != 0 {
+		t.Fatalf("RunningTasks = %d, want 0 for interrupted task", status.RunningTasks)
+	}
+	b, err := json.Marshal(status)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "summary") || strings.Contains(string(b), "prompt") {
+		t.Fatalf("operator status exposes task output or prompts: %s", b)
+	}
+}
+
 // TestWakeStatusLastTick verifies that LastTick is read from the heartbeat file.
 func TestWakeStatusLastTick(t *testing.T) {
 	tmpDir := t.TempDir()

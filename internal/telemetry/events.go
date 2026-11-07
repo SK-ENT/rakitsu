@@ -135,7 +135,7 @@ const (
 	// session: status "started" or "refused" (allowlist, args, caps, stop).
 	EventWakeTaskStart EventType = "WAKE_TASK_START"
 	// EventWakeTaskEnd is emitted when a started task ends: done, error,
-	// timeout or cancelled.
+	// timeout, cancelled or interrupted during process recovery.
 	EventWakeTaskEnd EventType = "WAKE_TASK_END"
 	// EventMediaAttached is emitted once per file loaded via --attach or
 	// returned by a tool to a vision agent (Via tells which). The

@@ -63,25 +63,27 @@ type TickResult struct {
 }
 
 type Engine struct {
-	cfg          config.WakeConfig
-	sessionID    string
-	dir          string
-	clock        Clock
-	checks       CheckFunc
-	rand         func() float64
-	getenv       func(string) string
-	stderr       io.Writer
-	summary      func() (int, int)
-	auditMax     int64
-	lock         *os.File
-	lockPath     string
-	state        *persisted
-	interval     float64
-	lastTickTime time.Time
-	inflight     atomic.Bool
-	lastTick     atomic.Int64 // tick number for Beat; Beat must not take mu (a tick may hold it during slow checks)
-	stopped      bool
-	mu           sync.Mutex
+	cfg              config.WakeConfig
+	sessionID        string
+	dir              string
+	clock            Clock
+	checks           CheckFunc
+	rand             func() float64
+	getenv           func(string) string
+	stderr           io.Writer
+	summary          func() (int, int)
+	auditMax         int64
+	lock             *os.File
+	lockPath         string
+	state            *persisted
+	taskWindowIDs    []uint64 // in-memory identities parallel to persisted TaskWindow timestamps
+	nextTaskWindowID uint64
+	interval         float64
+	lastTickTime     time.Time
+	inflight         atomic.Bool
+	lastTick         atomic.Int64 // tick number for Beat; Beat must not take mu (a tick may hold it during slow checks)
+	stopped          bool
+	mu               sync.Mutex
 }
 
 // New initializes an Engine. Returns ErrLocked if another process holds the lock, or ErrMissingSecret if a secret is missing.
@@ -165,6 +167,10 @@ func New(d Deps) (*Engine, error) {
 		state:     st,
 		interval:  float64(d.Cfg.IntervalSeconds),
 		stopped:   st.Stopped,
+	}
+	for range st.TaskWindow {
+		e.nextTaskWindowID++
+		e.taskWindowIDs = append(e.taskWindowIDs, e.nextTaskWindowID)
 	}
 
 	// Set owner PID if not set
@@ -554,26 +560,69 @@ var ErrTaskCap = errors.New("wake: max_tasks_per_hour reached")
 // ReserveTask records one start_task launch in the rolling-hour window persisted
 // in the state file (so it survives restarts and session resume). It fails with
 // ErrTaskCap when max launches already happened in the last hour.
-func (e *Engine) ReserveTask(max int) error {
+func (e *Engine) ReserveTask(max int) (uint64, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	now := e.clock.Now()
 	cutoff := now.Add(-time.Hour).UnixNano()
 	kept := make([]int64, 0, len(e.state.TaskWindow)+1)
-	for _, t := range e.state.TaskWindow {
+	keptIDs := make([]uint64, 0, len(e.taskWindowIDs)+1)
+	for i, t := range e.state.TaskWindow {
 		if t >= cutoff {
 			kept = append(kept, t)
+			keptIDs = append(keptIDs, e.taskWindowIDs[i])
 		}
 	}
+	prev := append([]int64(nil), e.state.TaskWindow...)
+	prevIDs := append([]uint64(nil), e.taskWindowIDs...)
 	if len(kept) >= max {
 		e.state.TaskWindow = kept
-		return ErrTaskCap
+		e.taskWindowIDs = keptIDs
+		if len(kept) < len(prev) {
+			if err := e.saveDurableState(); err != nil {
+				e.state.TaskWindow = prev
+				e.taskWindowIDs = prevIDs
+				return 0, fmt.Errorf("wake: persist task window pruning: %w", err)
+			}
+		}
+		return 0, ErrTaskCap
 	}
-	prev := e.state.TaskWindow
-	e.state.TaskWindow = append(kept, now.UnixNano())
+	reservation := now.UnixNano()
+	e.state.TaskWindow = append(kept, reservation)
+	e.nextTaskWindowID++
+	reservationID := e.nextTaskWindowID
+	e.taskWindowIDs = append(keptIDs, reservationID)
 	if err := e.saveDurableState(); err != nil {
 		e.state.TaskWindow = prev
-		return fmt.Errorf("wake: persist task window: %w", err)
+		e.taskWindowIDs = prevIDs
+		return 0, fmt.Errorf("wake: persist task window: %w", err)
+	}
+	return reservationID, nil
+}
+
+// rollbackTaskReservation removes a just-created launch reservation when the
+// corresponding task record could not be persisted.
+func (e *Engine) rollbackTaskReservation(reservationID uint64) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	index := -1
+	for i, id := range e.taskWindowIDs {
+		if id == reservationID {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return errors.New("wake: task reservation no longer exists")
+	}
+	prev := e.state.TaskWindow
+	prevIDs := e.taskWindowIDs
+	e.state.TaskWindow = append(append([]int64(nil), prev[:index]...), prev[index+1:]...)
+	e.taskWindowIDs = append(append([]uint64(nil), prevIDs[:index]...), prevIDs[index+1:]...)
+	if err := e.saveDurableState(); err != nil {
+		e.state.TaskWindow = prev
+		e.taskWindowIDs = prevIDs
+		return fmt.Errorf("wake: persist task reservation rollback: %w", err)
 	}
 	return nil
 }

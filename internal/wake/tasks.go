@@ -6,8 +6,10 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -110,7 +112,7 @@ type TaskEvent struct {
 	Phase   string // start | end
 	TaskID  string
 	Config  string
-	Status  string // start: started|refused ; end: done|error|timeout|cancelled
+	Status  string // start: started|refused ; end: done|error|timeout|cancelled|interrupted
 	Reason  string
 	Args    map[string]string
 	Summary string
@@ -133,27 +135,39 @@ type TaskDeps struct {
 type TaskStatus struct {
 	ID      string `json:"id"`
 	Config  string `json:"config"`
-	Status  string `json:"status"` // running|done|error|timeout|cancelled
+	Status  string `json:"status"` // running|done|error|timeout|cancelled|interrupted
 	Summary string `json:"summary,omitempty"`
 }
 
 type taskRec struct {
 	TaskStatus
-	cancel context.CancelFunc
+	cancel    context.CancelFunc
+	finishing bool
+}
+
+type persistedTaskState struct {
+	Version int          `json:"version"`
+	Tasks   []TaskStatus `json:"tasks"`
+}
+
+type persistedTaskCompletion struct {
+	Version int    `json:"version"`
+	Status  string `json:"status"`
 }
 
 type TaskManager struct {
-	d       TaskDeps
-	root    context.Context
-	rootEnd context.CancelFunc
-	mu      sync.Mutex
-	tasks   map[string]*taskRec
-	termQ   []string            // terminal ids, oldest first
-	expired map[string]struct{} // evicted ids (bounded), so Status can say "expired"
-	expQ    []string
-	blocked bool
-	wg      sync.WaitGroup // monitor goroutines
-	runWG   sync.WaitGroup // runner goroutines (m.d.Run)
+	d          TaskDeps
+	root       context.Context
+	rootEnd    context.CancelFunc
+	mu         sync.Mutex
+	tasks      map[string]*taskRec
+	termQ      []string            // terminal ids, oldest first
+	expired    map[string]struct{} // evicted ids (bounded), so Status can say "expired"
+	expQ       []string
+	blocked    bool
+	persistErr error
+	wg         sync.WaitGroup // monitor goroutines
+	runWG      sync.WaitGroup // runner goroutines (m.d.Run)
 }
 
 func NewTaskManager(d TaskDeps) *TaskManager {
@@ -177,7 +191,186 @@ func NewTaskManager(d TaskDeps) *TaskManager {
 		d.LogDir = filepath.Join(d.Engine.Dir(), d.Engine.SessionID()+".tasks")
 	}
 	root, end := context.WithCancel(MarkTaskContext(context.Background()))
-	return &TaskManager{d: d, root: root, rootEnd: end, tasks: map[string]*taskRec{}, expired: map[string]struct{}{}}
+	m := &TaskManager{d: d, root: root, rootEnd: end, tasks: map[string]*taskRec{}, expired: map[string]struct{}{}}
+	m.loadPersistedTasks()
+	if m.persistErr != nil {
+		log.Printf("wake task state: %v", m.persistErr)
+	}
+	return m
+}
+
+func (m *TaskManager) taskStatePath() string { return filepath.Join(m.d.LogDir, "tasks.json") }
+
+func (m *TaskManager) loadPersistedTasks() {
+	data, err := os.ReadFile(m.taskStatePath())
+	if os.IsNotExist(err) {
+		if err := m.cleanupCompletionMarkers(); err != nil {
+			m.persistErr = fmt.Errorf("clean stale task completion markers: %w", err)
+		}
+		return
+	}
+	if err != nil {
+		m.persistErr = fmt.Errorf("read task state: %w", err)
+		return
+	}
+	var state persistedTaskState
+	if err := json.Unmarshal(data, &state); err != nil || state.Version != 1 {
+		if err == nil {
+			err = fmt.Errorf("unsupported task state version %d", state.Version)
+		}
+		m.persistErr = fmt.Errorf("decode task state: %w", err)
+		return
+	}
+	seen := make(map[string]struct{}, len(state.Tasks))
+	for _, status := range state.Tasks {
+		if status.ID == "" || status.Config == "" {
+			m.persistErr = errors.New("decode task state: task id and config are required")
+			return
+		}
+		if _, ok := seen[status.ID]; ok {
+			m.persistErr = fmt.Errorf("decode task state: duplicate task id %q", status.ID)
+			return
+		}
+		seen[status.ID] = struct{}{}
+		switch status.Status {
+		case "running", "interrupted", "done", "error", "timeout", "cancelled":
+		default:
+			m.persistErr = fmt.Errorf("decode task state: invalid task status %q", status.Status)
+			return
+		}
+	}
+	var recovered []TaskStatus
+	for _, status := range state.Tasks {
+		if status.Status == "running" {
+			if completion, ok := m.loadPersistedCompletion(status.ID); ok {
+				status.Status = completion
+				status.Summary = "task finished before restart; inspect the result log"
+				recovered = append(recovered, status)
+			} else {
+				status.Status = "interrupted"
+				status.Summary = "process stopped while task was running; inspect side effects before retrying"
+				recovered = append(recovered, status)
+			}
+		} else if status.Status == "interrupted" {
+			status.Summary = "task was interrupted; inspect side effects before retrying"
+		}
+		rec := &taskRec{TaskStatus: status}
+		m.tasks[status.ID] = rec
+		if status.Status != "running" {
+			m.termQ = append(m.termQ, status.ID)
+		}
+	}
+	if len(m.termQ) > m.d.MaxTerminal {
+		for _, id := range m.termQ[:len(m.termQ)-m.d.MaxTerminal] {
+			delete(m.tasks, id)
+			m.expired[id] = struct{}{}
+		}
+		m.termQ = m.termQ[len(m.termQ)-m.d.MaxTerminal:]
+	}
+	m.mu.Lock()
+	err = m.persistLocked()
+	m.mu.Unlock()
+	if err != nil {
+		m.persistErr = fmt.Errorf("persist recovered task state: %w", err)
+	} else if err := m.cleanupCompletionMarkers(); err != nil {
+		m.persistErr = fmt.Errorf("clean stale task completion markers: %w", err)
+	}
+	for _, status := range recovered {
+		m.emit(TaskEvent{Phase: "end", TaskID: status.ID, Config: status.Config, Status: status.Status, Reason: status.Summary})
+	}
+}
+
+func (m *TaskManager) completionPath(id string) string {
+	return filepath.Join(m.d.LogDir, id+".complete.json")
+}
+
+// cleanupCompletionMarkers removes markers once recovery state has been saved.
+// Callers must leave them in place when the task index cannot be persisted.
+func (m *TaskManager) cleanupCompletionMarkers() error {
+	entries, err := os.ReadDir(m.d.LogDir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".complete.json") {
+			continue
+		}
+		if err := os.Remove(filepath.Join(m.d.LogDir, entry.Name())); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove %s: %w", entry.Name(), err)
+		}
+	}
+	return nil
+}
+
+func (m *TaskManager) removeCompletionMarker(id string) error {
+	err := os.Remove(m.completionPath(id))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
+func (m *TaskManager) loadPersistedCompletion(id string) (string, bool) {
+	data, err := os.ReadFile(m.completionPath(id))
+	if err != nil {
+		return "", false
+	}
+	var completion persistedTaskCompletion
+	if json.Unmarshal(data, &completion) != nil || completion.Version != 1 {
+		return "", false
+	}
+	switch completion.Status {
+	case "done", "error", "timeout", "cancelled":
+		return completion.Status, true
+	default:
+		return "", false
+	}
+}
+
+// persistLocked atomically records task summaries and state, never task prompts,
+// arguments, or resolved environment values. Caller holds m.mu.
+func (m *TaskManager) persistLocked() error {
+	if err := os.MkdirAll(m.d.LogDir, 0o700); err != nil {
+		return fmt.Errorf("create task state directory: %w", err)
+	}
+	state := persistedTaskState{Version: 1, Tasks: make([]TaskStatus, 0, len(m.tasks))}
+	seen := make(map[string]struct{}, len(m.tasks))
+	appendStatus := func(rec *taskRec) {
+		status := rec.TaskStatus
+		// Result summaries may echo task output. Keep them in memory for the
+		// live session, but do not copy them into the recovery index.
+		status.Summary = ""
+		state.Tasks = append(state.Tasks, status)
+		seen[status.ID] = struct{}{}
+	}
+	// Preserve terminal age order so the same oldest records are evicted after
+	// restart. Running tasks are appended in stable ID order.
+	for _, id := range m.termQ {
+		if rec := m.tasks[id]; rec != nil {
+			appendStatus(rec)
+		}
+	}
+	var running []TaskStatus
+	for _, rec := range m.tasks {
+		if rec.Status == "running" {
+			running = append(running, rec.TaskStatus)
+		}
+	}
+	sort.Slice(running, func(i, j int) bool { return running[i].ID < running[j].ID })
+	for _, status := range running {
+		if _, ok := seen[status.ID]; !ok {
+			rec := &taskRec{TaskStatus: status}
+			appendStatus(rec)
+		}
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("encode task state: %w", err)
+	}
+	return writeAtomic(m.taskStatePath(), data)
 }
 
 func (m *TaskManager) emit(ev TaskEvent) {
@@ -217,6 +410,11 @@ func (m *TaskManager) Start(ctx context.Context, name string, args map[string]an
 		m.mu.Unlock()
 		return m.refuse(name, "wake is stopped; new tasks are blocked")
 	}
+	if m.persistErr != nil {
+		err := m.persistErr
+		m.mu.Unlock()
+		return m.refuse(name, "task state is unavailable: "+err.Error())
+	}
 	running := 0
 	for _, t := range m.tasks {
 		if t.Status == "running" {
@@ -227,7 +425,8 @@ func (m *TaskManager) Start(ctx context.Context, name string, args map[string]an
 		m.mu.Unlock()
 		return m.refuse(name, "max_concurrent_tasks reached")
 	}
-	if err := m.d.Engine.ReserveTask(m.d.Cfg.MaxTasksPerHour); err != nil {
+	reservation, err := m.d.Engine.ReserveTask(m.d.Cfg.MaxTasksPerHour)
+	if err != nil {
 		m.mu.Unlock()
 		return m.refuse(name, err.Error())
 	}
@@ -235,6 +434,17 @@ func (m *TaskManager) Start(ctx context.Context, name string, args map[string]an
 	tctx, cancel := context.WithCancel(m.root)
 	rec := &taskRec{TaskStatus: TaskStatus{ID: id, Config: name, Status: "running"}, cancel: cancel}
 	m.tasks[id] = rec
+	if err := m.persistLocked(); err != nil {
+		delete(m.tasks, id)
+		cancel()
+		m.persistErr = fmt.Errorf("persist task start: %w", err)
+		if rollbackErr := m.d.Engine.rollbackTaskReservation(reservation); rollbackErr != nil {
+			m.persistErr = errors.Join(m.persistErr, rollbackErr)
+		}
+		persistErr := m.persistErr
+		m.mu.Unlock()
+		return TaskStatus{}, persistErr
+	}
 	m.wg.Add(1)
 	m.runWG.Add(1)
 	m.mu.Unlock()
@@ -279,9 +489,28 @@ func (m *TaskManager) Start(ctx context.Context, name string, args map[string]an
 // finish moves a running task to a terminal state exactly once; only the winner logs and emits.
 func (m *TaskManager) finish(rec *taskRec, status, output, reason string) {
 	m.mu.Lock()
+	if rec.Status != "running" || rec.finishing {
+		m.mu.Unlock()
+		return
+	}
+	rec.finishing = true
+	m.mu.Unlock()
+
+	if output != "" {
+		if err := m.writeLog(rec.ID, output); err != nil {
+			status = "error"
+			reason = "persist task result: " + err.Error()
+			output = ""
+		}
+	}
+	m.mu.Lock()
 	if rec.Status != "running" {
 		m.mu.Unlock()
 		return
+	}
+	completion, completionErr := json.Marshal(persistedTaskCompletion{Version: 1, Status: status})
+	if completionErr == nil {
+		completionErr = writeAtomic(m.completionPath(rec.ID), completion)
 	}
 	summary := summarize(output)
 	if summary == "" {
@@ -289,12 +518,20 @@ func (m *TaskManager) finish(rec *taskRec, status, output, reason string) {
 	}
 	rec.Status, rec.Summary = status, summary
 	m.retireLocked(rec.ID)
+	if err := m.persistLocked(); err != nil {
+		m.persistErr = fmt.Errorf("persist task completion: %w", err)
+		if completionErr != nil {
+			rec.Status = "interrupted"
+			rec.Summary = "task completion could not be persisted; inspect side effects and the result log before retrying"
+			status = rec.Status
+			summary = rec.Summary
+		}
+	} else if err := m.removeCompletionMarker(rec.ID); err != nil {
+		m.persistErr = fmt.Errorf("remove task completion marker: %w", err)
+	}
 	cancel := rec.cancel
 	m.mu.Unlock()
 	cancel()
-	if output != "" {
-		m.writeLog(rec.ID, output)
-	}
 	m.d.Engine.Audit(map[string]any{"event": "task_end", "task_id": rec.ID, "config": rec.Config, "status": status})
 	m.emit(TaskEvent{Phase: "end", TaskID: rec.ID, Config: rec.Config, Status: status, Reason: reason, Summary: summary})
 }
@@ -317,11 +554,11 @@ func (m *TaskManager) retireLocked(id string) {
 }
 
 // writeLog keeps the full result in its own file; the wake session never reads it.
-func (m *TaskManager) writeLog(id, out string) {
+func (m *TaskManager) writeLog(id, out string) error {
 	if err := os.MkdirAll(m.d.LogDir, 0o700); err != nil {
-		return
+		return err
 	}
-	_ = writeAtomic(filepath.Join(m.d.LogDir, id+".log"), []byte(out))
+	return writeAtomic(filepath.Join(m.d.LogDir, id+".log"), []byte(out))
 }
 
 // Status returns the short status of a task started by this session.
@@ -337,6 +574,26 @@ func (m *TaskManager) Status(id string) (TaskStatus, bool) {
 		return TaskStatus{}, false
 	}
 	return rec.TaskStatus, true
+}
+
+// List returns the task records retained by this session, oldest terminal first.
+func (m *TaskManager) List() []TaskStatus {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]TaskStatus, 0, len(m.tasks))
+	for _, id := range m.termQ {
+		if rec := m.tasks[id]; rec != nil {
+			out = append(out, rec.TaskStatus)
+		}
+	}
+	var running []TaskStatus
+	for _, rec := range m.tasks {
+		if rec.Status == "running" {
+			running = append(running, rec.TaskStatus)
+		}
+	}
+	sort.Slice(running, func(i, j int) bool { return running[i].ID < running[j].ID })
+	return append(out, running...)
 }
 
 // Cancel cancels one running task.
