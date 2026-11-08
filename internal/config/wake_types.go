@@ -15,6 +15,7 @@ type WakeConfig struct {
 	ConsecutiveAlarms     int         `mapstructure:"consecutive_alarms" yaml:"consecutive_alarms,omitempty"` // http checks only; default 2
 	Allow                 WakeAllow   `mapstructure:"allow" yaml:"allow,omitempty"`
 	SecretEnv             []string    `mapstructure:"secret_env" yaml:"secret_env,omitempty"`
+	MetadataOnly          bool        `mapstructure:"metadata_only" yaml:"metadata_only,omitempty"`
 	Alerts                WakeAlerts  `mapstructure:"alerts" yaml:"alerts,omitempty"`
 	Checks                []WakeCheck `mapstructure:"checks" yaml:"checks,omitempty"`
 	Judge                 WakeJudge   `mapstructure:"judge" yaml:"judge,omitempty"`
@@ -26,6 +27,9 @@ type WakeConfig struct {
 	TaskTimeoutSeconds int   `mapstructure:"task_timeout_seconds" yaml:"task_timeout_seconds,omitempty"` // never unbounded
 	CancelOnStop       *bool `mapstructure:"cancel_on_stop" yaml:"cancel_on_stop,omitempty"`             // default true
 }
+
+// MetadataOnlyEnabled reports whether wake persistence must omit payloads.
+func (w WakeConfig) MetadataOnlyEnabled() bool { return w.MetadataOnly || len(w.SecretEnv) != 0 }
 
 // CancelOnStopEnabled reports whether stop / kill-switch cancels running started tasks (default true).
 func (w WakeConfig) CancelOnStopEnabled() bool { return w.CancelOnStop == nil || *w.CancelOnStop }

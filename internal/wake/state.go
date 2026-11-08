@@ -44,6 +44,31 @@ func loadState(dir, sessionID string) (*persisted, error) {
 	return &st, nil
 }
 
+// mkdirAllDurable also persists directory entries created for wake state.
+func mkdirAllDurable(path string) error {
+	path = filepath.Clean(path)
+	parent := filepath.Dir(path)
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		if err := mkdirAllDurable(parent); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	} else if !info.IsDir() {
+		return fmt.Errorf("not a directory: %s", path)
+	}
+	if parent != path {
+		if err := syncDirectory(parent); err != nil {
+			return fmt.Errorf("sync parent of %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
 func writeAtomic(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	file, err := os.CreateTemp(dir, filepath.Base(path)+".tmp*")
@@ -75,6 +100,10 @@ func writeAtomic(path string, data []byte) error {
 	if err := os.Rename(file.Name(), path); err != nil {
 		os.Remove(file.Name())
 		return fmt.Errorf("rename: %w", err)
+	}
+
+	if err := syncDirectory(dir); err != nil {
+		return fmt.Errorf("sync containing directory: %w", err)
 	}
 
 	return nil

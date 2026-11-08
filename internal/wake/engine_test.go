@@ -388,6 +388,31 @@ func TestMissingSecretEnvRefuses(t *testing.T) {
 	}
 }
 
+func TestMetadataOnlyOmitsCheckSamplesFromDisk(t *testing.T) {
+	e, _, dir := newEngine(t, func(d *Deps) { d.Cfg.MetadataOnly = true }, &fakeProbe{})
+	e.mu.Lock()
+	e.state.Checks["secret-check"] = &checkState{Samples: []sample{{T: 1, V: 42}}, Label: "ok", ConsecBad: 2}
+	e.mu.Unlock()
+	if err := e.saveDurableState(); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "s1.state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved persisted
+	if err := json.Unmarshal(b, &saved); err != nil {
+		t.Fatal(err)
+	}
+	check := saved.Checks["secret-check"]
+	if check == nil || check.Label != "ok" {
+		t.Fatal("safe check metadata missing")
+	}
+	if len(check.Samples) != 0 {
+		t.Fatal("check samples were persisted")
+	}
+}
+
 func TestAuditRecordsSummaryFieldsAndRedactsQuery(t *testing.T) {
 	p := &fakeProbe{obs: Observation{Exists: true}}
 	cfg := func(d *Deps) {

@@ -107,7 +107,7 @@ func New(d Deps) (*Engine, error) {
 	}
 
 	// Create wake dir
-	if err := os.MkdirAll(d.Dir, 0o700); err != nil {
+	if err := mkdirAllDurable(d.Dir); err != nil {
 		return nil, fmt.Errorf("mkdir: %w", err)
 	}
 	if err := os.Chmod(d.Dir, 0o700); err != nil {
@@ -645,7 +645,20 @@ func (e *Engine) Dir() string { return e.dir }
 func (e *Engine) SessionID() string { return e.sessionID }
 
 func (e *Engine) saveDurableState() error {
-	return writeState(e.dir, e.sessionID, e.state)
+	if !e.cfg.MetadataOnlyEnabled() {
+		return writeState(e.dir, e.sessionID, e.state)
+	}
+	copyState := *e.state
+	copyState.Checks = make(map[string]*checkState, len(e.state.Checks))
+	for name, check := range e.state.Checks {
+		if check == nil {
+			continue
+		}
+		clone := *check
+		clone.Samples = nil
+		copyState.Checks[name] = &clone
+	}
+	return writeState(e.dir, e.sessionID, &copyState)
 }
 
 func min(a, b float64) float64 {
