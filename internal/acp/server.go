@@ -125,6 +125,7 @@ func promptTimeout(cfg *config.Config, override *int) (d time.Duration, ok bool)
 // (see cmd/rakitsu/acp.go) — real ACP's session/new has no config-path field,
 // so every session this process serves runs against the same cfg.
 type Server struct {
+	authReady       func() bool
 	runFunc         RunFunc
 	cfg             *config.Config
 	timeoutOverride *int // explicit --timeout flag value, if any; see promptTimeout
@@ -148,6 +149,9 @@ func NewServer(cfg *config.Config, runFunc RunFunc) *Server {
 		sessions: newSessionMap(),
 	}
 }
+
+// SetTerminalAuth enables terminal login for the built-in ACP configuration.
+func (s *Server) SetTerminalAuth(ready func() bool) { s.authReady = ready }
 
 // SetTimeoutOverride pins an explicit --timeout value (see cmd/rakitsu/acp.go)
 // that beats settings.execution.timeout_seconds for every session/prompt turn
@@ -381,17 +385,30 @@ type mcpCapabilities struct {
 }
 
 type authMethod struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Type        string   `json:"type,omitempty"`
+	Args        []string `json:"args,omitempty"`
 }
 
 func (s *Server) handleInitialize(req acpRequest) {
-	s.writeResponse(req.ID, initializeResult{
-		ProtocolVersion:   protocolVersion,
-		AgentCapabilities: agentCapabilities{},
-		AuthMethods:       []authMethod{}, // no auth for a local stdio agent
-	})
+	var params struct {
+		ClientCapabilities struct {
+			Auth struct {
+				Terminal bool `json:"terminal"`
+			} `json:"auth"`
+			Meta map[string]json.RawMessage `json:"_meta"`
+		} `json:"clientCapabilities"`
+	}
+	_ = json.Unmarshal(req.Params, &params)
+	methods := []authMethod{}
+	var legacy bool
+	_ = json.Unmarshal(params.ClientCapabilities.Meta["terminal-auth"], &legacy)
+	if s.authReady != nil && (params.ClientCapabilities.Auth.Terminal || legacy) {
+		methods = append(methods, authMethod{ID: "login", Name: "Log in", Description: "Set up an OpenAI API key", Type: "terminal", Args: []string{"--login"}})
+	}
+	s.writeResponse(req.ID, initializeResult{ProtocolVersion: protocolVersion, AgentCapabilities: agentCapabilities{}, AuthMethods: methods})
 }
 
 // ─── session/new ────────────────────────────────────────────────────────────
@@ -413,6 +430,10 @@ func (s *Server) handleNewSession(req acpRequest) {
 	var params newSessionParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		s.writeError(req.ID, -32602, "invalid params: "+err.Error())
+		return
+	}
+	if s.authReady != nil && !s.authReady() {
+		s.writeError(req.ID, -32000, "Authentication required; run rakitsu acp --login")
 		return
 	}
 	// Silently ignoring these could mean opening project B in the client
