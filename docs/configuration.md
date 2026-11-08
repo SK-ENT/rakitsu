@@ -175,7 +175,7 @@ settings:
     - "terraform"
     - "jq"
   defaults:
-    model: "gpt-4o-mini"
+    model: "gpt-5.6-luna"
     temperature: 0.7
     max_tokens: 4096
   execution:
@@ -352,9 +352,9 @@ Per-model pricing overrides for cost tracking. Keys are model names, values spec
 ```yaml
 settings:
   pricing:
-    gpt-4o:
-      input: 2.50
-      output: 10.00
+    gpt-5.6-luna:
+      input: 0.20
+      output: 1.20
     gemini-2.5-flash:
       input: 0.15
       output: 0.60

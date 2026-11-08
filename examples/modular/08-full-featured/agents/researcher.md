@@ -3,7 +3,7 @@ name: Researcher
 role: worker
 providers:
   - name: openai
-    model: gpt-4o
+    model: gpt-5.4
   - name: anthropic
     model: claude-sonnet-4-6
 tools:

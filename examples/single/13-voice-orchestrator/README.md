@@ -24,7 +24,7 @@ As a rough guide (actual token rate varies by audio content), that's on
 the order of **$0.02–$0.05 per minute of open conversation** on the mini
 model — several times that on the full model. Each dispatched task
 also runs a separate, much cheaper text-model rakitsu worker turn
-(`worker-config.yaml` defaults to `gpt-4o-mini`) on top of that.
+(`worker-config.yaml` defaults to `gpt-5.6-luna`) on top of that.
 
 Close the bridge (Ctrl+C) when you're done — an open WebSocket connection
 keeps consuming audio-input tokens for as long as it's live, whether or
@@ -333,7 +333,7 @@ and tool-calling descriptions below record the original live-tested design.
 
 The dispatch target is independent of the bridge provider: the Gemini
 bridge uses the **same `worker-config.yaml`**, whose `default_provider:
-openai` and `gpt-4o-mini` model still require `OPENAI_API_KEY` on the
+openai` and `gpt-5.6-luna` model still require `OPENAI_API_KEY` on the
 **serve/worker side**. It is not a Gemini worker config. You may separately
 reconfigure the worker to use Gemini, but the bridge transport and worker
 LLM are two independent provider choices and do not need to match.

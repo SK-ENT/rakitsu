@@ -20,7 +20,7 @@ settings:
       type: openai
       api_key: ${OPENAI_API_KEY}
   defaults:
-    model: gpt-4o
+    model: gpt-5.4
     temperature: 0.2
     max_tokens: 8192
   execution:
@@ -118,7 +118,7 @@ orchestrator:
   name: IncidentLead
   strategy: ReAct
   provider: openai
-  model: gpt-4o
+  model: gpt-5.4
   system_prompt: |
     You are the Incident Lead coordinating a triage team.
     Analyze the reported issue, then delegate investigation tasks to your specialists.

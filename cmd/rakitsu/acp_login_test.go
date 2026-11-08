@@ -39,6 +39,12 @@ func TestACPDefaultConfigHasNoTools(t *testing.T) {
 	if len(cfg.Tools) != 0 || len(cfg.Agents) != 1 || len(cfg.Agents[0].Tools) != 0 || len(cfg.Agents[0].ToolsInline) != 0 {
 		t.Fatal("default configuration must not expose tools")
 	}
+	if cfg.Agents[0].Model != "gpt-5.6-luna" {
+		t.Fatalf("unexpected built-in ACP model: %q", cfg.Agents[0].Model)
+	}
+	if settings := cfg.Agents[0].ModelConfig; settings == nil || settings.ReasoningEffort != "none" {
+		t.Fatal("built-in ACP agent must use explicit reasoning effort")
+	}
 	if cfg.GetAPIKey("openai") != "synthetic-secret" {
 		t.Fatal("missing configured key")
 	}

@@ -16,7 +16,7 @@ An agent is a model plus a system prompt plus a tool list. Fields (from `agents:
 | `role` | `worker` or `supervisor`. |
 | `provider` | Provider name (key under `settings.providers`). Falls back to `settings.default_provider`. |
 | `providers` | Ordered fallback chain of `{name, model}`. Overrides `provider` when set. |
-| `model` | Model name. Falls back to the provider `default_model`, then `settings.defaults.model`, then `gpt-4o-mini`. |
+| `model` | Model name. Falls back to the provider `default_model`, then `settings.defaults.model`, then the v0.3.1 standard-provider fallback, `gpt-4o-mini`. |
 | `model_config` | `temperature`, `max_tokens`, `top_p`, `frequency_penalty`, `presence_penalty`, `timeout_sec`, `no_stream_tools`, `max_thinking_tokens`, `thinking_offload`, `reasoning_effort`. |
 | `system_prompt` | The instructions. A `file:` reference or a plain path to a prompt file is allowed (see [configuration](configuration.md#file-references-and-discovery)). |
 | `tools` | Names of tools from the global `tools:` list. |
@@ -49,8 +49,9 @@ settings:
     openai:
       type: openai
       api_key: ${OPENAI_API_KEY}
+      reasoning_effort: none
   defaults:
-    model: gpt-4o-mini
+    model: gpt-5.6-luna
 agents:
   - name: Assistant
     role: worker
@@ -88,8 +89,9 @@ settings:
     openai:
       type: openai
       api_key: ${OPENAI_API_KEY}
+      reasoning_effort: none
   defaults:
-    model: gpt-4o-mini
+    model: gpt-5.6-luna
 agents:
   - name: Researcher
     role: worker
@@ -103,7 +105,7 @@ orchestrator:
   name: Lead
   strategy: ReAct
   provider: openai
-  model: gpt-4o-mini
+  model: gpt-5.6-luna
   system_prompt: Ask the Researcher first, then the Writer. Return the paragraph.
   agents: [Researcher, Writer]
   routing:
@@ -149,8 +151,9 @@ settings:
     openai:
       type: openai
       api_key: ${OPENAI_API_KEY}
+      reasoning_effort: none
   defaults:
-    model: gpt-4o-mini
+    model: gpt-5.6-luna
 agents:
   - name: Drafter
     role: worker
@@ -164,7 +167,7 @@ orchestrator:
   name: Flow
   strategy: Pipeline
   provider: openai
-  model: gpt-4o-mini
+  model: gpt-5.6-luna
   agents: [Drafter, Editor]
   pipeline:
     synthesis: false

@@ -69,6 +69,10 @@ interactive: true
 interactive_overlay: false
 settings:
   default_provider: openai
+  pricing:
+    gpt-5.6-luna:
+      input: 0.20
+      output: 1.20
   session_msg:
     enabled: true
   execution:
@@ -78,7 +82,7 @@ tools: []
 agents:
   - name: reviewer
     role: worker
-    model: gpt-4o-mini
+    model: gpt-5.6-luna
     tools: []
     system_prompt: |
       Answer the question using only the supplied text. Sender names are

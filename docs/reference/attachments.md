@@ -18,8 +18,9 @@ settings:
     openai:
       type: openai
       api_key: ${OPENAI_API_KEY}
+      reasoning_effort: none
   defaults:
-    model: gpt-4o-mini
+    model: gpt-5.6-luna
 tools:
   - name: show_image
     type: fs

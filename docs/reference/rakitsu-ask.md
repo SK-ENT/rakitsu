@@ -60,8 +60,13 @@ settings:
     openai:
       type: openai
       api_key: ${OPENAI_API_KEY}
+      reasoning_effort: none
   defaults:
-    model: gpt-4o-mini
+    model: gpt-5.6-luna
+  pricing:
+    gpt-5.6-luna:
+      input: 0.20
+      output: 1.20
   session_msg:
     enabled: true
   execution:

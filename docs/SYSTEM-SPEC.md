@@ -1,7 +1,8 @@
 # Rakitsu System Specification
 
-**Version**: Build-dependent; release builds use their git tag, while local builds use `Makefile` `VERSION_CORE` plus a build suffix.
-**Stack**: Go 1.25 + Vue 3 / Vite 7 / TypeScript 5.9
+**Reference baseline**: v0.3.1. Release builds report their Git tag; local builds derive their version from the Makefile. See the [versioned reference](https://sk-ent.github.io/rakitsu/latest/) for release-specific behavior.
+**Stack**: Go 1.26 minimum + Vue 3 / Vite 7 / TypeScript 5.9
+**Release toolchain**: Go 1.27.3.
 **Module**: `github.com/SK-ENT/rakitsu`
 
 ---
@@ -36,7 +37,7 @@ Rakitsu is a YAML-configured multi-agent AI orchestration system. Users define a
 
 ```mermaid
 graph LR
-    subgraph Backend["Backend — Go 1.25"]
+    subgraph Backend["Backend — Go 1.26 minimum"]
         cobra["Cobra CLI"]
         viper["Viper Config"]
         openai_sdk["go-openai v1.41"]
@@ -64,7 +65,7 @@ graph LR
 ```
 
 ```
-Backend (Go 1.25)                    Frontend (Vue 3 + Vite 7 + TS 5.9)
+Backend (Go 1.26 minimum)                    Frontend (Vue 3 + Vite 7 + TS 5.9)
 ├── cobra v1.10  — CLI framework     ├── vue 3.5        — UI framework
 ├── viper v1.21  — YAML config       ├── vue-flow 1.48  — graph canvas
 ├── go-openai v1.41 — OpenAI SDK     ├── dagre 2.0      — graph layout
@@ -78,7 +79,7 @@ Backend (Go 1.25)                    Frontend (Vue 3 + Vite 7 + TS 5.9)
 
 | Layer | Language | Type System | Key Dependencies |
 |-------|----------|-------------|------------------|
-| Backend | Go 1.25 | Compiled, static | Cobra, Viper, go-openai, anthropic-sdk-go, google/genai |
+| Backend | Go 1.26 minimum | Compiled, static | Cobra, Viper, go-openai, anthropic-sdk-go, google/genai |
 | Frontend | TypeScript 5.9 | Compiled (tsc), static | Vue 3, Vue Flow, dagre, js-yaml, JSZip |
 | Config | YAML | Schema-validated | mapstructure tags (Go) ↔ TypeScript interfaces |
 | Wire format | JSON | Runtime | Go `json:` tags ↔ TypeScript interface fields |
@@ -292,7 +293,7 @@ flowchart TD
 
 ## 3. CLI Commands
 
-12 top-level commands: `run`, `serve`, `ui` (deprecated), `version`, `sessions`, `export`, `scaffold`, `quickstart`, `doctor`, `healthcheck`, `acp`, `license` (pro builds only).
+Top-level commands include `run`, `serve`, `ui` (deprecated), `version`, `sessions`, `export`, `scaffold`, `quickstart`, `doctor`, `healthcheck`, `acp`, `license` (pro builds only).
 
 ### `rakitsu run <config.yaml> <query>`
 
@@ -320,7 +321,7 @@ Execute agents for a given query.
 
 ### `rakitsu serve`
 
-Start the SSE hub, web UI, runner, and debugger. Also serves an MCP server at `/mcp` and an A2A endpoint at `/a2a` (see §14).
+Start the SSE hub, web UI, runner, and debugger. With a config, it serves A2A at `/a2a` on the main port. MCP is available on a separate listener when `--mcp-port` is set (see §14).
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -341,7 +342,7 @@ Kept for backward compatibility; `serve` now includes the full web UI + runner.
 | `--host` | localhost | Bind host |
 | `--config-dir` | — | Extra config search path |
 
-### `rakitsu acp <config.yaml>`
+### `rakitsu acp [config.yaml]`
 
 Run as an ACP (Agent Client Protocol) stdio server — the mechanism editors like Zed use to talk to rakitsu agents directly. See §14.
 
@@ -417,7 +418,7 @@ agents:
   - name: "My Agent"
     role: "worker"           # or "supervisor"
     provider: "openai"       # optional, falls back to default
-    model: "gpt-4o-mini"
+    model: "gpt-5.6-luna"
     model_config:
       temperature: 0.7
       max_tokens: 4096
@@ -953,6 +954,8 @@ flowchart TD
 
 ### Default Pricing Table
 
+These are built-in v0.3.1 estimates. Add `settings.pricing` for models that lack an entry before relying on a dollar budget.
+
 | Model | Input ($/1M) | Output ($/1M) |
 |-------|-------------|--------------|
 | `gpt-4o` | $2.50 | $10.00 |
@@ -1307,12 +1310,14 @@ flowchart TD
 
 rakitsu speaks three external agent/tool protocols, in both directions.
 
-### ACP (Agent Client Protocol) — `rakitsu acp <config.yaml>`
+### ACP (Agent Client Protocol)
 
 Runs rakitsu as a stdio JSON-RPC server so editors that speak ACP (e.g. Zed)
 can drive rakitsu agents directly — session create, prompt turns, streaming
 updates. Implementation: `internal/acp/`. Session history is truncated
 rune-safe at storage time to bound memory on long-running sessions.
+
+Run `rakitsu acp` for the built-in OpenAI chat agent. The v0.3.1 binary uses `gpt-4o-mini`; the v0.3.2 candidate uses `gpt-5.6-luna`. Compatible clients can launch `rakitsu acp --login` through Terminal Auth. The login command validates the API key and stores it in the OS credential store. A server waiting for a credential picks it up on its next session request. Run `rakitsu acp <config.yaml>` to use a custom provider, agent or tools. See [ACP and Zed setup](reference/acp.md).
 
 ### MCP server — `rakitsu serve --mcp-port N --config <config.yaml>`
 
@@ -1324,8 +1329,8 @@ Spec-compliant for the **legacy MCP era** (protocol revisions through
 missing/unknown), `protocolVersion` is negotiated against the versions
 rakitsu supports rather than hardcoded, and `Origin` is checked as a
 DNS-rebinding guard (403 on a disallowed origin). The **modern MCP era**
-(2026-07-28 revision) is not yet implemented. `RAKITSU_API_TOKEN` gates
-`/mcp` and `/a2a` on the main `serve` port; the standalone `--mcp-port`
+(2026-07-28 revision) is not yet implemented. When configured, `RAKITSU_API_TOKEN` gates
+`/a2a` on the main port and `/mcp` on the separate listener. The standalone `--mcp-port`
 listener mounts the MCP server at `/mcp` only (`server.MCPListenerHandler`),
 so every other path on that listener is a 404 and the token gate cannot be
 sidestepped by path.
@@ -1542,10 +1547,10 @@ make clean              # Remove build artifacts
 ```bash
 # Explicit VERSION is used as-is. Without it, the Makefile appends a
 # branch-aware suffix to VERSION_CORE (short hash on main, commit count elsewhere).
-make build VERSION=v0.3.0-alpha.3-internal
+make build VERSION=v0.3.1
 
 # Runtime output:
-rakitsu version v0.3.0-alpha.3-internal
+rakitsu version v0.3.1
 License: BSL 1.1 — see LICENSE
 ```
 
@@ -1629,7 +1634,7 @@ Agent `.md` files use YAML frontmatter:
 ---
 name: "MyAgent"
 role: "worker"
-model: "gpt-4o-mini"
+model: "gpt-5.6-luna"
 tools:
   - "read_file"
 settings:

@@ -268,8 +268,8 @@ go build -ldflags "-X main.Version=dev.$commit -X main.BuildCommit=$commit" -o b
 ### Version Override
 
 ```bash
-make build VERSION=v0.3.0-beta.4
-# Output: rakitsu version v0.3.0-beta.4
+make build VERSION=v0.3.1
+# Output: rakitsu version v0.3.1
 ```
 
 An explicit `VERSION` is embedded as given. Without an override, the Makefile composes its development version from `VERSION_CORE` and a branch-dependent build suffix. This is a local source build; it is not the signed identity or exact artifact of the public release.

@@ -1,7 +1,7 @@
 name: BackendPipeline
 strategy: Pipeline
 provider: openai
-model: gpt-4o-mini
+model: gpt-5.6-luna
 system_prompt: Manage the backend team through design -> implement -> test.
 agents: [BackendDesigner, BackendDeveloper, BackendTester]
 pipeline:

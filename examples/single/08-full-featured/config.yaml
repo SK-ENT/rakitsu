@@ -30,7 +30,8 @@ settings:
     openai:
       type: openai
       api_key: ${OPENAI_API_KEY}
-      default_model: gpt-4o-mini
+      reasoning_effort: none
+      default_model: gpt-5.6-luna
     anthropic:
       type: anthropic
       api_key: ${ANTHROPIC_API_KEY}
@@ -39,7 +40,7 @@ settings:
       base_url: http://localhost:11434/v1
 
   defaults:
-    model: gpt-4o-mini
+    model: gpt-5.6-luna
     temperature: 0.3
     max_tokens: 4096
 
@@ -50,12 +51,12 @@ settings:
     max_cost: 2.00                 # Global hard cost budget (USD)
 
   pricing:
-    gpt-4o:
+    gpt-5.4:
       input: 2.50                  # USD per 1M input tokens
-      output: 10.00
-    gpt-4o-mini:
-      input: 0.15
-      output: 0.60
+      output: 15.00
+    gpt-5.6-luna:
+      input: 0.20
+      output: 1.20
     claude-sonnet-4-6:
       input: 3.00
       output: 15.00
@@ -140,7 +141,7 @@ agents:
     role: worker
     providers:                           # Ordered fallback chain
       - name: openai
-        model: gpt-4o
+        model: gpt-5.4
       - name: anthropic
         model: claude-sonnet-4-6
     system_prompt: |
@@ -241,7 +242,7 @@ orchestrator:
   name: AnalysisPipeline
   strategy: Pipeline
   provider: openai
-  model: gpt-4o-mini
+  model: gpt-5.6-luna
   model_config:
     temperature: 0.1
   agents:

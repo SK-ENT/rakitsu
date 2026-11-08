@@ -1,7 +1,7 @@
 name: FrontendPipeline
 strategy: Pipeline
 provider: openai
-model: gpt-4o-mini
+model: gpt-5.6-luna
 system_prompt: Manage the frontend team through design -> implement -> test.
 agents: [FrontendDesigner, FrontendDeveloper, FrontendTester]
 pipeline:

@@ -25,8 +25,9 @@ settings:
     openai:
       type: openai
       api_key: ${OPENAI_API_KEY}
+      reasoning_effort: none
   defaults:
-    model: gpt-4o-mini
+    model: gpt-5.6-luna
     temperature: 0.3
     max_tokens: 4096
 
@@ -62,7 +63,7 @@ orchestrator:
   name: CodeGenPipeline
   strategy: Pipeline
   provider: openai
-  model: gpt-4o-mini
+  model: gpt-5.6-luna
   agents: [SchemaParser, APIGenerator, TypeGenerator, TestGenerator, Validator]
   pipeline:
     steps:

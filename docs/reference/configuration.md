@@ -33,8 +33,9 @@ settings:
     openai:
       type: openai
       api_key: ${OPENAI_API_KEY}
+      reasoning_effort: none
   defaults:
-    model: gpt-4o-mini
+    model: gpt-5.6-luna
 agents:
   - name: Assistant
     role: worker
@@ -171,7 +172,7 @@ Adds commands to the `cli` tool allowlist. This is a guard rail, not a sandbox. 
 ```yaml
 settings:
   defaults:
-    model: gpt-4o-mini
+    model: gpt-5.6-luna
     temperature: 0.2
     max_tokens: 2048
 ```
@@ -210,7 +211,7 @@ settings:
       output: 0.40   # USD per 1M output tokens
 ```
 
-Used by cost tracking and `--dry-run`. A model with no known price shows zero cost.
+Used by cost tracking and `--dry-run`. Set `settings.pricing` before relying on a dollar limit for a model missing from the built-in pricing table. In v0.3.1, this includes `gpt-5.4` and `gpt-5.6-luna`.
 
 ### settings.retry
 
