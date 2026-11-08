@@ -228,6 +228,7 @@ wake-max_concurrent_tasks
 wake-task_timeout_seconds
 wake-cancel_on_stop
 wake-secret_env
+wake-metadata_only
 wake-alerts
 wake-judge-enabled
 ref-monitors
