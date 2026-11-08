@@ -244,7 +244,10 @@ func (m *TaskManager) loadPersistedTasks() {
 		if status.Status == "running" {
 			if completion, ok := m.loadPersistedCompletion(status.ID); ok {
 				status.Status = completion
-				status.Summary = "task finished before restart; inspect the result log"
+				status.Summary = "task finished before restart"
+				if !m.d.Cfg.MetadataOnlyEnabled() {
+					status.Summary += "; inspect the result log"
+				}
 				recovered = append(recovered, status)
 			} else {
 				status.Status = "interrupted"
@@ -327,7 +330,7 @@ func (m *TaskManager) loadPersistedCompletion(id string) (string, bool) {
 // persistLocked atomically records task summaries and state, never task prompts,
 // arguments, or resolved environment values. Caller holds m.mu.
 func (m *TaskManager) persistLocked() error {
-	if err := os.MkdirAll(m.d.LogDir, 0o700); err != nil {
+	if err := mkdirAllDurable(m.d.LogDir); err != nil {
 		return fmt.Errorf("create task state directory: %w", err)
 	}
 	state := persistedTaskState{Version: 1, Tasks: make([]TaskStatus, 0, len(m.tasks))}
@@ -374,8 +377,16 @@ func (m *TaskManager) emit(ev TaskEvent) {
 }
 
 func (m *TaskManager) refuse(name, reason string) (TaskStatus, error) {
-	m.d.Engine.Audit(map[string]any{"event": "task_refused", "config": name, "reason": reason})
-	m.emit(TaskEvent{Phase: "start", Config: name, Status: "refused", Reason: reason})
+	rec := map[string]any{"event": "task_refused"}
+	ev := TaskEvent{Phase: "start", Status: "refused"}
+	if !m.d.Cfg.MetadataOnlyEnabled() {
+		rec["config"] = name
+		rec["reason"] = reason
+		ev.Config = name
+		ev.Reason = reason
+	}
+	m.d.Engine.Audit(rec)
+	m.emit(ev)
 	return TaskStatus{}, fmt.Errorf("%w: %s", ErrTaskRefused, reason)
 }
 
@@ -448,8 +459,16 @@ func (m *TaskManager) Start(ctx context.Context, name string, args map[string]an
 	m.mu.Unlock()
 
 	timeout := time.Duration(m.d.Cfg.TaskTimeoutSeconds) * time.Second
-	m.d.Engine.Audit(map[string]any{"event": "task_start", "task_id": id, "config": name, "args": vals})
-	m.emit(TaskEvent{Phase: "start", TaskID: id, Config: name, Status: "started", Args: vals})
+	startAudit := map[string]any{"event": "task_start", "task_id": id, "config": name}
+	if !m.d.Cfg.MetadataOnlyEnabled() {
+		startAudit["args"] = vals
+	}
+	m.d.Engine.Audit(startAudit)
+	ev := TaskEvent{Phase: "start", TaskID: id, Config: name, Status: "started"}
+	if !m.d.Cfg.MetadataOnlyEnabled() {
+		ev.Args = vals
+	}
+	m.emit(ev)
 
 	spec := TaskSpec{ID: id, Name: name, ConfigPath: rc.Path, Prompt: buildPrompt(rc, vals), Timeout: timeout}
 	resCh := make(chan struct {
@@ -494,7 +513,7 @@ func (m *TaskManager) finish(rec *taskRec, status, output, reason string) {
 	rec.finishing = true
 	m.mu.Unlock()
 
-	if output != "" {
+	if output != "" && !m.d.Cfg.MetadataOnlyEnabled() {
 		if err := m.writeLog(rec.ID, output); err != nil {
 			status = "error"
 			reason = "persist task result: " + err.Error()
@@ -510,9 +529,14 @@ func (m *TaskManager) finish(rec *taskRec, status, output, reason string) {
 	if completionErr == nil {
 		completionErr = writeAtomic(m.completionPath(rec.ID), completion)
 	}
-	summary := summarize(output)
-	if summary == "" {
-		summary = summarize(reason)
+	summary := ""
+	if !m.d.Cfg.MetadataOnlyEnabled() {
+		summary = summarize(output)
+		if summary == "" {
+			summary = summarize(reason)
+		}
+	} else {
+		reason = ""
 	}
 	rec.Status, rec.Summary = status, summary
 	m.retireLocked(rec.ID)
@@ -520,7 +544,10 @@ func (m *TaskManager) finish(rec *taskRec, status, output, reason string) {
 		m.persistErr = fmt.Errorf("persist task completion: %w", err)
 		if completionErr != nil {
 			rec.Status = "interrupted"
-			rec.Summary = "task completion could not be persisted; inspect side effects and the result log before retrying"
+			rec.Summary = "task completion could not be persisted; inspect side effects before retrying"
+			if !m.d.Cfg.MetadataOnlyEnabled() {
+				rec.Summary = "task completion could not be persisted; inspect side effects and the result log before retrying"
+			}
 			status = rec.Status
 			summary = rec.Summary
 		}
@@ -553,7 +580,7 @@ func (m *TaskManager) retireLocked(id string) {
 
 // writeLog keeps the full result in its own file; the wake session never reads it.
 func (m *TaskManager) writeLog(id, out string) error {
-	if err := os.MkdirAll(m.d.LogDir, 0o700); err != nil {
+	if err := mkdirAllDurable(m.d.LogDir); err != nil {
 		return err
 	}
 	return writeAtomic(filepath.Join(m.d.LogDir, id+".log"), []byte(out))
@@ -566,8 +593,11 @@ func (m *TaskManager) Status(id string) (TaskStatus, bool) {
 	rec, ok := m.tasks[id]
 	if !ok {
 		if _, gone := m.expired[id]; gone {
-			return TaskStatus{ID: id, Status: expiredStatus,
-				Summary: "record expired from memory; the full result log is on disk"}, true
+			summary := "record expired from memory"
+			if !m.d.Cfg.MetadataOnlyEnabled() {
+				summary += "; the full result log is on disk"
+			}
+			return TaskStatus{ID: id, Status: expiredStatus, Summary: summary}, true
 		}
 		return TaskStatus{}, false
 	}

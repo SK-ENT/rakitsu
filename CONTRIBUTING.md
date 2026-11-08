@@ -45,7 +45,7 @@ This follows the [Developer Certificate of Origin](https://developercertificate.
 ## Development Setup
 
 ```bash
-# Requirements: Go 1.25+, Node.js 20+
+# Requirements: Go 1.26+, Node.js 20+
 git clone https://github.com/SK-ENT/rakitsu.git
 cd rakitsu
 make build-embedded    # frontend + Go binary

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"github.com/SK-ENT/rakitsu/internal/agent"
 	"github.com/SK-ENT/rakitsu/internal/config"
 	"github.com/SK-ENT/rakitsu/internal/debug"
+	"github.com/SK-ENT/rakitsu/internal/store"
 	"github.com/SK-ENT/rakitsu/internal/telemetry"
 	"github.com/SK-ENT/rakitsu/internal/tools/userinput"
 )
@@ -542,5 +544,53 @@ func TestServerMsgRoundTripJSON(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, m) {
 		t.Fatalf("round-trip mismatch: %+v vs %+v", got, m)
+	}
+}
+
+func TestWakeMetadataOnlyDisablesChatPersistence(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		wake config.WakeConfig
+	}{
+		{"explicit", config.WakeConfig{Enabled: true, MetadataOnly: true}},
+		{"secret env", config.WakeConfig{Enabled: true, SecretEnv: []string{"SYNTHETIC_SECRET"}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			ss, err := store.NewSessionStoreAt(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg := &config.Config{Name: "test", Agents: []config.AgentDefinition{{Name: "a1"}}}
+			cfg.Settings.Wake = test.wake
+			sess, err := StartChatSession(context.Background(), ChatSessionOptions{
+				Cfg: cfg, SessionStore: ss, ForwardBus: telemetry.NewEventBus(4),
+				BuildFunc: makeFakeChatBuildFunc("a1", nil, nil),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer sess.Close()
+			if sess.sessionStore != nil || sess.forwardBus != nil {
+				t.Fatal("protected wake chat can persist or forward payloads")
+			}
+			done, err := sess.SubmitWake("synthetic private chat payload", "fixture")
+			if err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case outcome := <-done:
+				if outcome.Final != "ok" {
+					t.Fatal("protected turn did not complete")
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("protected turn timed out")
+			}
+			sess.Close()
+			entries, err := os.ReadDir(dir)
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("protected chat wrote session files: %v", err)
+			}
+		})
 	}
 }

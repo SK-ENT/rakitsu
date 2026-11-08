@@ -1095,6 +1095,66 @@ func TestCompletedTaskAndResultSurviveManagerRestart(t *testing.T) {
 	m.Close()
 }
 
+func TestMetadataOnlyDoesNotPersistTaskPayloads(t *testing.T) {
+	const secret = "memory-only-secret-value"
+	m, e, dir := newBareManager(t, 5, func(_ context.Context, spec TaskSpec) (string, error) {
+		if !strings.Contains(spec.Prompt, secret) {
+			return "", errors.New("fixture argument did not reach the in-memory runner")
+		}
+		if spec.ID == "t2" {
+			return secret, errors.New(secret)
+		}
+		return secret, nil
+	}, nil)
+	defer m.Close()
+	m.d.Cfg.MetadataOnly = true
+	e.auditMax = 1 // Make the next record rotate the audit file.
+	args := goodArgs()
+	args["file"] = "logs/" + secret
+	audit := filepath.Join(dir, "s1.audit.jsonl")
+
+	for _, want := range []string{"done", "error"} {
+		st, err := m.Start(context.Background(), "alert-handler", args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m.Wait()
+		if got, ok := m.Status(st.ID); !ok || got.Status != want || got.Summary != "" {
+			t.Fatalf("unexpected protected task status, want %s without a summary", want)
+		}
+		if _, err := os.Stat(filepath.Join(m.d.LogDir, st.ID+".log")); !os.IsNotExist(err) {
+			t.Fatalf("result log exists or could not be checked: %v", err)
+		}
+		for _, path := range []string{audit, audit + ".1", m.taskStatePath()} {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Contains(data, []byte(secret)) {
+				t.Fatalf("synthetic secret persisted in %s", filepath.Base(path))
+			}
+		}
+	}
+	if _, err := m.Start(context.Background(), secret, args); !errors.Is(err, ErrTaskRefused) {
+		t.Fatal("unlisted configuration was not refused")
+	}
+	data, err := os.ReadFile(audit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(data, []byte(secret)) {
+		t.Fatal("synthetic secret persisted in refusal audit")
+	}
+
+	restarted := NewTaskManager(TaskDeps{Engine: e, Cfg: m.d.Cfg, LogDir: m.d.LogDir})
+	defer restarted.Close()
+	for _, task := range m.List() {
+		if got, ok := restarted.Status(task.ID); !ok || got.Status != task.Status {
+			t.Fatalf("status for %s did not survive restart", task.ID)
+		}
+	}
+}
+
 func TestCompletedTaskMarkerIsRemovedAfterStatePersists(t *testing.T) {
 	run := func(context.Context, TaskSpec) (string, error) { return "durable result", nil }
 	m, _, _ := newBareManager(t, 5, run, nil)

@@ -334,6 +334,13 @@ func StartChatSession(ctx context.Context, opts ChatSessionOptions) (*ChatSessio
 		return nil, fmt.Errorf("build func is required")
 	}
 
+	w := opts.Cfg.Settings.Wake
+	metadataOnly := w.Enabled && w.MetadataOnlyEnabled()
+	if metadataOnly {
+		opts.SessionStore = nil
+		opts.ForwardBus = nil
+	}
+
 	eventBus := telemetry.NewEventBus(1024)
 	userReqCh := make(chan userinput.InputRequest, 1)
 	userRespCh := make(chan string, 1)
@@ -350,7 +357,7 @@ func StartChatSession(ctx context.Context, opts ChatSessionOptions) (*ChatSessio
 	// the slash-command dispatch path so /model can reach sub-agents.
 	var taskHandle *wake.TaskHandle
 	buildCtx := ctx
-	if w := opts.Cfg.Settings.Wake; w.Enabled && len(w.Allow.Configs) > 0 {
+	if w.Enabled && len(w.Allow.Configs) > 0 {
 		taskHandle = &wake.TaskHandle{}
 		buildCtx = wake.WithTaskHandle(ctx, taskHandle)
 	}
@@ -397,7 +404,7 @@ func StartChatSession(ctx context.Context, opts ChatSessionOptions) (*ChatSessio
 	// instead of full-history re-feed. Engages only on the RunWithHistory
 	// path; the rolling summary lives in the "session:<id>" scope, so a
 	// resumed session (ResumeID) reloads it automatically.
-	if opts.Cfg.Settings.Memory.Enabled && opts.Cfg.Settings.Memory.Conversation.Enabled {
+	if !metadataOnly && opts.Cfg.Settings.Memory.Enabled && opts.Cfg.Settings.Memory.Conversation.Enabled {
 		if _, ok := runner.(*agent.Agent); ok {
 			if ms, err := memory.OpenShared(opts.Cfg.Settings.Memory.Dir); err == nil {
 				s.convMem = memory.NewConversationMemory(ms, sessID, memory.ConversationOptions{

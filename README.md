@@ -8,7 +8,7 @@
 [![Release](https://img.shields.io/github/v/release/SK-ENT/rakitsu?include_prereleases)](https://github.com/SK-ENT/rakitsu/releases)
 [![Status: Beta](https://img.shields.io/badge/status-beta-orange.svg)](#disclaimer)
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL%201.1-blue.svg)](LICENSE)
-[![Go 1.25](https://img.shields.io/badge/Go-1.25-00ADD8.svg)](https://go.dev)
+[![Go 1.26](https://img.shields.io/badge/Go-1.26-00ADD8.svg)](https://go.dev)
 
 **The Agent IDE** — Build, debug, and ship AI agents visually.
 
@@ -301,7 +301,7 @@ make build-embedded    # frontend + Go binary → bin/rakitsu
 ./bin/rakitsu serve
 ```
 
-Requires: Go 1.25+, Node.js 20.19+ or 22.12+
+Requires: Go 1.26+, Node.js 20.19+ or 22.12+
 
 ## Project Structure
 
