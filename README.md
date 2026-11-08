@@ -364,7 +364,7 @@ license.
 
 ## Disclaimer
 
-> **This software is beta and not production-ready.** Interfaces, APIs, and behavior may change without notice. Rakitsu executes LLM-generated tool calls (shell commands, file operations) which carry inherent risk. Use at your own risk. The authors assume no liability for any losses, damages, or consequences arising from use of this software. See [LICENSE](LICENSE) for full terms.
+> **Rakitsu is in preview.** Individual releases may be labeled alpha, beta, or stable. Interfaces, APIs, and behavior may change without notice. Rakitsu executes LLM-generated tool calls (shell commands, file operations) which carry inherent risk. Use at your own risk. The authors assume no liability for any losses, damages, or consequences arising from use of this software. See [LICENSE](LICENSE) for full terms.
 
 ## License
 
