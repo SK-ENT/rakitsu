@@ -270,27 +270,59 @@ func TestACPProfileConcurrentReplacements(t *testing.T) {
 }
 
 func TestACPProfileSaveFailureKeepsOldCredential(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "profile")
-	keys := map[string]string{}
-	setup := acpSetup{
-		profilePath: path,
-		getKey:      func(account string) (string, error) { return keys[account], nil },
-		setKey:      func(account, key string) error { keys[account] = key; return nil },
-		deleteKey:   func(account string) error { delete(keys, account); return nil },
-		verify:      func(context.Context, acpProfile, string) error { return nil },
+	for _, tt := range []struct{ provider, key string }{
+		{provider: "openai", key: "new-secret"},
+		{provider: "ollama"},
+	} {
+		t.Run(tt.provider, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "profile")
+			keys := map[string]string{}
+			setup := acpSetup{
+				profilePath: path,
+				getKey:      func(account string) (string, error) { return keys[account], nil },
+				setKey:      func(account, key string) error { keys[account] = key; return nil },
+				deleteKey:   func(account string) error { delete(keys, account); return nil },
+				verify:      func(context.Context, acpProfile, string) error { return nil },
+			}
+			if err := setup.save(context.Background(), acpProfile{Provider: "openai", Model: "old-model"}, "old-secret"); err != nil {
+				t.Fatal(err)
+			}
+			setup.writeProfile = func(string, acpProfile) error { return errors.New("injected write failure") }
+			if err := setup.save(context.Background(), acpProfile{Provider: tt.provider, Model: "new-model"}, tt.key); err == nil {
+				t.Fatal("expected failed profile replacement")
+			}
+			cfg, err := setup.load()
+			if err != nil || cfg.Agents[0].Model != "old-model" || cfg.GetAPIKey("openai") != "old-secret" || len(keys) != 1 {
+				t.Fatal("old profile or key changed, or new credential was left behind")
+			}
+		})
 	}
-	if err := setup.save(context.Background(), acpProfile{Provider: "openai", Model: "old-model"}, "old-secret"); err != nil {
-		t.Fatal(err)
-	}
-	setup.writeProfile = func(string, acpProfile) error { return errors.New("injected write failure") }
-	if err := setup.save(context.Background(), acpProfile{Provider: "openai", Model: "new-model"}, "new-secret"); err == nil {
-		t.Fatal("expected failed profile replacement")
-	}
-	cfg, err := setup.load()
-	if err != nil || cfg.Agents[0].Model != "old-model" || cfg.GetAPIKey("openai") != "old-secret" || len(keys) != 1 {
-		t.Fatal("old profile or key changed, or new credential was left behind")
-	}
+}
 
+func TestACPSetupNormalizesGeminiModelID(t *testing.T) {
+	const model = "gemini-2.5-flash"
+	for _, input := range []string{model, "models/" + model} {
+		t.Run(input, func(t *testing.T) {
+			setup := acpSetup{
+				profilePath: filepath.Join(t.TempDir(), "profile"),
+				verify: func(_ context.Context, p acpProfile, _ string) error {
+					if p.Model != model {
+						t.Fatalf("verification received model %q, want %q", p.Model, model)
+					}
+					return nil
+				},
+				setKey: func(string, string) error { return nil },
+				getKey: func(string) (string, error) { return "fixture-key", nil },
+			}
+			if err := setup.save(context.Background(), acpProfile{Provider: "gemini", Model: input}, "fixture-key"); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := setup.load()
+			if err != nil || cfg.Agents[0].Model != model {
+				t.Fatalf("saved model did not round-trip as %q: %v", model, err)
+			}
+		})
+	}
 }
 
 func TestACPProfileRejectsUnsafeModelNames(t *testing.T) {

@@ -174,6 +174,9 @@ func (s acpSetup) load() (*config.Config, error) {
 	return acpConfigForProfile(p, key), nil
 }
 func (s acpSetup) save(ctx context.Context, p acpProfile, key string) error {
+	if p.Provider == "gemini" {
+		p.Model = strings.TrimPrefix(p.Model, "models/")
+	}
 	if !validACPProfile(p) || s.profilePath == "" {
 		return errors.New("invalid provider or model")
 	}
