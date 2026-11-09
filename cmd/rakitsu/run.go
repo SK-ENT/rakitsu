@@ -1259,6 +1259,7 @@ func createLLMProvider(ctx context.Context, cfg *config.Config, providerName, mo
 	}
 
 	pc := &llm.ProviderConfig{
+		ManagedACP:         cfg.Settings.ManagedACP,
 		APIKey:             secret.New(cfg.GetAPIKey(providerName)),
 		Model:              model,
 		BaseURL:            cfg.GetBaseURL(providerName),

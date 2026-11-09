@@ -224,6 +224,7 @@ type StreamingProvider interface {
 
 // ProviderConfig contains common configuration for LLM providers
 type ProviderConfig struct {
+	ManagedACP bool
 	// APIKey is wrapped in secret.Value so it can't be accidentally
 	// printed/logged by this or a future call site — use .Reveal() only
 	// at the point a provider constructor actually needs the raw string

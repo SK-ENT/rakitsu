@@ -46,6 +46,7 @@ type Config struct {
 
 // Settings contains global configuration settings
 type Settings struct {
+	ManagedACP       bool                          `mapstructure:"-" yaml:"-"`
 	DefaultProvider  string                        `mapstructure:"default_provider"`
 	Providers        map[string]ProviderDefinition `mapstructure:"providers"` // named provider instances
 	APIKeys          map[string]string             `mapstructure:"api_keys"`

@@ -1317,7 +1317,7 @@ can drive rakitsu agents directly — session create, prompt turns, streaming
 updates. Implementation: `internal/acp/`. Session history is truncated
 rune-safe at storage time to bound memory on long-running sessions.
 
-Run `rakitsu acp` for the built-in OpenAI chat agent. The v0.3.1 binary uses `gpt-4o-mini`; the v0.3.2 candidate uses `gpt-5.6-luna`. Compatible clients can launch `rakitsu acp --login` through Terminal Auth. The login command validates the API key and stores it in the OS credential store. A server waiting for a credential picks it up on its next session request. Run `rakitsu acp <config.yaml>` to use a custom provider, agent or tools. See [ACP and Zed setup](reference/acp.md).
+Run `rakitsu acp` for the built-in chat agent. In v0.3.2, `rakitsu acp --login` selects a provider and model. Compatible clients can launch the command through Terminal Auth. Rakitsu saves the selection locally and stores cloud API keys in the OS credential store. Ollama uses a locally installed model. A server waiting for setup loads the selection on its next session request. Run `rakitsu acp <config.yaml>` to use a custom provider, agent or tools. See [ACP and Zed setup](reference/acp.md).
 
 ### MCP server — `rakitsu serve --mcp-port N --config <config.yaml>`
 

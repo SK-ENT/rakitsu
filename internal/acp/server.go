@@ -406,7 +406,7 @@ func (s *Server) handleInitialize(req acpRequest) {
 	var legacy bool
 	_ = json.Unmarshal(params.ClientCapabilities.Meta["terminal-auth"], &legacy)
 	if s.authReady != nil && (params.ClientCapabilities.Auth.Terminal || legacy) {
-		methods = append(methods, authMethod{ID: "login", Name: "Log in", Description: "Set up an OpenAI API key", Type: "terminal", Args: []string{"--login"}})
+		methods = append(methods, authMethod{ID: "login", Name: "Log in", Description: "Set up a provider and model", Type: "terminal", Args: []string{"--login"}})
 	}
 	s.writeResponse(req.ID, initializeResult{ProtocolVersion: protocolVersion, AgentCapabilities: agentCapabilities{}, AuthMethods: methods})
 }
