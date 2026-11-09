@@ -30,17 +30,18 @@ so no row becomes harder to actually locate, just less prominent by default.
 
 | Version | First published (UTC) | Converts to Apache 2.0 (UTC) |
 |---|---|---|
+| [v0.3.2](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.2) | 2026-11-09T15:21:53Z | 2030-11-09T15:21:53Z |
 | [v0.3.1](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.1) | 2026-11-08T11:14:28Z | 2030-11-08T11:14:28Z |
 | [v0.3.0](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0) | 2026-11-08T01:49:20Z | 2030-11-08T01:49:20Z |
 | [v0.3.0-beta.7](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-beta.7) | 2026-11-07T08:25:34Z | 2030-11-07T08:25:34Z |
 | [v0.3.0-beta.6](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-beta.6) | 2026-11-05T00:04:51Z | 2030-11-05T00:04:51Z |
-| [v0.3.0-beta.5](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-beta.5) | 2026-10-31T03:17:40Z | 2030-10-31T03:17:40Z |
 
 <details>
 <summary>Older releases</summary>
 
 | Version | First published (UTC) | Converts to Apache 2.0 (UTC) |
 |---|---|---|
+| [v0.3.0-beta.5](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-beta.5) | 2026-10-31T03:17:40Z | 2030-10-31T03:17:40Z |
 | [v0.3.0-beta.4](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-beta.4) | 2026-10-12T02:00:21Z | 2030-10-12T02:00:21Z |
 | [v0.3.0-beta.3](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-beta.3) | 2026-10-05T14:09:07Z | 2030-10-05T14:09:07Z |
 | [v0.3.0-alpha.14](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.0-alpha.14) | 2026-09-28T23:59:45Z | 2030-09-28T23:59:45Z |
