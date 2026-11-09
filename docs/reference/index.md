@@ -1,43 +1,16 @@
-# Rakitsu reference (v0.3.0)
+# Rakitsu reference (v0.3.1)
 
 Rakitsu is a single program that runs teams of AI agents from a YAML file. It has a command line, a web UI with a visual builder and a debugger, and servers for A2A, MCP and ACP.
 
-This reference covers every command, every config key and every feature. Each feature page starts with **When to use it**, so you can see if it fits before you read on. Every command and example in these pages was run against a fresh build with a fake local model. The exceptions are things that need a terminal (the chat screen, `quickstart`), a real provider account (Anthropic, Gemini, Codex and others), a browser, or a second machine.
-## Quickstart (5 minutes)
+Use the reference below when you want to customize a project, choose a model, or look up a command.
 
-1. Get the program. See the README for the install script, Homebrew and Docker. To build from source:
+## Start without editing a config
 
-   ```bash
-   make build            # writes bin/rakitsu
-   ```
+1. Install Rakitsu using the [README instructions](../../README.md#quick-start).
+2. Run `rakitsu quickstart`. Choose **Chat Bot**, then pick your provider. Enter an API key if asked.
+3. Start the web UI when prompted. Open **http://localhost:9100** and send your first message.
 
-2. Make a config and check it:
-
-   ```bash
-   rakitsu scaffold llm-chat            # writes llm-chat.yaml
-   rakitsu doctor llm-chat.yaml
-   ```
-
-   `doctor` tells you if the API key variable is missing. Load the key for one command from a private file, never with `export` ([security](security.md#secrets-in-configs-and-docs)).
-
-3. Run it:
-
-   ```bash
-   OPENAI_API_KEY=$(grep '^OPENAI_API_KEY=' ~/.secrets/openai | cut -d= -f2-) \
-     rakitsu run llm-chat.yaml "Say hello in one sentence"
-   ```
-
-   No key? Use a local model: `rakitsu run --interactive` opens a keyless Ollama chat, or `rakitsu scaffold llm-chat --provider ollama`.
-
-4. Look inside. Start the hub and run again:
-
-   ```bash
-   rakitsu serve                     # open http://localhost:9100
-   ```
-
-   `rakitsu run` connects to the hub by itself and shows a live tree of what happened.
-
-5. Pick your next step from the map below.
+For Zed, follow the [ACP quick start](acp.md#quick-start-in-zed). For terminal runs or a custom config, see [scaffold and quickstart](scaffold-quickstart.md).
 
 ## Map
 

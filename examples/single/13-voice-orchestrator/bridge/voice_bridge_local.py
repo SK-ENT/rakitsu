@@ -22,7 +22,7 @@ machine — no cloud voice API and no per-minute realtime audio billing:
 
 This is a DIFFERENT axis from the dispatch target: the dispatched
 `VoiceWorker` agent (`worker-config.yaml`) still uses its own separately
-configured LLM provider (`default_provider: openai` / `gpt-4o-mini` by
+configured LLM provider (`default_provider: openai` / `gpt-5.6-luna` by
 default) exactly as with the other two bridges — only the voice layer
 (microphone -> text, text -> speaker) is local here. Dispatch reuses
 `bridge/rakitsu_dispatch.py` UNCHANGED: `RakitsuDispatcher().dispatch_sync()`

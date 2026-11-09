@@ -76,7 +76,7 @@ rakitsu run agent.yaml "What pods are running?"
 rakitsu run --interactive
 rakitsu run agent.yaml --interactive
 rakitsu run agent.yaml "Analyze errors" --trace
-rakitsu run agent.yaml "Query" --provider litellm --model gpt-4o
+rakitsu run agent.yaml "Query" --provider openai --model gpt-5.6-luna
 rakitsu run agent.yaml "hello" --dry-run
 ```
 
@@ -239,10 +239,11 @@ Calls `/healthz` on a running `serve`. Exit `0` if healthy, `1` otherwise. Detai
 ## rakitsu acp
 
 ```
-rakitsu acp <config.yaml> [flags]
+rakitsu acp [config.yaml] [flags]
+rakitsu acp --login
 ```
 
-Starts an ACP (Agent Client Protocol) server over stdin and stdout, for editors such as Zed. Every session runs the config you pass. Details: [ACP](acp.md).
+Starts an ACP server over standard input and output. With no config, it starts a built-in OpenAI chat agent. First-run setup uses Terminal Auth or `rakitsu acp --login`. If you pass a YAML config, every session uses that config. See [ACP and Zed setup](acp.md).
 
 | Flag | Meaning |
 |---|---|

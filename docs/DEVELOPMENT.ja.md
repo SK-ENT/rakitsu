@@ -268,8 +268,8 @@ go build -ldflags "-X main.Version=dev.$commit -X main.BuildCommit=$commit" -o b
 ### バージョンの上書き
 
 ```bash
-make build VERSION=v0.3.0-beta.4
-# 出力: rakitsu version v0.3.0-beta.4
+make build VERSION=v0.3.1
+# 出力: rakitsu version v0.3.1
 ```
 
 `VERSION` を明示した場合、その値がそのまま埋め込まれます。未指定の場合は `VERSION_CORE` とブランチに応じたビルド接尾辞を使います。ローカルビルドは公開リリースの配布バイナリと同一とは限りません。

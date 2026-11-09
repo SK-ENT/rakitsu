@@ -27,11 +27,12 @@ settings:
     openai:
       type: openai
       api_key: ${OPENAI_API_KEY}
+      reasoning_effort: none
     local:
       type: ollama
       base_url: http://localhost:11434/v1
   defaults:
-    model: gpt-4o-mini
+    model: gpt-5.6-luna
 agents:
   - name: Assistant
     role: worker
@@ -64,8 +65,8 @@ The older flat maps `settings.api_keys`, `base_urls`, `credentials_files`, `loca
 ### How a provider and a model are chosen
 
 - Provider: the agent `provider`, then `settings.default_provider`, then `openai`.
-- Model: the agent `model`, then the provider `default_model`, then `settings.defaults.model`, then `gpt-4o-mini`.
-- Override both from the command line for one run: `rakitsu run config.yaml "query" --provider litellm --model gpt-4o`. If the provider is not in the config, rakitsu builds it from `<NAME>_API_KEY` and `<NAME>_BASE_URL`.
+- Model: Rakitsu checks the agent model, the provider default, then the config default. In v0.3.1, the standard provider path falls back to `gpt-4o-mini` when none is set. The examples set a model explicitly.
+- Override both from the command line for one run: `rakitsu run config.yaml "query" --provider openai --model gpt-5.6-luna`. If the provider is not in the config, rakitsu builds it from `<NAME>_API_KEY` and `<NAME>_BASE_URL`.
 
 If a key is missing you see an error such as `openai API key not set - export OPENAI_API_KEY or add api_key to settings.providers.openai`. The key must reach the provider block (usually through `api_key: ${OPENAI_API_KEY}`), not only the environment.
 
@@ -80,7 +81,7 @@ agents:
     system_prompt: Be brief.
     providers:
       - name: openai
-        model: gpt-4o-mini
+        model: gpt-5.6-luna
       - name: local
         model: llama3.1:8b
 ```

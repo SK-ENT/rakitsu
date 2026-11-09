@@ -18,7 +18,7 @@ settings:
       type: openai
       api_key: ${OPENAI_API_KEY}
   defaults:
-    model: gpt-4o
+    model: gpt-5.4
     temperature: 0.2
     max_tokens: 8192
 
@@ -61,7 +61,7 @@ orchestrator:
   name: ReviewLead
   strategy: Hierarchical
   provider: openai
-  model: gpt-4o
+  model: gpt-5.4
   system_prompt: |
     You lead a code review board. Examine the files in the PR and assign
     the appropriate reviewer based on the code area. Synthesize all reviews

@@ -23,7 +23,14 @@ func acpDefaultConfig(key string) *config.Config {
 	return &config.Config{
 		Name:     "Rakitsu ACP",
 		Settings: config.Settings{DefaultProvider: "openai", APIKeys: map[string]string{"openai": key}, BaseURLs: map[string]string{"openai": acpProviderBaseURL}},
-		Agents:   []config.AgentDefinition{{Name: "rakitsu", Role: "worker", Provider: "openai", Model: "gpt-4o-mini", SystemPrompt: "You are a helpful assistant."}},
+		Agents: []config.AgentDefinition{{
+			Name:         "rakitsu",
+			Role:         "worker",
+			Provider:     "openai",
+			Model:        "gpt-5.6-luna",
+			ModelConfig:  &config.ModelConfig{ReasoningEffort: "none"},
+			SystemPrompt: "You are a helpful assistant.",
+		}},
 	}
 }
 

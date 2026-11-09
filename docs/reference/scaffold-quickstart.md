@@ -30,7 +30,7 @@ Use-cases (from `rakitsu scaffold --list`):
 
 Flags: `--provider` (`openai` default, `anthropic`, `gemini`, `ollama`, `litellm`), `--model`, `-o/--output`, `--dir` (a modular folder with `agents/` and `tools/` instead of one file), `-f/--force`, `-l/--list`. An existing output path is refused unless you pass `--force`. An unknown use-case prints the valid ones.
 
-The default output is `<use-case>.yaml`, or `./<use-case>/` with `--dir`. The default `llm-chat` file uses `api_key: "${OPENAI_API_KEY}"`. Check it with [`rakitsu doctor`](doctor.md), then run it:
+The default output is `<use-case>.yaml`, or `./<use-case>/` with `--dir`. The default `llm-chat` file uses `api_key: "${OPENAI_API_KEY}"`. In v0.3.1, both the wizard and the OpenAI scaffold choose `gpt-4o-mini` by default. To generate an OpenAI config with a different model, run `rakitsu scaffold llm-chat --model gpt-5.6-luna`. Check it with [`rakitsu doctor`](doctor.md), then run it:
 
 ```bash
 rakitsu doctor llm-chat.yaml

@@ -17,7 +17,7 @@ settings:
       type: openai
       api_key: ${OPENAI_API_KEY}
   defaults:
-    model: gpt-4o
+    model: gpt-5.4
     temperature: 0.2
     max_tokens: 8192
   allowed_commands:
@@ -30,7 +30,7 @@ orchestrator:
   name: MigrationLead
   strategy: PlanAndExecute
   provider: openai
-  model: gpt-4o
+  model: gpt-5.4
   system_prompt: |
     You coordinate a database migration. First, delegate to the Planner
     to analyze and create a migration plan. Then delegate to the Executor

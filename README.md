@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/SK-ENT/rakitsu/actions/workflows/ci.yml/badge.svg)](https://github.com/SK-ENT/rakitsu/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/SK-ENT/rakitsu?include_prereleases)](https://github.com/SK-ENT/rakitsu/releases)
-[![Status: Beta](https://img.shields.io/badge/status-beta-orange.svg)](#disclaimer)
+[![Status: Preview](https://img.shields.io/badge/status-preview-orange.svg)](#disclaimer)
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL%201.1-blue.svg)](LICENSE)
 [![Go 1.26](https://img.shields.io/badge/Go-1.26-00ADD8.svg)](https://go.dev)
 
@@ -23,18 +23,16 @@ Design multi-agent systems on a drag-and-drop canvas, debug with breakpoints and
 
 ## Quick Start
 
-```bash
-# Install (Linux / macOS)
-curl -fsSL https://raw.githubusercontent.com/SK-ENT/rakitsu/main/install.sh | sh
+1. Install Rakitsu. On macOS or Linux, paste this into your terminal. On Windows, download the executable from the [release page](https://github.com/SK-ENT/rakitsu/releases/latest).
 
-# Create your first project (interactive wizard)
-rakitsu quickstart
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/SK-ENT/rakitsu/main/install.sh | sh
+   ```
 
-# Or jump straight into the web UI
-rakitsu serve
-```
+2. Run `rakitsu quickstart`. On Windows, open PowerShell in the download folder and run `.\rakitsu-windows-amd64.exe quickstart`. Choose **Chat Bot** and a provider you already use. Enter its API key if prompted, then follow the prompts to create your project.
+3. Choose **Yes** when asked to start the web UI. Open **http://localhost:9100** if it doesn't open automatically, then start a chat.
 
-Open **http://localhost:9100** — drag agents onto the canvas, wire up tools, hit Run.
+The wizard creates the config for you. To use Rakitsu in an editor, see the [Zed quick start](docs/reference/acp.md#quick-start-in-zed).
 
 `rakitsu serve` runs in the foreground and keeps that terminal busy — that's
 expected, it's the server. Leave it running and open a **new terminal tab**
@@ -65,24 +63,24 @@ before writing a config.
 
 ### Other ways to install
 
-For beta.4, use `install.sh` or the exact release downloads. The Homebrew formula currently pins v0.3.0-alpha.14; it does not install beta.4.
+For v0.3.1, use `install.sh` or the [stable release downloads](https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.1). The Homebrew formula currently pins v0.3.0-alpha.14.
 
 ```bash
 # Homebrew (macOS / Linux) — the formula lives in this repo
 brew tap sk-ent/rakitsu https://github.com/SK-ENT/rakitsu
 brew install sk-ent/rakitsu/rakitsu
 
-# Docker (linux/amd64, linux/arm64) — tags: exact version, or the moving `beta`
-docker run --rm ghcr.io/sk-ent/rakitsu:v0.3.0-beta.4 version
+# Docker (linux/amd64, linux/arm64) — use the exact release tag
+docker run --rm ghcr.io/sk-ent/rakitsu:v0.3.1 version
 docker run --rm -it -e OPENAI_API_KEY -v "$PWD:/workspace" \
-  ghcr.io/sk-ent/rakitsu:v0.3.0-beta.4 run config.yaml "your query"
+  ghcr.io/sk-ent/rakitsu:v0.3.1 run config.yaml "your query"
 ```
 
 To expose the API from Docker, `serve` must bind `0.0.0.0` inside the
 container, which it only allows with an API token set. Publish the port on
 localhost only:
-`docker run --rm -e RAKITSU_API_TOKEN=<token> -p 127.0.0.1:9100:9100 ghcr.io/sk-ent/rakitsu:v0.3.0-beta.4 serve --host 0.0.0.0`.
-The browser UI cannot authenticate with this token in beta.4; for local visual inspection, run `rakitsu serve` on loopback outside the container.
+`docker run --rm -e RAKITSU_API_TOKEN=<token> -p 127.0.0.1:9100:9100 ghcr.io/sk-ent/rakitsu:v0.3.1 serve --host 0.0.0.0`.
+For local visual inspection, run `rakitsu serve` on loopback outside the container. See [server authentication](docs/reference/security.md) for API access.
 Inside the container, a cli tool's `sandbox: docker` needs the host Docker
 socket mounted, which gives the container root on your machine. The default
 `local_restricted` sandbox works without it.
@@ -205,7 +203,7 @@ rakitsu doctor config.yaml            # Diagnose config + provider health before
 rakitsu healthcheck                   # Probe a running `serve` at /healthz (exit 0 = healthy)
 
 # Override provider/model at runtime (no config edits needed):
-rakitsu run config.yaml "query" --provider litellm --model gpt-4o
+rakitsu run config.yaml "query" --provider openai --model gpt-5.6-luna
 rakitsu run config.yaml "query" --provider ollama --model llama3
 ```
 
@@ -219,8 +217,9 @@ settings:
     openai:
       type: openai
       api_key: ${OPENAI_API_KEY}
+      reasoning_effort: none
   defaults:
-    model: gpt-4o-mini
+    model: gpt-5.6-luna
 
 tools:
   - name: read_file
@@ -231,7 +230,7 @@ agents:
   - name: Reviewer
     role: worker
     provider: openai
-    model: gpt-4o
+    model: gpt-5.4
     system_prompt: Review code for bugs, security issues, and best practices.
     tools: [read_file]
 
@@ -376,6 +375,10 @@ BSL 1.1 — See [LICENSE](LICENSE) for details. Converts to Apache 2.0 after 4 y
 
 - [Examples](examples/)
 - [Contributing](CONTRIBUTING.md)
+- [Documentation](https://sk-ent.github.io/rakitsu/latest/)
+- [Reference](docs/reference/index.md)
+- [ACP and Zed setup](docs/reference/acp.md)
 - [Development Guide](docs/DEVELOPMENT.md)
 - [System Spec](docs/SYSTEM-SPEC.md)
-- [Changelog](docs/CHANGELOG-P0-P1.md)
+- [Release history](https://github.com/SK-ENT/rakitsu/releases)
+- [Acknowledgments](docs/ACKNOWLEDGMENTS.md)

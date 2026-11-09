@@ -2,31 +2,49 @@
 
 ## When to use it
 
-You want rakitsu to work as a coding agent inside an editor that speaks ACP, such as Zed. The editor starts `rakitsu acp` itself and talks to it over stdin and stdout.
+Rakitsu works as an external agent in editors and other clients that speak ACP. The client starts `rakitsu acp` and communicates over standard input and output.
 
-## Run it
+## Quick start in Zed
+
+The Registry install becomes available once [Rakitsu’s ACP Registry pull request](https://github.com/agentclientprotocol/registry/pull/765) is merged and the listing is published.
+
+1. In Zed, open the ACP Registry, install **Rakitsu**, and start a Rakitsu thread.
+2. Choose **Log in** and enter your OpenAI API key. Rakitsu saves it in your operating system’s credential store for future sessions.
+3. Send your first prompt in the same thread.
+
+On macOS, the system may ask for permission to use the login Keychain. If it asks for the Keychain password, use your existing Keychain password, usually your Mac login password. Enter your OpenAI API key at the `OpenAI API key:` prompt. [Apple’s Keychain guidance](https://support.apple.com/en-ie/guide/keychain-access/kyca2612/mac).
+
+The built-in agent is chat-only and needs no YAML. It uses `gpt-5.6-luna` in v0.3.2 and `gpt-4o-mini` in v0.3.1. While the listing is pending, you can install the Rakitsu binary yourself and use the custom agent setup below with `"args": ["acp"]`.
+
+## Use another ACP client
+
+Configure the client to launch the installed `rakitsu` executable with the argument `acp`. If the client supports Terminal Auth, use its login prompt. Otherwise, run `rakitsu acp --login` in a terminal, then start the agent in your client.
+
+## Use a YAML config
+
+Pass a config if you want a different provider, your own agent instructions, or tools.
 
 ```bash
 rakitsu acp examples/acp/dev-agent.yaml
 ```
 
-Every session the editor opens runs the config you pass on the command line. The editor does not choose the config.
-
-Flags: `--max-sessions` (default 256), `--session-idle-timeout` (default 24h), `--timeout` (seconds per turn; default is the config value, else 300). See [CLI](cli.md#rakitsu-acp).
-
-## Editor setup (Zed)
+Every session uses the config passed at launch. For a custom agent in Zed, add this entry to `settings.json` with the paths to your binary and config.
 
 ```json
-"agent_servers": {
-  "rakitsu": {
-    "type": "custom",
-    "command": "/path/to/rakitsu",
-    "args": ["acp", "/path/to/examples/acp/dev-agent.yaml"]
+{
+  "agent_servers": {
+    "rakitsu": {
+      "type": "custom",
+      "command": "/path/to/rakitsu",
+      "args": ["acp", "/path/to/examples/acp/dev-agent.yaml"]
+    }
   }
 }
 ```
 
-Give the config the tools an editor agent needs (`fs` read, write, list, search and a sandboxed `cli` tool). A chat-only config connects but cannot do much. Keys such as `LITELLM_API_KEY` go in the `env` of the editor entry or in your environment, never in the YAML. A full guide with a ready config is in [examples/acp](../../examples/acp/).
+Supply provider credentials through the environment used to launch the agent. The [ACP example](../../examples/acp/) includes a LiteLLM configuration with file tools and an allowlisted shell tool.
+
+See [CLI](cli.md#rakitsu-acp) for `--max-sessions`, `--session-idle-timeout`, and `--timeout`.
 
 ## What the server speaks
 
@@ -34,7 +52,7 @@ JSON-RPC 2.0, one message per line.
 
 | Message | Direction | Meaning |
 |---|---|---|
-| `initialize` | editor to rakitsu | Returns protocol version 1 and empty capabilities (no `loadSession`, no image or audio input, no MCP forwarding). |
+| `initialize` | editor to rakitsu | Returns protocol version 1. The built-in agent advertises Terminal Auth to compatible clients. |
 | `session/new` | editor to rakitsu | Creates a session. `cwd` and `mcpServers` are accepted and ignored. File access follows the config, not the session. A note goes to stderr. |
 | `session/prompt` | editor to rakitsu | Runs a turn. Updates stream back as `session/update`. The reply has `stopReason`. A second prompt on a busy session gets error `-32000` "session busy". |
 | `session/cancel` | editor to rakitsu | Notification. Cancels the running turn. |

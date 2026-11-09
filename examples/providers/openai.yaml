@@ -8,13 +8,10 @@ settings:
     openai:
       type: openai
       api_key: ${OPENAI_API_KEY}
-      # GPT-5.6 models (gpt-5.6-terra/sol/luna) reject function tools on the
-      # chat-completions endpoint unless reasoning_effort is sent explicitly.
-      # Set it here for the whole provider, or per agent under model_config.
-      # Values: none | minimal | low | medium | high. Omit for other models.
-      # reasoning_effort: none
+      # Luna needs explicit reasoning effort for tool calls over Chat Completions.
+      reasoning_effort: none
   defaults:
-    model: gpt-4o-mini
+    model: gpt-5.6-luna
     temperature: 0.7
     max_tokens: 2048
 

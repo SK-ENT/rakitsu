@@ -357,7 +357,7 @@ above (case-insensitive substring match, literal — not a regex pattern).
 
 ## Reporting
 
-This is pre-release (alpha) software. If you find a security issue, please open
+Rakitsu is in preview. If you find a security issue, please open
 an issue tagged `security` rather than a public disclosure.
 
 ## Summary
