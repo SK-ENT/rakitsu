@@ -29,6 +29,9 @@ func NewProvider(ctx context.Context, config *llm.ProviderConfig) (*Provider, er
 		Backend: genai.BackendGeminiAPI,
 	}
 
+	if config.ManagedACP {
+		cc.HTTPOptions.BaseURL = config.BaseURL
+	}
 	switch {
 	case !config.APIKey.IsEmpty():
 		cc.APIKey = config.APIKey.Reveal()

@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/SK-ENT/rakitsu/internal/llm"
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/SK-ENT/rakitsu/internal/llm"
 )
 
 // Provider implements the LLMProvider interface for Anthropic Claude
@@ -22,6 +22,9 @@ type Provider struct {
 func NewProvider(config *llm.ProviderConfig) *Provider {
 	opts := []option.RequestOption{
 		option.WithAPIKey(config.APIKey.Reveal()),
+	}
+	if config.ManagedACP {
+		opts = append(opts, option.WithAuthToken(""), option.WithHeaderDel("Authorization"))
 	}
 	if config.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(config.BaseURL))

@@ -14,7 +14,6 @@ import (
 	"github.com/SK-ENT/rakitsu/internal/debug"
 	"github.com/SK-ENT/rakitsu/internal/telemetry"
 	"github.com/spf13/cobra"
-	"github.com/zalando/go-keyring"
 )
 
 var acpCmd = &cobra.Command{
@@ -101,9 +100,7 @@ func runACP(cmd *cobra.Command, args []string) error {
 
 	var srv *acp.Server
 	if len(args) == 0 {
-		srv = newManagedACPServer(func() (string, error) {
-			return keyring.Get(acpKeyringService, acpKeyringAccount)
-		}, executeConfigConv)
+		srv = newManagedACPServer(defaultACPSetup().load, executeConfigConv)
 	} else {
 		srv = acp.NewServer(cfg, executeConfigConv)
 	}
@@ -130,7 +127,7 @@ func managedACPRun(run acp.RunFunc) acp.RunFunc {
 
 // newManagedACPServer retries credential lookup until login succeeds. The
 // resulting configuration is immutable and shared by all subsequent turns.
-func newManagedACPServer(loadKey func() (string, error), run acp.RunFunc) *acp.Server {
+func newManagedACPServer(loadConfig func() (*config.Config, error), run acp.RunFunc) *acp.Server {
 	var mu sync.Mutex
 	var readyConfig *config.Config
 	ready := func() bool {
@@ -139,11 +136,11 @@ func newManagedACPServer(loadKey func() (string, error), run acp.RunFunc) *acp.S
 		if readyConfig != nil {
 			return true
 		}
-		key, err := loadKey()
-		if err != nil || key == "" {
+		cfg, err := loadConfig()
+		if err != nil || cfg == nil {
 			return false
 		}
-		readyConfig = acpDefaultConfig(key)
+		readyConfig = cfg
 		return true
 	}
 	managedRun := managedACPRun(func(ctx context.Context, _ *config.Config, bus *telemetry.EventBus, dc *debug.DebugController, query string, registrar func([]debug.Attachable), conv *acp.ConvTurn) (string, error) {

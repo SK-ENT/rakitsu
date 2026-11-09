@@ -10,15 +10,15 @@ to it over stdio (JSON-RPC).
 
 Use `rakitsu acp` as the agent command (for example, set Zed's custom agent
 `args` to `["acp"]`). On first launch, an ACP client with Terminal Auth
-support offers **Log in**. The login runs `rakitsu acp --login`, reads an
-OpenAI API key without echo, validates it with OpenAI, and saves it to the
-operating system's credential store. An agent that was waiting for login
-picks up the key on its next session request. You can also run the login
-command directly.
+support offers **Log in**. Choose your provider and model in the setup
+terminal. For Ollama, start Ollama and download a model first. For a cloud
+provider, enter the provider’s API key when prompted. An agent waiting for
+setup loads your selection on its next session request. You can also run
+`rakitsu acp --login` directly.
 
-The built-in agent is chat-only. It uses the system Keychain on macOS,
-Credential Manager on Windows, or a running Secret Service on Linux. If
-the credential store is unavailable, setup fails with an error.
+The built-in agent is chat-only. Cloud keys are stored in Keychain on macOS,
+Credential Manager on Windows, or a running Secret Service on Linux.
+Ollama needs no key.
 
 ## Files
 

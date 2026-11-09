@@ -243,7 +243,7 @@ rakitsu acp [config.yaml] [flags]
 rakitsu acp --login
 ```
 
-Starts an ACP server over standard input and output. With no config, it starts a built-in OpenAI chat agent. First-run setup uses Terminal Auth or `rakitsu acp --login`. If you pass a YAML config, every session uses that config. See [ACP and Zed setup](acp.md).
+Starts an ACP server over standard input and output. With no config, it starts a built-in chat agent. Choose a provider and model through Terminal Auth or `rakitsu acp --login`. If you pass a YAML config, every session uses that config. See [ACP and Zed setup](acp.md).
 
 | Flag | Meaning |
 |---|---|
