@@ -670,7 +670,7 @@
                 +k > i || (+k === i && !completed && !live));
             });
             count(c1, T("ticks ", "ティック "), total);
-            count(c2, T("model calls ", "モデル呼び出し "), calls);
+            count(c2, T("agent turns ", "エージェントターン "), calls);
             count(c3, T("quiet ticks cost ", "静かなティックのコスト "),
               0, T(" calls", " 回"));
             cap.textContent = DS[OUT[i]];
