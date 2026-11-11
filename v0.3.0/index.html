@@ -16,8 +16,11 @@
     <select id="verSel" autocomplete="off"></select></label>
   <div class="ctl"><span data-i="view"></span>
     <span class="seg" role="group"><button id="viewSimple" type="button" data-view="simple"></button><button id="viewDetail" type="button" data-view="detail"></button></span></div>
+  <div class="search-box"><label class="sr-only" for="docSearch" data-i="searchLabel">Search documentation</label><input id="docSearch" type="search" autocomplete="off" spellcheck="false"></div>
   <div class="ctl"><span class="seg" role="group" aria-label="Language"><button id="langEn" type="button" data-lang="en">EN</button><button id="langJa" type="button" data-lang="ja">日本語</button></span></div>
-</div></header>
+</div>
+  <div id="searchResults" class="search-results" hidden></div>
+</header>
 
 <div class="wrap"><div class="layout">
   <nav class="side" id="nav" aria-label="Sections"></nav>

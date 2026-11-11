@@ -521,7 +521,7 @@
         },
         {
           "t": "code",
-          "text": "name: Code Reviewer\nsettings:\n  default_provider: openai\n  providers:\n    openai:\n      type: openai\n      api_key: ${OPENAI_API_KEY}\n      reasoning_effort: none\n  defaults:\n    model: gpt-5.6-luna\ntools:\n  - name: read_file\n    type: fs\n    operation: read\nagents:\n  - name: Reviewer\n    role: worker\n    provider: openai\n    model: gpt-5.4\n    system_prompt: Review code for bugs, security issues, and best practices.\n    tools: [read_file]\norchestrator:\n  name: Lead\n  strategy: Pipeline\n  agents: [Reviewer]\n  pipeline:\n    steps:\n      - name: review\n        agent: Reviewer"
+          "text": "name: Code Reviewer\nsettings:\n  default_provider: openai\n  providers:\n    openai:\n      type: openai\n      api_key: ${OPENAI_API_KEY}\n      reasoning_effort: none\n  defaults:\n    model: gpt-5.6-luna\ntools:\n  - name: read_file\n    type: fs\n    operation: read\nagents:\n  - name: Reviewer\n    role: worker\n    provider: openai\n    system_prompt: Review code for bugs, security issues, and best practices.\n    tools: [read_file]\norchestrator:\n  name: Lead\n  strategy: Pipeline\n  agents: [Reviewer]\n  pipeline:\n    steps:\n      - name: review\n        agent: Reviewer"
         },
         {
           "t": "h",
@@ -580,8 +580,8 @@
       "detail": [
         {
           "t": "p",
-          "en": "Provider resolution: agent.provider, then settings.default_provider, then openai. Model resolution: agent.model, then provider default_model, then settings.defaults.model, then the v0.3.2 fallback gpt-4o-mini. Ollama, LiteLLM and NVIDIA use the OpenAI-compatible provider through base_url. The codex provider reuses an existing Codex CLI login.",
-          "ja": "プロバイダの解決順は agent.provider、settings.default_provider、openai。モデルの解決順は agent.model、プロバイダの default_model、settings.defaults.model、v0.3.2 のフォールバックである gpt-4o-mini です。Ollama、LiteLLM、NVIDIA は base_url 経由で OpenAI 互換プロバイダを使います。codex プロバイダは既存の Codex CLI のログインを再利用します。"
+          "en": "Provider resolution: agent.provider, then settings.default_provider, then openai. Model resolution: agent.model, then provider default_model, then settings.defaults.model, then the v0.3.2 fallback gpt-4o-mini. Ollama and LiteLLM use the OpenAI-compatible implementation. For NVIDIA, configure an OpenAI-compatible base_url or use the --provider nvidia CLI shortcut. The codex provider reuses an existing Codex CLI login.",
+          "ja": "プロバイダの解決順は agent.provider、settings.default_provider、openai。モデルの解決順は agent.model、プロバイダの default_model、settings.defaults.model、v0.3.2 のフォールバックである gpt-4o-mini です。Ollama と LiteLLM は OpenAI 互換の実装を使います。NVIDIA を使うには OpenAI 互換の base_url を設定するか、CLI で --provider nvidia を指定します。codex プロバイダは既存の Codex CLI のログインを再利用します。"
         },
         {
           "t": "kv",
@@ -853,8 +853,8 @@
     {
       "id": "orchestrator",
       "name": {
-        "en": "Orchestrator strategies",
-        "ja": "オーケストレーターの戦略"
+        "en": "Compare strategies",
+        "ja": "戦略を比較"
       },
       "simple": {
         "en": "ReAct delegation or a deterministic Pipeline with sequential, parallel and loop steps.",
@@ -863,8 +863,8 @@
       "detail": [
         {
           "t": "p",
-          "en": "strategy accepts ReAct, PlanAndExecute, Hierarchical and Pipeline. Only Pipeline has a distinct implementation today. PlanAndExecute and Hierarchical currently route through the ReAct loop.",
-          "ja": "strategy には ReAct、PlanAndExecute、Hierarchical、Pipeline を指定できます。現時点で独自の実装があるのは Pipeline のみです。PlanAndExecute と Hierarchical は現在 ReAct ループを通ります。"
+          "en": "strategy accepts ReAct, PlanAndExecute, Hierarchical and Pipeline. Pipeline runs configured steps. ReAct uses model-driven delegation. PlanAndExecute and Hierarchical also use the ReAct loop.",
+          "ja": "strategy には ReAct、PlanAndExecute、Hierarchical、Pipeline を指定できます。Pipeline は設定されたステップを実行します。ReAct はモデルが委譲先を決めます。PlanAndExecute と Hierarchical も ReAct ループを使用します。"
         },
         {
           "t": "kv",
@@ -904,8 +904,8 @@
             [
               "pipeline.steps",
               {
-                "en": "Required for Pipeline. Each step's output feeds the next as context.",
-                "ja": "Pipeline では必須。各ステップの出力が次のステップへ文脈として渡されます。"
+                "en": "Required for Pipeline. A step receives its dependencies’ outputs as context. By default, each step after the first depends on the previous step.",
+                "ja": "Pipeline では必須。依存するステップの出力をコンテキストとして受け取ります。既定では、最初のステップを除き直前のステップに依存します。"
               }
             ],
             [
@@ -981,8 +981,247 @@
           ]
         },
         {
+          "t": "p",
+          "en": "Configuration excerpt for a parallel Pipeline. Place it in a project that declares Planner, Developer, Reviewer, and Security under agents.",
+          "ja": "並行 Pipeline の設定抜粋です。agents に Planner、Developer、Reviewer、Security を定義したプロジェクトに追加します。"
+        },
+        {
           "t": "code",
-          "text": "orchestrator:\n  strategy: Pipeline\n  agents: [Planner, Developer, Reviewer, Security]\n  pipeline:\n    steps:\n      - name: plan\n        agent: Planner\n      - name: implement\n        agent: Developer\n      - name: review\n        type: parallel\n        steps:\n          - { name: code_review, agent: Reviewer }\n          - { name: security_check, agent: Security }\n    synthesis: true"
+          "text": "orchestrator:\n  name: Flow\n  strategy: Pipeline\n  agents: [Planner, Developer, Reviewer, Security]\n  pipeline:\n    steps:\n      - name: plan\n        agent: Planner\n      - name: implement\n        agent: Developer\n      - name: review\n        type: parallel\n        steps:\n          - { name: code_review, agent: Reviewer }\n          - { name: security_check, agent: Security }\n    synthesis: true"
+        }
+      ]
+    },
+    {
+      "id": "react-delegation",
+      "name": {
+        "en": "ReAct supervisor",
+        "ja": "ReAct スーパーバイザー"
+      },
+      "simple": {
+        "en": "The model decides which worker to call and when to answer.",
+        "ja": "モデルが呼び出すワーカーと回答するタイミングを決めます。"
+      },
+      "detail": [
+        {
+          "t": "p",
+          "en": "ReAct repeats a decision, an action, and an observation. A Rakitsu supervisor can call a worker through a delegation tool, read its result, then delegate again or return a final answer. Worker order can vary between runs.",
+          "ja": "ReAct は判断・行動・観察を繰り返します。Rakitsu のスーパーバイザーは委譲ツールでワーカーを呼び出し、その結果を読んで次の委譲または最終回答を選びます。呼び出し順は実行ごとに変わります。"
+        },
+        {
+          "t": "kv",
+          "head": [
+            "Key",
+            "Description"
+          ],
+          "rows": [
+            [
+              "strategy",
+              {
+                "en": "Set ReAct under orchestrator.",
+                "ja": "orchestrator に ReAct を設定します。"
+              }
+            ],
+            [
+              "agents",
+              {
+                "en": "List the workers by their exact configured names.",
+                "ja": "設定したワーカー名を正確に列挙します。"
+              }
+            ],
+            [
+              "routing.auto_delegate_tools",
+              {
+                "en": "Enable delegation tools for the listed workers. The supervisor model must support tool calls.",
+                "ja": "一覧のワーカーへの委譲ツールを有効にします。スーパーバイザーモデルはツール呼び出しに対応している必要があります。"
+              }
+            ]
+          ]
+        },
+        {
+          "t": "h",
+          "id": "example",
+          "en": "Complete YAML for the ReAct supervisor",
+          "ja": "ReAct スーパーバイザーの完全な YAML"
+        },
+        {
+          "t": "code",
+          "text": "name: react-team\norchestrator:\n  name: Lead\n  strategy: ReAct\n  provider: openai\n  model: gpt-5.6-luna\n  system_prompt: Ask the Researcher first, then the Writer. Return the paragraph.\n  agents: [Researcher, Writer]\n  routing:\n    auto_delegate_tools: true\n\nsettings:\n  default_provider: openai\n  providers:\n    openai:\n      type: openai\n      api_key: ${OPENAI_API_KEY}\n      reasoning_effort: none\n  defaults:\n    model: gpt-5.6-luna\nagents:\n  - name: Researcher\n    role: worker\n    system_prompt: Collect the key facts about the topic. Be short.\n    settings: { max_iterations: 2 }\n  - name: Writer\n    role: worker\n    system_prompt: Turn the facts you are given into one clear paragraph.\n    settings: { max_iterations: 2 }"
+        },
+        {
+          "t": "code",
+          "text": "rakitsu run react-team.yaml \"Explain DNS caching\""
+        },
+        {
+          "t": "p",
+          "en": "If a worker is skipped, inspect the delegation tool calls and supervisor prompt. Use Pipeline when a stage must run every time. PlanAndExecute and Hierarchical currently use the ReAct execution loop.",
+          "ja": "ワーカーが呼ばれない場合は委譲ツールの呼び出しとスーパーバイザーのプロンプトを確認します。必須の段階には Pipeline を使用します。PlanAndExecute と Hierarchical は現在 ReAct の実行ループを使用します。"
+        }
+      ]
+    },
+    {
+      "id": "pipeline-config",
+      "name": {
+        "en": "Create a Pipeline",
+        "ja": "Pipeline を作成する"
+      },
+      "simple": {
+        "en": "Declare the agents, steps, and dependencies in YAML.",
+        "ja": "エージェント、ステップ、依存関係を YAML で宣言します。"
+      },
+      "detail": [
+        {
+          "t": "p",
+          "en": "Start with a sequential pipeline. Declare agents, set orchestrator.strategy to Pipeline, and add named entries under orchestrator.pipeline.steps. Each step names the agent that runs it and can provide a task.",
+          "ja": "まず逐次パイプラインを作ります。エージェントを宣言し、orchestrator.strategy に Pipeline を設定し、orchestrator.pipeline.steps に名前付きの項目を追加します。各ステップには実行するエージェント名と任意のタスクを指定します。"
+        },
+        {
+          "t": "h",
+          "id": "example",
+          "en": "Complete YAML for the sequential Pipeline",
+          "ja": "逐次 Pipeline の完全な YAML"
+        },
+        {
+          "t": "code",
+          "text": "name: write-and-check\norchestrator:\n  name: Flow\n  strategy: Pipeline\n  provider: openai\n  model: gpt-5.6-luna\n  agents: [Drafter, Editor]\n  pipeline:\n    synthesis: false\n    steps:\n      - name: draft\n        agent: Drafter\n        task: Write the first draft.\n      - name: edit\n        agent: Editor\n        task: Edit the draft.\n        depends_on: [draft]\n\nsettings:\n  default_provider: openai\n  providers:\n    openai:\n      type: openai\n      api_key: ${OPENAI_API_KEY}\n      reasoning_effort: none\n  defaults:\n    model: gpt-5.6-luna\nagents:\n  - name: Drafter\n    role: worker\n    system_prompt: Write a short draft on the topic.\n    settings: { max_iterations: 2 }\n  - name: Editor\n    role: worker\n    system_prompt: Improve the draft. Keep it short.\n    settings: { max_iterations: 2 }"
+        },
+        {
+          "t": "code",
+          "text": "rakitsu run write-and-check.yaml \"Why backups matter\""
+        },
+        {
+          "t": "kv",
+          "head": [
+            "Key",
+            "Description"
+          ],
+          "rows": [
+            [
+              "depends_on",
+              {
+                "en": "Omit to depend on the previous top-level step. Use [] for an independent root, or list prerequisite step names.",
+                "ja": "省略すると直前のトップレベルステップに依存します。独立した起点には [] を、前提がある場合はステップ名の一覧を指定します。"
+              }
+            ],
+            [
+              "type: parallel",
+              {
+                "en": "Runs nested steps concurrently and waits for the group before continuing.",
+                "ja": "入れ子のステップを並行実行し、グループが完了してから続行します。"
+              }
+            ],
+            [
+              "type: loop",
+              {
+                "en": "Runs nested steps in order, then checks condition_agent when set. A leading PASS ends the loop. The limit defaults to five rounds. Reaching the cap returns the last output.",
+                "ja": "入れ子のステップを順番に実行し、指定されていれば condition_agent の判定を確認します。先頭が PASS なら終了します。既定の上限は 5 回で、上限に達すると最後の出力を返します。"
+              }
+            ],
+            [
+              "require_tool_call",
+              {
+                "en": "Checks recorded calls. A missing required call fails the step.",
+                "ja": "記録された呼び出しを検証します。必須の呼び出しがない場合はステップが失敗します。"
+              }
+            ],
+            [
+              "synthesis",
+              {
+                "en": "When enabled, a final model call combines step results. A synthesis error fails the run.",
+                "ja": "有効にすると最後のモデル呼び出しが結果を統合します。統合時のエラーは実行の失敗になります。"
+              }
+            ]
+          ]
+        },
+        {
+          "t": "p",
+          "en": "Use rakitsu sessions --resumable to look for a saved checkpoint after a failure. Inspect the failed step or synthesis event before resuming.",
+          "ja": "失敗後は rakitsu sessions --resumable で保存されたチェックポイントを探します。再開前に失敗したステップや統合イベントを確認します。"
+        }
+      ]
+    },
+    {
+      "id": "pipeline-gate",
+      "name": {
+        "en": "Pipeline tool-call gate",
+        "ja": "Pipeline のツール呼び出しゲート"
+      },
+      "simple": {
+        "en": "Simulate a recorded write_file call to see whether Reviewer starts. The demo does not execute a tool.",
+        "ja": "write_file の記録を切り替えて、Reviewer が開始するか確認できます。デモはツールを実行しません。"
+      },
+      "detail": [
+        {
+          "t": "p",
+          "en": "The implement step requires a recorded write_file call. If the agent only reports success, the step fails and Reviewer is skipped. The example permits writes inside the current workspace. Run it in a disposable directory.",
+          "ja": "implement には write_file の記録が必要です。エージェントが成功を報告するだけなら失敗し、Reviewer は実行されません。例は作業ディレクトリ内の書き込みを許可するため、使い捨てのディレクトリで実行してください。"
+        },
+        {
+          "t": "h",
+          "id": "example",
+          "en": "Complete YAML",
+          "ja": "完全な YAML"
+        },
+        {
+          "t": "code",
+          "text": "name: pipeline-tool-gate\norchestrator:\n  name: Flow\n  strategy: Pipeline\n  agents: [Planner, Developer, Reviewer]\n  pipeline:\n    steps:\n      - name: plan\n        agent: Planner\n        task: Plan a one-line status message.\n      - name: implement\n        agent: Developer\n        task: Call write_file to save the message to status.txt.\n        require_tool_call:\n          tool: write_file\n      - name: review\n        agent: Reviewer\n        task: Review the previous result and summarize it.\n\nsettings:\n  default_provider: openai\n  providers:\n    openai:\n      type: openai\n      api_key: ${OPENAI_API_KEY}\n      reasoning_effort: none\n  defaults:\n    model: gpt-5.6-luna\ntools:\n  - name: write_file\n    type: fs\n    operation: write\n    allowed_paths: [\".\"]\n    description: Write a file in the current workspace.\n    parameters:\n      path: { type: string, description: Relative file path, required: true }\n      content: { type: string, description: File contents, required: true }\nagents:\n  - name: Planner\n    role: worker\n    system_prompt: Propose one line of status text.\n  - name: Developer\n    role: worker\n    system_prompt: Use write_file to save the requested message.\n    tools: [write_file]\n  - name: Reviewer\n    role: worker\n    system_prompt: Summarize the implementation result."
+        },
+        {
+          "t": "code",
+          "text": "rakitsu run pipeline-tool-gate.yaml \"Write a one-line build status\""
+        }
+      ]
+    },
+    {
+      "id": "hierarchical-demo",
+      "name": {
+        "en": "Hierarchical supervisor",
+        "ja": "Hierarchical スーパーバイザー"
+      },
+      "simple": {
+        "en": "Hierarchical uses a synthesized supervisor and the ReAct loop. The diagram shows one possible delegation order.",
+        "ja": "Hierarchical は自動生成のスーパーバイザーと ReAct ループを使用します。図は委譲順の一例です。"
+      },
+      "detail": [
+        {
+          "t": "h",
+          "id": "example",
+          "en": "Complete YAML",
+          "ja": "完全な YAML"
+        },
+        {
+          "t": "code",
+          "text": "name: hierarchical-team\norchestrator:\n  name: Orchestrator\n  strategy: Hierarchical\n  agents: [WorkerA, WorkerB, WorkerC]\n  system_prompt: Choose the best worker for each part of the request.\n\nsettings:\n  default_provider: openai\n  providers:\n    openai:\n      type: openai\n      api_key: ${OPENAI_API_KEY}\n      reasoning_effort: none\n  defaults:\n    model: gpt-5.6-luna\nagents:\n  - name: WorkerA\n    role: worker\n    system_prompt: Find the key facts.\n  - name: WorkerB\n    role: worker\n    system_prompt: Explain the practical implications.\n  - name: WorkerC\n    role: worker\n    system_prompt: Check the answer for gaps."
+        },
+        {
+          "t": "code",
+          "text": "rakitsu run hierarchical-team.yaml \"Explain DNS caching\""
+        }
+      ]
+    },
+    {
+      "id": "pipeline-loop",
+      "name": {
+        "en": "Pipeline loop with a condition",
+        "ja": "条件付き Pipeline ループ"
+      },
+      "simple": {
+        "en": "After each draft, Judge can stop the loop with a leading PASS. This configuration allows up to three rounds.",
+        "ja": "各草稿の後、Judge が先頭に PASS を返すと停止します。この設定は最大 3 回繰り返します。"
+      },
+      "detail": [
+        {
+          "t": "h",
+          "id": "example",
+          "en": "Complete YAML",
+          "ja": "完全な YAML"
+        },
+        {
+          "t": "code",
+          "text": "name: pipeline-loop\norchestrator:\n  name: Flow\n  strategy: Pipeline\n  agents: [Worker, Judge]\n  pipeline:\n    steps:\n      - name: refine\n        type: loop\n        max_iterations: 3\n        condition_agent: Judge\n        condition_prompt: Return PASS if the draft is clear and concise. Otherwise return FAIL.\n        steps:\n          - name: draft\n            agent: Worker\n            task: Write or improve the draft.\n\nsettings:\n  default_provider: openai\n  providers:\n    openai:\n      type: openai\n      api_key: ${OPENAI_API_KEY}\n      reasoning_effort: none\n  defaults:\n    model: gpt-5.6-luna\nagents:\n  - name: Worker\n    role: worker\n    system_prompt: Write a clear draft based on the prompt and previous results.\n  - name: Judge\n    role: worker\n    system_prompt: Judge whether the draft is clear and concise."
+        },
+        {
+          "t": "code",
+          "text": "rakitsu run pipeline-loop.yaml \"Explain DNS caching\""
         }
       ]
     },
@@ -1455,8 +1694,8 @@
         },
         {
           "t": "p",
-          "en": "GET /healthz returns 200 when every monitor is ok, and 503 otherwise. States: ok, stale, stopped, failed, starting. With no monitors it reports ok. rakitsu healthcheck [--url URL] [--timeout 5s] does the same probe from the command line (exit 0 healthy, 1 otherwise). When NOTIFY_SOCKET is set, serve also sends systemd sd_notify messages.",
-          "ja": "GET /healthz は、すべてのモニターが ok なら 200、そうでなければ 503 を返します。状態: ok、stale、stopped、failed、starting。モニターがなければ ok です。rakitsu healthcheck [--url URL] [--timeout 5s] は、同じ確認をコマンドラインから行います (正常なら終了コード 0、そうでなければ 1)。NOTIFY_SOCKET が設定されていると、serve は systemd の sd_notify も送ります。"
+          "en": "GET /healthz returns 503 when a monitor is failed or stale, or when a monitor is stopped and healthz_fail_on_stopped is enabled. The starting state counts as healthy. With no monitors it returns 200. rakitsu healthcheck [--url URL] [--timeout 5s] does the same probe from the command line (exit 0 healthy, 1 otherwise). When NOTIFY_SOCKET is set, serve also sends systemd sd_notify messages.",
+          "ja": "GET /healthz は、モニターが failed または stale の場合、または healthz_fail_on_stopped が有効でモニターが stopped の場合に 503 を返します。starting は正常として扱われます。モニターがなければ 200 を返します。rakitsu healthcheck [--url URL] [--timeout 5s] は、同じ確認をコマンドラインから行います (正常なら終了コード 0、そうでなければ 1)。NOTIFY_SOCKET が設定されていると、serve は systemd の sd_notify も送ります。"
         },
         {
           "t": "p",
@@ -1526,8 +1765,8 @@
               "ja": "実行中の run にアタッチし、任意のエージェントまたはツールノードにブレークポイントを置き、一時停止、推論の確認、パラメータの上書き、再開ができます。デタッチで通常の実行に戻ります。"
             },
             {
-              "en": "Four visualization modes: Tree, Block Diagram, Timeline, Mind Map.",
-              "ja": "4 つの可視化モード: Tree、Block Diagram、Timeline、Mind Map。"
+              "en": "Two visualization modes: Tree and Block Diagram.",
+              "ja": "可視化モードは Tree と Block Diagram の 2 種類です。"
             },
             {
               "en": "Playback scrubbing on completed runs.",
@@ -1624,8 +1863,8 @@
           "t": "ul",
           "items": [
             {
-              "en": "Each session is stored as one <uuid>.jsonl file under ~/.rakitsu/sessions/ by default.",
-              "ja": "各セッションは ~/.rakitsu/sessions/ 配下に <uuid>.jsonl という 1 ファイルで保存されます。"
+              "en": "By default, ~/.rakitsu/sessions/ stores events in <uuid>.jsonl, chat turn trees in <uuid>.chat.json, and the session index in sessions.json.",
+              "ja": "既定では ~/.rakitsu/sessions/ にイベントを <uuid>.jsonl、チャットのターンツリーを <uuid>.chat.json、セッションの索引を sessions.json として保存します。"
             },
             {
               "en": "Session files go to settings.sessions_dir, or --sessions-dir on run, serve and sessions. Give each concurrent instance its own directory.",
