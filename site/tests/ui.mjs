@@ -23,6 +23,45 @@ async function open(opts = {}, init, url = URL_) {
 const inView = (p, id) => p.evaluate(i => { const e = document.getElementById(i); if (!e) return false; const r = e.getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0; }, id);
 const hash = p => p.evaluate(() => location.hash);
 
+// Incremental local search stays scoped to the selected release and language.
+{
+  const p = await open();
+  for (const id of ['ref-react-delegation', 'ref-pipeline-config']) {
+    ok(await p.locator('#' + id + ' .reference-infographic svg').count() > 0, id + ' has an animated diagram');
+  }
+  ok(await p.locator('#orchestration .tabs').count() === 0, 'orchestration overview has no animation tabs');
+  ok((await p.locator('#ref-react-delegation svg').textContent()).includes('Researcher'), 'ReAct diagram names the YAML worker');
+  ok((await p.locator('#ref-pipeline-config svg').textContent()).includes('Drafter'), 'Pipeline diagram names the YAML worker');
+  ok(await p.evaluate(() => {
+    const ids = ['ref-orchestrator', 'ref-react-delegation', 'ref-pipeline-config', 'ref-pipeline-gate', 'ref-hierarchical-demo', 'ref-pipeline-loop'];
+    const root = document.getElementById('orchestration');
+    return ids.every(id => root.contains(document.getElementById(id)) && document.querySelector('#' + id + ' > h3'))
+      && ids.slice(0, -1).every((id, i) => document.getElementById(id)?.nextElementSibling?.id === ids[i + 1]);
+  }), 'orchestration explanations are all in reading order');
+  ok(await p.locator('#orchestration-demos').count() === 0, 'separate diagrams replace the tabbed demo');
+  for (const id of ['ref-pipeline-gate', 'ref-hierarchical-demo', 'ref-pipeline-loop']) {
+    ok(await p.locator('#nav a[href="#en.' + id + '"]').count() === 1, id + ' is in the table of contents');
+  }
+  ok(await p.evaluate(() => window.RakitsuLinks.parseToken('#en.orch-pipeline').id === 'ref-pipeline-gate'), 'old Pipeline demo link goes to the gate');
+  await p.click('#viewSimple');
+  for (const [id, label] of [['ref-react-delegation', 'ReAct YAML example'], ['ref-pipeline-config', 'Pipeline YAML example']]) {
+    const exampleLink = p.locator('#nav .toc-tree .toc-examples').getByRole('link', { name: label, exact: true });
+    await exampleLink.click();
+    await p.waitForFunction(expected => location.hash === expected, '#en.' + id + '-example');
+    ok(await p.locator('#' + id + ' .detail pre').first().isVisible(), label + ' is visible from the table of contents in Simple');
+    ok(await p.locator('#viewSimple').getAttribute('aria-pressed') === 'true', label + ' keeps the selected view');
+    await p.locator('#nav a[aria-current="location"][href="#en.' + id + '-example"]').waitFor();
+    ok(await exampleLink.getAttribute('aria-current') === 'location', label + ' shows as the current subsection');
+  }
+  await p.fill('#docSearch', 'Pipeline'); await sleep(150);
+  ok(await p.locator('#searchResults').isVisible() && /Pipeline/.test(await p.locator('#searchResults').innerText()), 'search finds Pipeline sections');
+  await p.locator('#searchResults button').first().click(); await sleep(250);
+  ok(/pipeline/.test(await hash(p)), 'search result navigates to a Pipeline target', await hash(p));
+  await p.click('#langJa'); await sleep(250); await p.fill('#docSearch', 'ReAct');
+  ok(await p.locator('#searchResults').isVisible() && /ReAct/.test(await p.locator('#searchResults').innerText()), 'search works after language switch');
+  ok(p.__errs.length === 0, 'search no page errors', p.__errs); await p.__ctx.close();
+}
+
 // 1. copy-link button (clipboard works)
 {
   const p = await open({ permissions: ['clipboard-read', 'clipboard-write'] });
@@ -90,15 +129,15 @@ for (const mode of ['reject', 'missing']) {
 // 5. state preserved across EN/JA and Simple/Detail
 {
   const p = await open();
-  await p.locator('#orchestration .tabs button').nth(1).click(); await p.check('#gatecb');
+  const gate = '#ref-pipeline-gate input[type=checkbox]';
+  await p.check(gate);
   await p.locator('#memory').scrollIntoViewIfNeeded();
   await p.fill('#memory input[type=text], #memory input:not([type])', 'rollback only');
   await p.locator('#data-flow .nd').nth(3).click();
   const flowTitle = await p.$eval('#data-flow .info h4', e => e.textContent);
   const before = await p.evaluate(() => ({ q: document.querySelector('#memory input:not([type=checkbox])').value }));
   await p.click('#langJa'); await sleep(300); await p.click('#viewSimple'); await sleep(300); await p.click('#langEn'); await sleep(300); await p.click('#viewDetail'); await sleep(300);
-  ok(await p.locator('#orchestration .tabs button').nth(1).getAttribute('aria-pressed') === 'true', 'orchestration mode kept');
-  ok(await p.isChecked('#gatecb'), 'pipeline checkbox kept');
+  ok(await p.isChecked(gate), 'pipeline gate checkbox kept');
   ok(await p.evaluate(() => document.querySelector('#memory input:not([type=checkbox])').value) === before.q, 'memory query kept', before);
   ok(await p.$eval('#data-flow .info h4', e => e.textContent) === flowTitle, 'selected flow node kept', flowTitle);
   ok(p.__errs.length === 0, 'state-keep no page errors', p.__errs); await p.__ctx.close();

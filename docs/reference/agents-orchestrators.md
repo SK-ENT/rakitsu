@@ -6,6 +6,16 @@
 - Several agents with a **supervisor** (`ReAct`): the task needs different specialists and the supervisor decides who works next.
 - A **pipeline**: the steps are known in advance (research, draft, edit). The flow is fixed by you, not by the model. It also works with models that cannot call tools.
 
+## Choose an execution strategy
+
+| Need | Use | What decides the next action |
+|---|---|---|
+| One model with optional tools | A single agent | The model runs its own ReAct loop. |
+| A lead that chooses specialists as it learns more | `strategy: ReAct` | The supervisor model calls workers as tools. |
+| Required stages, independent checks, or a bounded retry loop | `strategy: Pipeline` | The runtime schedules the YAML steps and dependencies. |
+
+A Pipeline fixes the execution order and checks. Agent outputs can still vary between runs.
+
 ## Agents
 
 An agent is a model plus a system prompt plus a tool list. Fields (from `agents:` in the config):
@@ -81,6 +91,22 @@ A config validation warning is printed if an agent has `role: supervisor` while 
 
 ### ReAct supervisor with workers
 
+ReAct is a loop in which the model decides what to do, takes an action, and uses
+the result to decide what to do next. It ends when the model answers or a run
+limit stops it. An individual agent can use this loop to call tools. A ReAct
+orchestrator uses the same loop with worker delegation tools.
+
+1. The supervisor receives the prompt and its system instructions.
+2. It calls a tool such as `delegate_to_Researcher` with a task for the worker.
+3. The worker runs and returns its result as a tool response.
+4. The supervisor can call another worker, call the same worker again, or answer.
+
+Choose a supervisor model that supports tool calls. The example instructs the
+supervisor to call Researcher before Writer. That instruction guides the model.
+Use a Pipeline when both stages are required in that order.
+
+Save this file as `react-team.yaml` and set `OPENAI_API_KEY` in the environment.
+
 ```yaml
 name: react-team
 settings:
@@ -118,7 +144,12 @@ rakitsu run react-team.yaml "Explain DNS caching"
 
 ## Pipelines
 
-`strategy: Pipeline` runs steps in a fixed order. Fields under `orchestrator.pipeline`:
+Declare the workers under `agents:`, set `orchestrator.strategy: Pipeline`,
+and define `orchestrator.pipeline.steps`. Each leaf step names a worker or
+sub-orchestrator and may give it a task. A step prompt can include the original
+query, successful previous results, and the current task.
+
+### Pipeline fields
 
 | Field | Meaning |
 |---|---|
@@ -142,6 +173,12 @@ Fields of a step:
 | `require_tool_call` | A mechanical check. The step fails if its agent never called the named tool, whatever the agent says. Keys: `tool`, `command_contains`, `arg_key`, `output_json_path`, `min_value`, `max_value`. |
 
 Validation refuses a step that names an unknown agent, a `require_tool_call` without `tool`, and impossible `min_value`/`max_value` combinations.
+
+### Create a sequential pipeline
+
+Save this example as `write-and-check.yaml`. The edit step depends on the
+draft step and receives its result as context. With synthesis disabled, the
+last step's output is the pipeline answer.
 
 ```yaml
 name: write-and-check
@@ -186,6 +223,31 @@ rakitsu run write-and-check.yaml "Why backups matter"
 rakitsu sessions --resumable          # a failed pipeline leaves a checkpoint
 rakitsu run write-and-check.yaml "Why backups matter" --resume <session-id>
 ```
+
+### Parallel work and dependencies
+
+At the top level, omitting `depends_on` makes a step depend on the previous
+step. Use `depends_on: []` to start an independent branch or name the required
+steps explicitly. The runtime runs ready steps at the same dependency level
+concurrently. A `type: parallel` step groups concurrent sub-steps under one name.
+
+Use a distinct agent for each concurrent branch. Rakitsu rejects a parallel
+group or level that would run the same agent instance concurrently. Reuse an
+agent by scheduling those calls in sequence.
+
+### Loops, gates, and failures
+
+A loop runs its sub-steps in order, then calls `condition_agent` when configured.
+A verdict that begins with the word `PASS` ends the loop early. Otherwise it
+continues up to `max_iterations` and returns the last output. Reaching the cap
+does not turn the last verdict into a run error.
+
+A failed step or tool-call gate stops the pipeline before later levels. The
+runtime saves a checkpoint after successful levels when session persistence
+is available. Use `rakitsu sessions --resumable` to find a checkpoint before
+attempting a resume. If optional synthesis fails, the run reports
+`synthesis_failed`. Use `rakitsu run --trace` or the Debugger to inspect
+`PIPELINE_STEP_END` and `PIPELINE_END`.
 
 More examples: [examples/single/03-react-team](../../examples/single/03-react-team/), [04-pipeline](../../examples/single/04-pipeline/), [06-advanced-strategies](../../examples/single/06-advanced-strategies/) (hierarchical, plan-and-execute, loop, DAG), [07-nested-orchestrators](../../examples/single/07-nested-orchestrators/), and the modular layouts in [examples/modular](../../examples/modular/).
 

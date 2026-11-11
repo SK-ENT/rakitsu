@@ -52,16 +52,24 @@ const INIT = (SIDMAP) => {
     return { cap: cap ? cap.textContent : '', nodes: bb.filter(n => n.on || n.bad).map(n => n.label.split(' / ')[0] + (n.bad ? '(bad)' : '')), edges, cnt: sec.querySelector('.cnt') ? sec.querySelector('.cnt').textContent : '' };
   };
 };
-const SID = { react: 'agent-loop', flow: 'data-flow', orch: 'orchestration', wake: 'wake', memory: 'memory', protocols: 'protocols' };
+const SID = { react: 'agent-loop', flow: 'data-flow', orch: 'orchestration', wake: 'wake', memory: 'memory', protocols: 'protocols', referenceReact: 'ref-react-delegation', referencePipeline: 'ref-pipeline-config', referenceGate: 'ref-pipeline-gate', referenceHierarchy: 'ref-hierarchical-demo', referenceLoop: 'ref-pipeline-loop' };
 // The wake widget exists only in releases that have the wake feature; skip its checks when the served default tag lacks it (gating.mjs covers wake with a fixture tag).
 const vj0 = await (await fetch(URL_ + 'data/versions.json')).json();
-const defaultDoc = (vj0.covers || {})[vj0.default] || vj0.default;
-const HAS_WAKE = (await (await fetch(URL_ + 'data/' + defaultDoc + '.json')).json()).features.some(f => f.id === 'wake');
+const version = process.env.RK_DOC_VERSION || vj0.default;
+const defaultDoc = (vj0.covers || {})[version] || version;
+const features = (await (await fetch(URL_ + 'data/' + defaultDoc + '.json')).json()).features;
+const HAS_WAKE = features.some(f => f.id === 'wake');
+const HAS_TABBED_ORCHESTRATION = !features.some(f => f.id === 'pipeline-gate');
+if (HAS_TABBED_ORCHESTRATION && features.some(f => f.id === 'react-delegation')) SID.orch = 'orchestration-demos';
+const orchSelector = '#' + SID.orch;
 if (!HAS_WAKE) console.log('functional: wake widget not in default tag ' + vj0.default + ', wake checks skipped');
 const WAKEIDS = a => a.filter(w => HAS_WAKE || w !== 'wake');
-const WIDS = ['react', 'flow', 'orch', 'wake', 'memory', 'protocols'].filter(w => HAS_WAKE || w !== 'wake');
+const WIDS = WAKEIDS(['react', 'flow', 'orch', 'wake', 'memory', 'protocols']).filter(w => w !== 'orch' || HAS_TABBED_ORCHESTRATION);
+if (features.some(f => f.id === 'react-delegation')) WIDS.push('referenceReact');
+if (features.some(f => f.id === 'pipeline-config')) WIDS.push('referencePipeline');
+if (!HAS_TABBED_ORCHESTRATION) WIDS.push('referenceGate', 'referenceHierarchy', 'referenceLoop');
 // step counts (fixed page: react 6, protocols 8; set REACT_N / PROTO_N)
-const N = { react: +(process.env.REACT_N || 6), flow: 10, orch: 5, wake: 12, memory: 4, protocols: +(process.env.PROTO_N || 8) };
+const N = { react: +(process.env.REACT_N || 6), flow: 10, orch: 5, wake: 12, memory: 4, referenceReact: 5, referencePipeline: 3, referenceGate: 3, referenceHierarchy: 5, referenceLoop: 4, protocols: +(process.env.PROTO_N || 8) };
 const btns = (p, id) => ({ play: p.locator(`#${SID[id]} .ctrls button`).nth(0), step: p.locator(`#${SID[id]} .ctrls button`).nth(1) });
 const S = (p, id) => p.evaluate(i => window.__S(i), id);
 const snap = (p, id) => p.evaluate(i => window.__snap(i), id);
@@ -71,6 +79,7 @@ async function fresh(opts = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, ...opts });
   const p = await ctx.newPage();
   await p.addInitScript(INIT, SID);
+  await p.addInitScript(ver => localStorage.setItem("rk-spec", JSON.stringify({ ver })), version);
   const errs = []; p.on('pageerror', e => errs.push(String(e)));
   await p.goto(URL_); await p.waitForFunction(n => window.__anims && window.__anims.length >= n, WIDS.length);
   p.__errs = errs; p.__ctx = ctx; return p;
@@ -122,7 +131,7 @@ for (const id of WIDS) {
 async function rate(id, ms) { const s = await S(p, id); if (!s.playing) await btns(p, id).play.click(); return p.evaluate(([i, m]) => window.__count(i, m), [id, ms]); }
 const base = {}; for (const id of WAKEIDS(['react', 'wake'])) { await p.locator('#' + SID[id]).scrollIntoViewIfNeeded(); base[id] = await rate(id, 6000); }
 for (const id of WAKEIDS(['react', 'wake'])) { const { play, step } = btns(p, id); for (let k = 0; k < 25; k++) { await play.click(); await step.click(); await play.click(); } }
-for (const id of ['orch']) { for (let k = 0; k < 6; k++) await p.locator('#orchestration .tabs button').nth(k % 4).click(); }
+if (HAS_TABBED_ORCHESTRATION) { for (let k = 0; k < 6; k++) await p.locator(orchSelector + ' .tabs button').nth(k % 4).click(); }
 for (let k = 0; k < 3; k++) { await p.click('#langJa'); await p.click('#langEn'); }
 const aft = {}; for (const id of WAKEIDS(['react', 'wake'])) { await p.locator('#' + SID[id]).scrollIntoViewIfNeeded(); aft[id] = await rate(id, 6000); }
 for (const id of WAKEIDS(['react', 'wake'])) rec(id, 'no duplicate loops: steps per 6s before vs after 25 cycles+renders', Math.abs(base[id] - aft[id]) <= 1, { base: base[id], after: aft[id] });
@@ -147,13 +156,15 @@ for (const id of WAKEIDS(['react', 'flow', 'wake', 'memory', 'protocols'])) {
   rec(id, 'Simple/Detail switch keeps step index', a2.i === b2.i, { before: b2.i, after: a2.i });
 }
 // orch tab switching
-await p.locator('#orchestration').scrollIntoViewIfNeeded();
+if (HAS_TABBED_ORCHESTRATION) {
+await p.locator(orchSelector).scrollIntoViewIfNeeded();
 for (let m = 0; m < 4; m++) {
-  const tabs = p.locator('#orchestration .tabs button'); await tabs.nth(m).click(); const { play, step } = btns(p, 'orch');
-  const s = await S(p, 'orch'); const pr = await tabs.nth(m).getAttribute('aria-pressed'); const others = await p.locator('#orchestration .tabs button[aria-pressed="true"]').count();
+  const tabs = p.locator(orchSelector + ' .tabs button'); await tabs.nth(m).click(); const { play, step } = btns(p, 'orch');
+  const s = await S(p, 'orch'); const pr = await tabs.nth(m).getAttribute('aria-pressed'); const others = await p.locator(orchSelector + ' .tabs button[aria-pressed="true"]').count();
   rec('orch', `tab ${m}: state reset, one tab pressed, anims==${WIDS.length}`, pr === 'true' && others === 1 && s.n === WIDS.length, { s, others });
   await step.click(); await step.click(); await tabs.nth((m + 1) % 4).click(); const s2 = await S(p, 'orch');
   rec('orch', `tab ${m}->${(m + 1) % 4} after Step: new widget playing, counters from rest`, s2.playing && s2.n === WIDS.length, s2);
+}
 }
 await p.__ctx.close();
 
@@ -187,10 +198,11 @@ rec('react', 'every step: lit edge starts at the active node (or none for termin
 rec('react', 'edge target of step i == active node of step i+1 (continuity)', hero.slice(0, -1).every((r, k) => r.edges.length === 0 || r.edges.some(e => e.split(' -> ')[1].split(' [')[0] === hero[k + 1].nodes[0])), hero.map(r => r.nodes[0] + ':' + r.edges.join('|')));
 rec('react', 'Answer reachable: a Think step lights think->answer', hero.some(r => r.edges.some(e => /Think -> Answer/.test(e))), 'edges per step above');
 rec('react', 'no edge is labelled "optional" while being the default path', !hero.some(r => r.edges.some(e => /\[optional\]/.test(e)) && /Observe/.test(r.nodes[0])), '');
+if (HAS_TABBED_ORCHESTRATION) {
 const modes = ['react', 'pipeline', 'hier', 'loop'];
 const orchRows = {};
 for (let m = 0; m < 4; m++) {
-  orchRows[m] = await walk('orch', 'orch:' + modes[m], async () => { await p.locator('#orchestration .tabs button').nth(m).click(); });
+  orchRows[m] = await walk('orch', 'orch:' + modes[m], async () => { await p.locator(orchSelector + ' .tabs button').nth(m).click(); });
   const rows = orchRows[m];
   rec('orch', `${modes[m]}: lit edge from == caption hop source, to == next hop source (continuity)`, rows.every((r, k) => r.edges.length === 0 || r.edges.some(e => rows[(k + 1) % rows.length].nodes.map(x => x.replace('(bad)', '')).includes(e.split(' -> ')[1].split(' [')[0])) || k === rows.length - 1), rows.map(r => r.nodes + ':' + r.edges.join('|')));
 }
@@ -198,22 +210,23 @@ const pl = orchRows[1];
 rec('orch', 'pipeline dev->gate hop: record edge (log->gate) lit, as caption says the gate reads the record', pl[1].edges.some(e => /\[record\]/.test(e) || /tool log -> gate/.test(e)), pl[1].edges);
 rec('orch', 'pipeline fail case: caption says 0 write_file and log node says 0', /0 write_file/.test(pl[pl.length - 1].cap) && pl.length === 3, { n: pl.length, cap: pl[pl.length - 1].cap });
 // checkbox flips diagram+caption
-await p.locator('#orchestration .tabs button').nth(1).click(); await p.check('#gatecb');
-const logOn = await p.locator('#orchestration .nd').evaluateAll(gs => gs.map(g => g.textContent).filter(t => /write_file call/.test(t)));
+await p.locator(orchSelector + ' .tabs button').nth(1).click(); await p.check('#gatecb');
+const logOn = await p.locator(orchSelector + ' .nd').evaluateAll(gs => gs.map(g => g.textContent).filter(t => /write_file call/.test(t)));
 const pl2 = await walk('orch', 'orch:pipeline+checkbox', async () => { });
 rec('orch', 'checkbox ticked: 4 hops, caption says write_file call recorded, log node says calls: 1', pl2.length === 4 && /write_file call/.test(pl2[2].cap) && logOn.some(t => /calls: 1/.test(t)), { n: pl2.length, logOn });
 await p.uncheck('#gatecb');
 const sup = orchRows[0];
 rec('orch', 'ReAct/Hier: supervisor->worker hop highlights the receiving worker too (caption: delegates to X)', sup[0].nodes.length >= 2, sup[0].nodes);
 const loopRows = orchRows[3];
-await p.locator('#orchestration .tabs button').nth(3).click();
-rec('orch', 'loop: Worker node subtitle should not say "type: loop" (loop is the step type)', !(await p.locator('#orchestration svg').first().textContent()).includes('type: loop'), '');
+await p.locator(orchSelector + ' .tabs button').nth(3).click();
+rec('orch', 'loop: Worker node subtitle should not say "type: loop" (loop is the step type)', !(await p.locator(orchSelector + ' svg').first().textContent()).includes('type: loop'), '');
+}
 if (HAS_WAKE) {
 // wake
 const wk = await walk('wake', 'wake');
 const OUT = ['q', 'q', 'q', 'q', 'chg', 'q', 'q', 'alarm', 'sup', 'q', 'q', 'q'];
-rec('wake', 'counters at every step: ticks=i+1, model calls=escalations so far', wk.every((r, k) => { const m = r.cnt.match(/ticks (\d+)model calls (\d+)/); return m && +m[1] === k + 1 && +m[2] === OUT.slice(0, k + 1).filter(o => o === 'chg' || o === 'alarm').length; }), wk.map(r => r.cnt));
-rec('wake', 'final: 12 ticks / 2 model calls / quiet cost 0', /ticks 12model calls 2quiet ticks cost 0 calls/.test(wk[11].cnt), wk[11].cnt);
+rec('wake', 'counters at every step: ticks=i+1, agent turns=escalations so far', wk.every((r, k) => { const m = r.cnt.match(/ticks (\d+)agent turns (\d+)/); return m && +m[1] === k + 1 && +m[2] === OUT.slice(0, k + 1).filter(o => o === 'chg' || o === 'alarm').length; }), wk.map(r => r.cnt));
+rec('wake', 'final: 12 ticks / 2 agent turns / quiet cost 0', /ticks 12agent turns 2quiet ticks cost 0 calls/.test(wk[11].cnt), wk[11].cnt);
 rec('wake', 'escalation steps light tick->LLM edge', [4, 7].every(k => wk[k].edges.some(e => /-> LLM/.test(e) || /LLM/.test(e)) || wk[k].nodes.includes('LLM')), [wk[4].edges, wk[7].edges]);
 rec('wake', 'suppressed (repeat) step lights no model edge, 0 calls', !wk[8].nodes.includes('LLM'), wk[8].nodes);
 }

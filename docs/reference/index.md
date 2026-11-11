@@ -1,8 +1,10 @@
-# Rakitsu reference (v0.3.1)
+# Rakitsu reference
 
 Rakitsu is a single program that runs teams of AI agents from a YAML file. It has a command line, a web UI with a visual builder and a debugger, and servers for A2A, MCP and ACP.
 
 Use the reference below when you want to customize a project, choose a model, or look up a command.
+
+If you are learning the execution model, start with [ReAct delegation](agents-orchestrators.md#react-supervisor-with-workers). If you need a predictable workflow, jump to [how to create a Pipeline](agents-orchestrators.md#pipelines).
 
 ## Start without editing a config
 

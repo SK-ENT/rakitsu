@@ -73,7 +73,7 @@ for (const t of vj.versions) {
   const d = JSON.parse(fs.readFileSync(path.join(out, 'data', t + '.json'), 'utf8'));
   ok(await p.evaluate(() => document.getElementById('verSel').value) === t, 'selector shows ' + t);
   ok((await p.textContent('#verlabel')).includes(t), 'label shows ' + t);
-  const n = await p.evaluate(() => document.querySelectorAll('#feats .feat').length);
+  const n = await p.evaluate(() => document.querySelectorAll('main .feat[id^=ref-]').length);
   ok(n === d.features.length, t + ' feature count', [n, d.features.length]);
   ok(p.__errs.length === 0, t + ' no page errors', p.__errs);
   const html = fs.readFileSync(path.join(out, t, 'index.html'), 'utf8');
@@ -116,7 +116,7 @@ for (const [t, doc] of Object.entries(vj.covers || {})) {
   ok(await p.evaluate(() => document.getElementById('verSel').value) === t, 'covered selector shows ' + t);
   ok((await p.textContent('#notice')).includes(`Showing the docs for ${doc}.`), 'covered page explains inherited docs for ' + t);
   const data = JSON.parse(fs.readFileSync(path.join(out, 'data', doc + '.json'), 'utf8'));
-  ok(await p.evaluate(() => document.querySelectorAll('#feats .feat').length) === data.features.length, 'covered page renders ' + doc + ' data');
+  ok(await p.evaluate(() => document.querySelectorAll('main .feat[id^=ref-]').length) === data.features.length, 'covered page renders ' + doc + ' data');
   ok(p.__errs.length === 0, t + ' no page errors', p.__errs);
   await p.context().close();
 }
@@ -194,7 +194,7 @@ for (const [lang, notice, label] of [['en', `This release has no doc changes. Sh
   ok(opts.slice(1).join() === vj.versions.join(), 'doc versions listed without suffix ' + lang, opts);
   const chip = await p.textContent('#verlabel'); ok(chip.includes(COV) && chip.includes(DOC), 'chip shows both ' + lang, chip);
   const dd = JSON.parse(fs.readFileSync(path.join(out2, 'data', DOC + '.json'), 'utf8'));
-  ok(await p.evaluate(() => document.querySelectorAll('#feats .feat').length) === dd.features.length, 'covered page renders the doc version data ' + lang);
+  ok(await p.evaluate(() => document.querySelectorAll('main .feat[id^=ref-]').length) === dd.features.length, 'covered page renders the doc version data ' + lang);
   ok(new URL(p.url()).hash === '#' + lang + '.memory' && p.__errs.length === 0, 'covered page keeps permalink grammar, no errors ' + lang, p.__errs);
   await p.context().close();
 }
