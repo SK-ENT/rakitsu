@@ -18,14 +18,28 @@ import (
 // Red-team rows: stdin close,
 // stalled-client flood, and permission requests with no responder.
 
-// goroutineGone polls (yielding, not sleeping) until no goroutine
-// stack contains needle, or the deadline passes.
-func goroutineGone(needle string, within time.Duration) bool {
+// goroutinesWith counts goroutines whose stack contains needle.
+func goroutinesWith(needle string) int {
+	buf := make([]byte, 8<<20)
+	n := runtime.Stack(buf, true)
+	count := 0
+	for _, g := range strings.Split(string(buf[:n]), "\n\n") {
+		if strings.Contains(g, needle) {
+			count++
+		}
+	}
+	return count
+}
+
+// goroutineGone polls (yielding, not sleeping) until at most baseline
+// goroutine stacks contain needle, or the deadline passes. The baseline is
+// taken before the server under test starts: other tests in the package
+// (newTestServer never closes stdin) leave their own readers parked, which
+// made a process-wide "none left" check fail under -count>1.
+func goroutineGone(needle string, baseline int, within time.Duration) bool {
 	deadline := time.After(within)
-	buf := make([]byte, 1<<20)
 	for {
-		n := runtime.Stack(buf, true)
-		if !strings.Contains(string(buf[:n]), needle) {
+		if goroutinesWith(needle) <= baseline {
 			return true
 		}
 		select {
@@ -38,6 +52,8 @@ func goroutineGone(needle string, within time.Duration) bool {
 }
 
 func TestACP_StdinClosed_RunReturnsCleanlyAndReaderExits(t *testing.T) {
+	const reader = "acp.(*Server).Run.func1"
+	baseline := goroutinesWith(reader)
 	inR, inW := io.Pipe()
 	srv := NewServerWithIO(loadTestConfig(t), stubRunFunc("x", nil), inR, io.Discard)
 
@@ -54,7 +70,7 @@ func TestACP_StdinClosed_RunReturnsCleanlyAndReaderExits(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not return after stdin closed")
 	}
-	if !goroutineGone("acp.(*Server).Run.func1", 5*time.Second) {
+	if !goroutineGone(reader, baseline, 5*time.Second) {
 		t.Fatal("reader goroutine still alive after stdin closed")
 	}
 }
@@ -167,9 +183,10 @@ func TestACP_PermissionRequest_NotModeled_NoHang(t *testing.T) {
 		t.Fatalf("session/request_permission = %+v, want -32601", resp)
 	}
 
-	// 2. A stray permission *answer* for a request never made must not wedge the server.
+	// 2. A stray permission *answer* for a request never made must not wedge
+	// the server, and gets no reply at all (JSON-RPC forbids answering a
+	// response; it is routed to the outbound pending map and dropped).
 	ts.send(t, map[string]interface{}{"jsonrpc": "2.0", "id": 77, "result": map[string]interface{}{"outcome": map[string]string{"outcome": "selected", "optionId": "allow"}}})
-	// (any error reply for it is fine; drained below)
 
 	// 3. A full prompt turn completes and never asks for permission.
 	ts.send(t, acpRequest{JSONRPC: "2.0", ID: json.RawMessage(`"p"`), Method: "session/prompt", Params: textPrompt(sid, "hi")})
@@ -177,6 +194,9 @@ func TestACP_PermissionRequest_NotModeled_NoHang(t *testing.T) {
 		line := ts.recv(t, 5*time.Second)
 		if strings.Contains(line, "request_permission") {
 			t.Fatalf("server emitted a permission request: %s", line)
+		}
+		if strings.Contains(line, `"id":77`) {
+			t.Fatalf("server replied to a stray response: %s", line)
 		}
 		if strings.Contains(line, `"id":"p"`) {
 			if !strings.Contains(line, "end_turn") {

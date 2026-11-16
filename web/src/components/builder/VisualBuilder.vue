@@ -1,19 +1,25 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted, onActivated, provide, markRaw, type Ref } from 'vue';
-import { VueFlow, useVueFlow, type Node, type Edge } from '@vue-flow/core';
+import { VueFlow, useVueFlow, type Node, type Edge, type Connection } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
 import { MiniMap } from '@vue-flow/minimap';
 import { nodeTypes } from '../nodes';
 import { execNodeTypes } from '../debugger/debug-nodes';
-import { useYamlExport, useModularConfig, useEventStream, useDebugTree, useAgentRun, useRunSnapshots } from '../../composables';
+import { useYamlExport, useModularConfig, useDebugTree, useAgentRun, useRunSnapshots } from '../../composables';
+import { builderRunEvents, builderReplayEvent } from '../../composables/builderRunFeed';
+import { createEventStream } from '../../composables/useEventStream';
 import { useDebugControl } from '../../composables/useDebugControl';
 import { useCanvasExecutionTree } from '../../composables/useCanvasExecutionTree';
 import NodeEditor from './NodeEditor.vue';
+import DecisionEditor from './DecisionEditor.vue';
+import RetrievalEditor from './RetrievalEditor.vue';
+import BuilderSvgCanvas from './BuilderSvgCanvas.vue';
 import SettingsPanel from './SettingsPanel.vue';
 import type { AgentConfig, ToolConfig, SkillConfig, OrchestratorConfig, GroupConfig, PipelineStep, Settings, Config } from '../../types';
-import type { DebugTreeNode } from '../../types';
+import type { AgentEvent, DebugTreeNode } from '../../types';
 import { generateEntityId } from '../../utils/entityId';
+import { decisionRouteLabel } from '../../utils/decisionRoutes';
 import { useGroupAutoFit } from '../../composables/useGroupAutoFit';
 import { useCanvasSearch } from '../../composables/useCanvasSearch';
 import { useUndoRedo } from '../../composables/useUndoRedo';
@@ -22,10 +28,11 @@ import RunBar from './RunBar.vue';
 import MonitorCard from './MonitorCard.vue';
 import DebugCard from './DebugCard.vue';
 import { useExecutionLayout } from '../../composables/useExecutionLayout';
-import ElkEdge from '../edges/ElkEdge.vue';
 import RakitsuExecEdge from '../edges/RakitsuExecEdge.vue';
+import BuilderWire from '../edges/BuilderWire.vue';
 import TokenizerPanel from './TokenizerPanel.vue';
 import DetailPanel from '../debugger/DetailPanel.vue';
+import BlockDiagramStyle from '../debugger/visualizations/BlockDiagramStyle.vue';
 import WallpaperHost from '../WallpaperHost.vue';
 import { useWallpaperPrefs } from '../../composables/useWallpaperPrefs';
 
@@ -36,10 +43,14 @@ provide('canvasMode', canvasMode);
 
 // Post-run results overlay — visible in design mode after run completes
 const showResults = ref(false);
+const resultsCanvas = ref(false);
+const isLiveExecution = computed(() => canvasMode.value === 'monitor' || canvasMode.value === 'debug');
+const liveWorkflow = ref(false);
+const svgWorkbench = ref(false);
+const showResultGraph = computed(() => (isLiveExecution.value && !liveWorkflow.value) || (showResults.value && !resultsCanvas.value));
+const noActiveResultNodes = new Set<string>();
+const noResultEvents: AgentEvent[] = [];
 provide('showResults', showResults);
-
-// Saved manual positions — restored when leaving execution modes
-const savedPositions = ref<Record<string, { x: number; y: number }>>({});
 
 const { computeLayout } = useExecutionLayout();
 
@@ -62,7 +73,7 @@ function relayoutDesign() {
         const live = vfFindNode(n.id);
         return live ?? n;
       });
-      const { positions } = await computeLayout(liveNodes, edges.value);
+      const { positions } = await computeLayout(liveNodes, edges.value, svgWorkbench.value ? 'RIGHT' : 'DOWN');
       if (positions.size === 0) return;
       nodes.value = nodes.value.map(n => {
         const pos = positions.get(n.id);
@@ -80,48 +91,26 @@ function relayoutDesign() {
   });
 }
 
-async function enterExecutionMode(mode: 'monitor' | 'debug' | 'replay') {
+function enterExecutionMode(mode: 'monitor' | 'debug' | 'replay') {
   // Clean up any frozen exec tree from previous run
   clearExecTree();
   nodes.value = nodes.value.filter(n => !n.id.startsWith('exec_'));
   edges.value = edges.value.filter(e => !e.id.startsWith('exec_edge_'));
   showResults.value = false;
-  // Set canvas mode BEFORE async layout — SSE events may arrive during computeLayout
-  // and rebuild() clears exec nodes when canvasMode is still 'design'.
+  liveWorkflow.value = false;
   canvasMode.value = mode;
-  // Save current design-node positions (exclude exec_ nodes)
-  savedPositions.value = Object.fromEntries(
-    nodes.value.filter(n => !n.id.startsWith('exec_')).map(n => [n.id, { ...n.position }])
-  );
-  // Compute structured ELK layout
-  const { positions } = await computeLayout(nodes.value, edges.value);
-  // Apply with transition class
-  nodes.value = nodes.value.map(n => {
-    const pos = positions.get(n.id);
-    return pos ? { ...n, position: pos, class: `${n.class ?? ''} node--transitioning`.trim() } : n;
-  });
-  // Dim design edges during execution
-  edges.value = edges.value.map(e => ({ ...e, class: `${e.class ?? ''} design-dim`.trim() }));
-  // Collapse panels
+  execDetailNodeId.value = null;
   hierarchyPanelVisible.value = false;
   editorPanelVisible.value = false;
-  nextTick(() => fitView({ padding: 0.1 }));
 }
 
 function returnToDesign() {
+  builderStream.disconnect();
   pipelineDepth = 0;
   resetDebugState();
   debugCardNodeId.value = null;
   execDetailNodeId.value = null;
   showResults.value = false;
-  // Restore manual positions
-  if (Object.keys(savedPositions.value).length > 0) {
-    nodes.value = nodes.value.map(n => {
-      const saved = savedPositions.value[n.id];
-      const cls = (String(n.class ?? '')).replace('node--transitioning', '').trim();
-      return saved ? { ...n, position: saved, class: cls } : { ...n, class: cls };
-    });
-  }
   canvasMode.value = 'design';
   monitorCardNodeId.value = null;
   nodeTokenCounts.value = {};
@@ -156,6 +145,7 @@ function returnToDesign() {
 
 // Enter results mode — keep execution data visible, restore design capabilities
 function enterResultsMode() {
+  builderStream.disconnect();
   pipelineDepth = 0;
   // Snapshot the execution tree
   if (debugTreeRoots.value.length > 0) {
@@ -163,115 +153,22 @@ function enterResultsMode() {
   }
   resetDebugState();
   debugCardNodeId.value = null;
-  // Stop all edge animations, clear dim/active classes, but KEEP exec tree
+  execDetailNodeId.value = null;
+  selectSnapshot(null);
+  clearExecTree();
   edges.value = edges.value.map(e => ({
     ...e,
     animated: false,
     class: (String(e.class ?? '')).replace(/design-dim|exec-active/g, '').trim() || undefined,
   }));
-  // Freeze composable so rebuild() won't clear exec nodes when canvasMode goes to 'design'
-  freezeExecTree();
-  // Freeze exec tree nodes visually (mark as completed, non-animated)
-  nodes.value = nodes.value.map(n => {
-    if (n.id.startsWith('exec_')) {
-      return { ...n, class: `${n.class ?? ''} exec-frozen`.trim() };
-    }
-    return n;
-  });
   canvasMode.value = 'design';
+  resultsCanvas.value = false;
   showResults.value = true;
   monitorCardNodeId.value = null;
   // Restore panels so user can edit while viewing results
   hierarchyPanelVisible.value = true;
   editorPanelVisible.value = true;
   resetRunState();
-  // Fit view to show design + call tree (don't dagre-relayout exec nodes)
-  nextTick(() => setTimeout(() => {
-    fitView({ padding: 0.1 });
-  }, 200));
-}
-
-/** ELK layout ONLY exec nodes — design nodes stay in place, edges get orthogonal routing */
-function relayoutWithExecNodes() {
-  // Wait for VueFlow to render exec nodes so we get actual dimensions.
-  // First nextTick lets Vue add the DOM elements; the 150ms delay lets
-  // VueFlow measure them and populate node.dimensions.
-  nextTick(() => setTimeout(async () => {
-    // Separate exec nodes from design nodes
-    const execOnly = nodes.value.filter(n => n.id.startsWith('exec_') && !n.parentNode);
-    const execEdgesOnly = edges.value.filter(e => e.id.startsWith('exec_edge_'));
-
-    if (execOnly.length === 0) {
-      nextTick(() => fitView({ padding: 0.1 }));
-      return;
-    }
-
-    // Get live rendered dimensions for exec nodes
-    const liveExec = execOnly.map(n => {
-      const live = vfFindNode(n.id);
-      return live ?? n;
-    });
-
-    const { positions, edgeRoutes } = await computeLayout(liveExec, execEdgesOnly);
-    if (positions.size === 0) {
-      nextTick(() => fitView({ padding: 0.1 }));
-      return;
-    }
-
-    // Offset ELK positions to sit right of design nodes
-    const designBounds = nodes.value
-      .filter(n => !n.id.startsWith('exec_') && !n.parentNode)
-      .reduce((acc, n) => {
-        const live = vfFindNode(n.id);
-        const dim = (live as any)?.dimensions;
-        const right = n.position.x + (dim?.width ?? 200);
-        return { maxRight: Math.max(acc.maxRight, right), minTop: Math.min(acc.minTop, n.position.y) };
-      }, { maxRight: 0, minTop: Infinity });
-
-    const offsetX = designBounds.maxRight + 120;
-    const offsetY = isFinite(designBounds.minTop) ? designBounds.minTop : 0;
-
-    // Apply positions and routes in one batch to avoid intermediate states
-    // where edges have routes but nodes haven't moved yet
-    const newNodes = nodes.value.map(n => {
-      const pos = positions.get(n.id);
-      if (!pos) return n;
-      return {
-        ...n,
-        position: { x: pos.x + offsetX, y: pos.y + offsetY },
-        class: `${n.class ?? ''} node--transitioning`.trim(),
-      };
-    });
-
-    const newEdges = edges.value.map(e => {
-      const route = edgeRoutes.get(e.id);
-      if (!route) return e;
-      return {
-        ...e,
-        type: 'elk',
-        data: {
-          ...e.data,
-          route: {
-            startPoint: { x: route.startPoint.x + offsetX, y: route.startPoint.y + offsetY },
-            bendPoints: route.bendPoints.map(bp => ({ x: bp.x + offsetX, y: bp.y + offsetY })),
-            endPoint: { x: route.endPoint.x + offsetX, y: route.endPoint.y + offsetY },
-          },
-        },
-      };
-    });
-
-    // Assign both at once so VueFlow renders nodes+edges in sync
-    nodes.value = newNodes;
-    edges.value = newEdges;
-
-    nextTick(() => fitView({ padding: 0.1 }));
-    setTimeout(() => {
-      nodes.value = nodes.value.map(n => ({
-        ...n,
-        class: (String(n.class ?? '')).replace('node--transitioning', '').trim() || undefined,
-      }));
-    }, 400);
-  }, 150));
 }
 
 /** Toggle a run snapshot on/off on the canvas (undoable) */
@@ -315,18 +212,10 @@ async function toggleRunSnapshot(snapId: string) {
       }
     }
 
-    // Clear any existing exec nodes first
-    nodes.value = nodes.value.filter(n => !n.id.startsWith('exec_'));
-    edges.value = edges.value.filter(e => !e.id.startsWith('exec_edge_'));
-    // Load snapshot tree and relayout
-    loadExecFromSnapshot(snap.treeRoots);
+    clearExecTree();
+    execDetailNodeId.value = null;
+    resultsCanvas.value = false;
     showResults.value = true;
-    // Apply remembered view mode (tree or graph)
-    if (execView.value === 'graph') {
-      relayoutWithExecNodes();
-    } else {
-      nextTick(() => setTimeout(() => fitView({ padding: 0.1 }), 200));
-    }
   }
 }
 
@@ -349,6 +238,7 @@ function confirmClearSnapshots() {
 // Clear results overlay — wipe execution data from nodes and remove exec tree
 function clearResults() {
   showResults.value = false;
+  execDetailNodeId.value = null;
   nodeTokenCounts.value = {};
   totalTokenCount.value = 0;
   // Remove frozen exec tree nodes/edges
@@ -375,6 +265,7 @@ const editorPanelVisible = ref(true);
 
 const props = defineProps<{
   pendingInspect?: { yaml: string; projectId?: string } | null;
+  keyboardActive?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -407,7 +298,30 @@ const tokenizerAgents = computed(() =>
 
 // --- Self-contained run (no tab switch) ---
 const { startRun, stopRun, runStatus: _runStatus, reset: resetRunState } = useAgentRun(baseUrlRef);
-const { events: liveEvents, connect: connectSSE, clearEvents } = useEventStream();
+const builderStream = createEventStream();
+const liveEvents = builderStream.events;
+watch(liveEvents, events => { builderRunEvents.value = events; }, { immediate: true });
+
+// Subscribe to the exact run before launch so early events arrive without
+// buffering any events from other sessions.
+async function prepareBuilderStream(runId: string) {
+  builderStream.disconnect();
+  builderStream.clearEvents();
+  resetDebugTree();
+  builderStream.connect(`http://${selfUrl.value}`, `web-${runId}`);
+  await new Promise<void>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      stop();
+      reject(new Error('Could not connect to the run event stream'));
+    }, 5000);
+    const stop = watch(builderStream.isConnected, connected => {
+      if (!connected) return;
+      window.clearTimeout(timer);
+      stop();
+      resolve();
+    });
+  });
+}
 const { treeRoots: debugTreeRoots, activeAgents, renderKey: debugRenderKey, reset: resetDebugTree } = useDebugTree(liveEvents);
 
 // --- Project identity (declared early so snapshots can scope by it) ---
@@ -433,6 +347,22 @@ watch([projectId, projectName], ([id, name]) => {
 
 // --- Run snapshots (execution history scoped per project) ---
 const { snapshots: runSnapshots, selectedSnapshot, capture: captureSnapshot, select: selectSnapshot, remove: removeSnapshot, clear: clearSnapshots, loadTreeForSnapshot } = useRunSnapshots(projectId);
+const followReplay = ref(true);
+const matchingReplay = computed(() => {
+  const replay = builderReplayEvent.value;
+  if (!replay || isLiveExecution.value) return null;
+  return replay.sessionId === selectedSnapshot.value?.sessionId || replay.projectId === projectId.value ? replay : null;
+});
+const workflowEvent = computed(() => isLiveExecution.value
+  ? liveEvents.value[liveEvents.value.length - 1]
+  : followReplay.value ? matchingReplay.value?.event : undefined);
+const workflowFocus = computed(() => {
+  const event = workflowEvent.value;
+  if (!event) return null;
+  return { agent: event.agent_name, tool: String(event.payload?.tool_name ?? '') };
+});
+provide('builderWorkflowFocus', workflowFocus);
+
 const lastRunQuery = ref('');
 const lastRunDebug = ref(false);
 
@@ -552,7 +482,7 @@ const execDetailNodeId = ref<string | null>(null);
 
 function findTreeNode(execNodeId: string): DebugTreeNode | null {
   const treeId = execNodeId.replace('exec_', '');
-  const roots = selectedSnapshot.value?.treeRoots ?? debugTreeRoots.value;
+  const roots = isLiveExecution.value ? debugTreeRoots.value : selectedSnapshot.value?.treeRoots ?? debugTreeRoots.value;
   function search(node: DebugTreeNode): DebugTreeNode | null {
     if (node.id === treeId) return node;
     for (const child of node.children) {
@@ -568,6 +498,10 @@ function findTreeNode(execNodeId: string): DebugTreeNode | null {
   return null;
 }
 
+function selectResultNode(id: string) {
+  execDetailNodeId.value = execDetailNodeId.value === id ? null : id;
+}
+
 const execDetailNode = computed<DebugTreeNode | null>(() => {
   if (!execDetailNodeId.value) return null;
   return findTreeNode(execDetailNodeId.value);
@@ -577,90 +511,90 @@ const execDetailNode = computed<DebugTreeNode | null>(() => {
 // step agents must not exit monitor mode while the pipeline is still running.
 let pipelineDepth = 0;
 
-// Process SSE events → write execution overlay data to nodes/edges.
-// Uses `liveEvents.value.length` as the watch key because liveEvents is mutated in-place.
-watch(
-  () => liveEvents.value.length,
-  () => {
-    const evt = liveEvents.value[liveEvents.value.length - 1];
-    if (!evt) return;
-
-    if (evt.event_type === 'PIPELINE_START') {
-      pipelineDepth++;
-    } else if (evt.event_type === 'PIPELINE_END') {
-      pipelineDepth = Math.max(0, pipelineDepth - 1);
-      if (pipelineDepth === 0) {
-        enterResultsMode();
-        return;
-      }
-    } else if (evt.event_type === 'ERROR') {
-      pipelineDepth = 0;
-      enterResultsMode();
-      return;
-    } else if (evt.event_type === 'EXECUTION_COMPLETE' && pipelineDepth === 0) {
-      // Only exit monitor for a standalone (non-pipeline) agent completion
-      enterResultsMode();
-      return;
-    }
-
-    // Let debug controller process DEBUG_PAUSED / DEBUG_RESUMED
-    handleDebugEvent(evt);
-
-    if (canvasMode.value === 'design') return;
-
-    const agentName = evt.agent_name;
-
-    if (evt.event_type === 'AGENT_START') {
-      // Animate outgoing edges from this agent's node + highlight execution path
-      nextTick(() => {
-        edges.value = edges.value.map(e => {
-          const src = nodes.value.find(n => n.id === e.source);
-          if (!src || (src.data as AgentConfig).name !== agentName) return e;
-          return { ...e, animated: true, class: 'exec-active' };
-        });
-      });
-
-    } else if (evt.event_type === 'AGENT_END') {
-      const payload = evt.payload as { status?: string };
-      const runStatus = payload.status === 'success' ? 'success' : 'error';
-      // nextTick so this fires AFTER agentStatusMap clears _runStatus
-      nextTick(() => {
-        nodes.value = nodes.value.map(n => {
-          if (n.type !== 'agent' && n.type !== 'orchestrator') return n;
-          if ((n.data as AgentConfig).name !== agentName) return n;
-          return { ...n, data: { ...n.data, _runStatus: runStatus } };
-        });
-        // Stop edge animation + remove execution highlight
-        edges.value = edges.value.map(e => {
-          const src = nodes.value.find(n => n.id === e.source);
-          if (!src || (src.data as AgentConfig).name !== agentName) return e;
-          return { ...e, animated: false, class: '' };
-        });
-      });
-
-    } else if (evt.event_type === 'TOKEN_USAGE' && evt.token_usage) {
-      const added = evt.token_usage.total_tokens;
-      const prev = nodeTokenCounts.value[agentName] ?? 0;
-      const next = prev + added;
-      nodeTokenCounts.value = { ...nodeTokenCounts.value, [agentName]: next };
-      totalTokenCount.value += added;
-      nodes.value = nodes.value.map(n => {
-        if (n.type !== 'agent') return n;
-        if ((n.data as AgentConfig).name !== agentName) return n;
-        return { ...n, data: { ...n.data, _tokenCount: next } };
-      });
-
-    } else if (evt.event_type === 'THOUGHT_END') {
-      const reasoning = (evt.payload as { reasoning?: string }).reasoning ?? '';
-      const preview = reasoning.length > 80 ? reasoning.slice(0, 80) + '…' : reasoning;
-      nodes.value = nodes.value.map(n => {
-        if (n.type !== 'agent') return n;
-        if ((n.data as AgentConfig).name !== agentName) return n;
-        return { ...n, data: { ...n.data, _lastThought: preview } };
-      });
-    }
+// Buffered events may become visible together when the start response arrives.
+watch(() => liveEvents.value.length, (length, previousLength) => {
+  for (const event of liveEvents.value.slice(previousLength, length)) {
+    if (!isLiveExecution.value) break;
+    applyBuilderEvent(event);
   }
-);
+});
+
+function applyBuilderEvent(evt: AgentEvent) {
+  if (evt.event_type === 'PIPELINE_START') {
+    pipelineDepth++;
+  } else if (evt.event_type === 'PIPELINE_END') {
+    pipelineDepth = Math.max(0, pipelineDepth - 1);
+    if (pipelineDepth === 0) {
+      enterResultsMode();
+      return;
+    }
+  } else if (evt.event_type === 'ERROR') {
+    pipelineDepth = 0;
+    enterResultsMode();
+    return;
+  } else if (evt.event_type === 'EXECUTION_COMPLETE' && pipelineDepth === 0) {
+    // Only exit monitor for a standalone (non-pipeline) agent completion
+    enterResultsMode();
+    return;
+  }
+
+  // Let debug controller process DEBUG_PAUSED / DEBUG_RESUMED
+  handleDebugEvent(evt);
+
+  if (canvasMode.value === 'design') return;
+
+  const agentName = evt.agent_name;
+
+  if (evt.event_type === 'AGENT_START') {
+    // Animate outgoing edges from this agent's node + highlight execution path
+    nextTick(() => {
+      edges.value = edges.value.map(e => {
+        const src = nodes.value.find(n => n.id === e.source);
+        if (!src || (src.data as AgentConfig).name !== agentName) return e;
+        return { ...e, animated: true, class: 'exec-active' };
+      });
+    });
+
+  } else if (evt.event_type === 'AGENT_END') {
+    const payload = evt.payload as { status?: string };
+    const runStatus = payload.status === 'success' ? 'success' : 'error';
+    // nextTick so this fires AFTER agentStatusMap clears _runStatus
+    nextTick(() => {
+      nodes.value = nodes.value.map(n => {
+        if (n.type !== 'agent' && n.type !== 'orchestrator') return n;
+        if ((n.data as AgentConfig).name !== agentName) return n;
+        return { ...n, data: { ...n.data, _runStatus: runStatus } };
+      });
+      // Stop edge animation + remove execution highlight
+      edges.value = edges.value.map(e => {
+        const src = nodes.value.find(n => n.id === e.source);
+        if (!src || (src.data as AgentConfig).name !== agentName) return e;
+        return { ...e, animated: false, class: '' };
+      });
+    });
+
+  } else if (evt.event_type === 'TOKEN_USAGE' && evt.token_usage) {
+    const added = evt.token_usage.total_tokens;
+    const prev = nodeTokenCounts.value[agentName] ?? 0;
+    const next = prev + added;
+    nodeTokenCounts.value = { ...nodeTokenCounts.value, [agentName]: next };
+    totalTokenCount.value += added;
+    nodes.value = nodes.value.map(n => {
+      if (n.type !== 'agent') return n;
+      if ((n.data as AgentConfig).name !== agentName) return n;
+      return { ...n, data: { ...n.data, _tokenCount: next } };
+    });
+
+  } else if (evt.event_type === 'THOUGHT_END') {
+    const reasoning = (evt.payload as { reasoning?: string }).reasoning ?? '';
+    const preview = reasoning.length > 80 ? reasoning.slice(0, 80) + '…' : reasoning;
+    nodes.value = nodes.value.map(n => {
+      if (n.type !== 'agent') return n;
+      if ((n.data as AgentConfig).name !== agentName) return n;
+      return { ...n, data: { ...n.data, _lastThought: preview } };
+    });
+  }
+}
 
 // Sync running/paused from debugTree — preserve terminal states (success/error) set above
 watch(agentStatusMap, (statusMap) => {
@@ -756,45 +690,79 @@ async function clearBreakpointsForNode() {
 const nodes = ref<Node[]>([]) as Ref<Node[]>;
 const edges = ref<Edge[]>([]) as Ref<Edge[]>;
 
+// The YAML branch is the source of truth. These wires show each branch's first agent.
+const decisionEdges = computed<Edge[]>(() => {
+  if (canvasMode.value !== 'design') return [];
+  const targets = new Map(nodes.value
+    .filter(node => node.type === 'agent' || node.type === 'orchestrator')
+    .map(node => [(node.data as AgentConfig | OrchestratorConfig).name, node.id]));
+  return nodes.value.flatMap(node => {
+    if (node.type !== 'decision') return [];
+    const decision = (node.data as PipelineStep).decision;
+    const routes = (decision?.routes ?? []).map((route, i) => ({
+      handle: `route-${i}`,
+      label: decisionRouteLabel(route.when),
+      target: route.steps[0]?.agent,
+    }));
+    if (decision?.otherwise?.length) {
+      routes.push({ handle: 'otherwise', label: 'Otherwise', target: decision.otherwise[0]?.agent });
+    }
+    return routes.flatMap(route => {
+      const target = route.target && targets.get(route.target);
+      if (!target) return [];
+      return [{
+        id: `decision-route-${node.id}-${route.handle}`,
+        source: node.id,
+        sourceHandle: route.handle,
+        target,
+        label: route.label,
+        selectable: false,
+        updatable: false,
+        style: { stroke: '#9787e3', strokeDasharray: '4 3' },
+      }];
+    });
+  });
+});
+
+const retrievalEdges = computed<Edge[]>(() => {
+  if (canvasMode.value !== 'design') return [];
+  return nodes.value.flatMap(retrieval => {
+    if (retrieval.type !== 'retrieval') return [];
+    const stepName = (retrieval.data as PipelineStep).name;
+    return nodes.value.filter(node => node.type === 'decision' && node.parentNode === retrieval.parentNode &&
+      (node.data as PipelineStep).decision?.input?.from === 'retrieval' &&
+      (node.data as PipelineStep).decision?.input?.step === stepName).map(decision => ({
+        id: `retrieval-evidence-${retrieval.id}-${decision.id}`,
+        source: retrieval.id, sourceHandle: 'results', target: decision.id,
+        label: 'evidence', selectable: false, updatable: false,
+        style: { stroke: '#54b8a4', strokeDasharray: '4 3' },
+      }));
+  });
+});
+
+const canvasEdges = computed({
+  get: () => [...edges.value.filter(edge => !edge.id.startsWith('decision-route-') && !edge.id.startsWith('retrieval-evidence-')), ...decisionEdges.value, ...retrievalEdges.value],
+  set: (next: Edge[]) => {
+    edges.value = next.filter(edge => !edge.id.startsWith('decision-route-') && !edge.id.startsWith('retrieval-evidence-'));
+  },
+});
+
+
 // Late-bound VueFlow findNode (assigned after useVueFlow)
 let vfFindNode: (id: string) => Node | undefined = () => undefined;
 
 // --- Canvas execution tree (debug detail nodes) ---
 const {
   execNodes, execEdges, expandedAgents: execExpandedAgents,
-  toggleExpand: toggleExecExpand, expandAll: expandAllExec, collapseAll: collapseAllExec,
-  clearExecTree, loadFromSnapshot: loadExecFromSnapshot,
-  freeze: freezeExecTree, relayoutTree,
+  toggleExpand: toggleExecExpand, clearExecTree,
 } = useCanvasExecutionTree(debugTreeRoots, nodes, canvasMode, debugRenderKey, (id) => vfFindNode(id));
 
-// Exec view mode: 'tree' (call tree) or 'graph' (dagre auto-layout)
-const execView = ref<'tree' | 'graph'>('tree');
-
-function setExecView(view: 'tree' | 'graph') {
-  execView.value = view;
-  if (view === 'tree') {
-    // relayoutTree rebuilds execNodes/execEdges → watchers sync to main nodes/edges.
-    relayoutTree();
-    nextTick(() => {
-      // Force new array references so VueFlow picks up position changes.
-      // VueFlow caches node positions internally; in-place element updates
-      // (from the execNodes watcher) don't trigger a re-render.
-      nodes.value = nodes.value.map(n => ({ ...n }));
-      edges.value = edges.value.map(e =>
-        e.type === 'elk' ? { ...e, type: 'smoothstep', data: { ...e.data, route: undefined } } : e
-      );
-      setTimeout(() => fitView({ padding: 0.1 }), 200);
-    });
-  } else {
-    relayoutWithExecNodes();
-  }
-}
 provide('toggleExecExpand', toggleExecExpand);
 provide('execExpandedAgents', execExpandedAgents);
 
 // Merged node types: design + exec
 const mergedNodeTypes = { ...nodeTypes, ...execNodeTypes };
-const edgeTypes = { elk: markRaw(ElkEdge), 'rakitsu-exec': markRaw(RakitsuExecEdge) };
+const edgeTypes = { default: markRaw(BuilderWire), smoothstep: markRaw(BuilderWire), 'rakitsu-exec': markRaw(RakitsuExecEdge) };
 
 // Sync exec nodes into canvas imperatively
 watch(execNodes, (newExecNodes, oldExecNodes) => {
@@ -820,26 +788,8 @@ watch(execNodes, (newExecNodes, oldExecNodes) => {
   nodes.value = updated;
 }, { deep: true });
 
-// Sync exec edges — preserve ELK routes if graph view is active
 watch(execEdges, (newExecEdges) => {
-  if (execView.value === 'graph') {
-    // In graph mode, keep existing elk-typed edges (they have route data).
-    // Only add new edges that don't already exist with routes.
-    const existing = new Map(
-      edges.value.filter(e => e.id.startsWith('exec_edge_') && e.type === 'elk')
-        .map(e => [e.id, e])
-    );
-    const merged = newExecEdges.map(e => existing.get(e.id) ?? e);
-    edges.value = [
-      ...edges.value.filter(e => !e.id.startsWith('exec_edge_')),
-      ...merged,
-    ];
-  } else {
-    edges.value = [
-      ...edges.value.filter(e => !e.id.startsWith('exec_edge_')),
-      ...newExecEdges,
-    ];
-  }
+  edges.value = [...edges.value.filter(e => !e.id.startsWith('exec_edge_')), ...newExecEdges];
 });
 
 const isDirty = ref(false);
@@ -854,6 +804,8 @@ const { scheduleAutoFit, autoFitAllGroups } = useGroupAutoFit(nodes, (id) => vfF
 const showHierarchy = ref(false);
 
 // Canvas search (Cmd+F)
+const searchInputRef = ref<HTMLInputElement | null>(null);
+watch(searchInputRef, input => input?.focus());
 const {
   searchOpen, searchQuery, searchField,
   matchedNodeIds, matchCount, currentMatchIndex,
@@ -862,6 +814,32 @@ const {
 
 const { onConnect, addNodes, onNodeClick, onNodeDoubleClick, addEdges: addNewEdges, updateNodeData, fitView, getSelectedNodes, removeNodes, findNode, dimensions } = useVueFlow();
 vfFindNode = findNode;
+
+// Camera following is deliberately opt-in. A manual pan/zoom/drag disengages it
+// until the user enables it again, so editing never gets wrestled away by layout.
+const autoFitCamera = ref(false);
+const cameraWasManuallyMoved = ref(false);
+let cameraFitTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleCameraFit() {
+  if (!autoFitCamera.value || cameraWasManuallyMoved.value || canvasMode.value !== 'design') return;
+  if (cameraFitTimer) clearTimeout(cameraFitTimer);
+  cameraFitTimer = setTimeout(() => {
+    if (!autoFitCamera.value || cameraWasManuallyMoved.value || showResultGraph.value) return;
+    fitView({ padding: 0.12, duration: matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 350 });
+  }, 80);
+}
+function toggleAutoFitCamera() {
+  autoFitCamera.value = !autoFitCamera.value || cameraWasManuallyMoved.value;
+  cameraWasManuallyMoved.value = false;
+  if (autoFitCamera.value) scheduleCameraFit();
+}
+function stopCameraFollow({ event }: { event?: unknown }) {
+  const userEvent = event === true || event instanceof Event
+    || (event && typeof event === 'object' && 'sourceEvent' in event && event.sourceEvent);
+  if (userEvent && autoFitCamera.value) cameraWasManuallyMoved.value = true;
+}
+watch(() => nodes.value.map(n => [n.id, n.parentNode, n.position.x, n.position.y, n.data?.viewMode, n.style]), scheduleCameraFit, { deep: true });
+watch(() => dimensions.value, scheduleCameraFit, { deep: true });
 
 // Only render MiniMap/Background when VueFlow has measured real container dimensions (prevents NaN SVG errors)
 const miniMapReady = computed(() => dimensions.value.width > 0 && dimensions.value.height > 0);
@@ -1076,6 +1054,8 @@ const dirInput = ref<HTMLInputElement | null>(null);
 // Dropdown menu state
 const showImportMenu = ref(false);
 const showExportMenu = ref(false);
+const showAddMenu = ref(false);
+const addMenuButton = ref<HTMLButtonElement | null>(null);
 
 // Settings state
 const showSettings = ref(false);
@@ -1406,14 +1386,10 @@ function closeRunDialog() {
 function handleRunSubmit(debug = false) {
   if (!runQuery.value.trim()) return;
   const { agents, tools, skills, orchestrator, orchestrators } = collectCanvasData();
-  if (agents.length === 0) return;
+  if (agents.length === 0 && !orchestrator?.pipeline?.steps.some(step => step.type === 'decision' || step.type === 'retrieval')) return;
   const yaml = generateYaml(projectName.value, projectId.value, agents, tools, skills, orchestrator, projectSettings.value, orchestrators, projectVersion.value, projectDescription.value, projectInteractive.value);
-  resetDebugTree();
-  clearEvents();
-  connectSSE(`http://${selfUrl.value}`);
   const envMap: Record<string, string> = {};
   for (const e of runEnvVars.value) { if (e.key.trim()) envMap[e.key.trim()] = e.value; }
-  enterExecutionMode(debug ? 'debug' : 'monitor');
   emit('run-started', yaml, runQuery.value.trim(), runTimeout.value, runWorkdir.value.trim(), debug, envMap);
   showRunDialog.value = false;
 }
@@ -1423,7 +1399,7 @@ function handleRunSubmit(debug = false) {
 // config uploads on every canvas edit.
 function getCurrentCanvasYaml(): string | null {
   const { agents, tools, skills, orchestrator, orchestrators } = collectCanvasData();
-  if (agents.length === 0) return null;
+  if (agents.length === 0 && !orchestrator?.pipeline?.steps.some(step => step.type === 'decision' || step.type === 'retrieval')) return null;
   return generateYaml(projectName.value, projectId.value, agents, tools, skills, orchestrator, projectSettings.value, orchestrators, projectVersion.value, projectDescription.value, projectInteractive.value);
 }
 defineExpose({ getCurrentCanvasYaml });
@@ -1431,17 +1407,16 @@ defineExpose({ getCurrentCanvasYaml });
 // RunBar handlers — submit run directly from builder (no tab switch)
 async function handleRunBarRun(q: string, t: number, wd: string, envMap: Record<string, string>) {
   const { agents, tools, skills, orchestrator, orchestrators } = collectCanvasData();
-  if (agents.length === 0) return;
+  if (agents.length === 0 && !orchestrator?.pipeline?.steps.some(step => step.type === 'decision' || step.type === 'retrieval')) return;
   const yaml = generateYaml(projectName.value, projectId.value, agents, tools, skills, orchestrator, projectSettings.value, orchestrators, projectVersion.value, projectDescription.value, projectInteractive.value);
-  resetDebugTree();
-  clearEvents();
   showResults.value = false;
   lastRunQuery.value = q;
   lastRunDebug.value = false;
-  connectSSE(`http://${selfUrl.value}`);
   enterExecutionMode('monitor');
   // Upload inline config + start run directly
   try {
+    const runId = crypto.randomUUID();
+    await prepareBuilderStream(runId);
     const base = `http://${selfUrl.value}`;
     const inlineRes = await fetch(`${base}/api/configs/inline`, {
       method: 'POST',
@@ -1450,7 +1425,8 @@ async function handleRunBarRun(q: string, t: number, wd: string, envMap: Record<
     });
     const inlineData = await inlineRes.json();
     if (inlineRes.ok && !inlineData.error) {
-      await startRun(inlineData.id, q, t, wd, false, envMap, [], projectId.value);
+      const sessionId = await startRun(inlineData.id, q, t, wd, false, envMap, [], projectId.value, runId);
+      if (!sessionId && isLiveExecution.value) returnToDesign();
     } else {
       console.error('[rakitsu] inline config upload failed:', inlineData.error);
       returnToDesign();
@@ -1463,17 +1439,16 @@ async function handleRunBarRun(q: string, t: number, wd: string, envMap: Record<
 
 async function handleRunBarDebug(q: string, t: number, wd: string, envMap: Record<string, string>) {
   const { agents, tools, skills, orchestrator, orchestrators } = collectCanvasData();
-  if (agents.length === 0) return;
+  if (agents.length === 0 && !orchestrator?.pipeline?.steps.some(step => step.type === 'decision' || step.type === 'retrieval')) return;
   const yaml = generateYaml(projectName.value, projectId.value, agents, tools, skills, orchestrator, projectSettings.value, orchestrators, projectVersion.value, projectDescription.value, projectInteractive.value);
-  resetDebugTree();
-  clearEvents();
   showResults.value = false;
   lastRunQuery.value = q;
   lastRunDebug.value = true;
-  connectSSE(`http://${selfUrl.value}`);
   enterExecutionMode('debug');
   // Upload inline config + start debug run with breakpoints
   try {
+    const runId = crypto.randomUUID();
+    await prepareBuilderStream(runId);
     const base = `http://${selfUrl.value}`;
     const inlineRes = await fetch(`${base}/api/configs/inline`, {
       method: 'POST',
@@ -1483,7 +1458,8 @@ async function handleRunBarDebug(q: string, t: number, wd: string, envMap: Recor
     const inlineData = await inlineRes.json();
     if (inlineRes.ok && !inlineData.error) {
       const bps = breakpoints.value.map(b => ({ event_type: b.event_type, agent_name: b.agent_name }));
-      await startRun(inlineData.id, q, t, wd, true, envMap, bps, projectId.value);
+      const sessionId = await startRun(inlineData.id, q, t, wd, true, envMap, bps, projectId.value, runId);
+      if (!sessionId && isLiveExecution.value) returnToDesign();
     } else {
       console.error('[rakitsu] inline config upload failed:', inlineData.error);
       returnToDesign();
@@ -1567,15 +1543,20 @@ function buildStepsFromGroup(groupId: string, previousSteps?: PipelineStep[]): P
       } else {
         steps.push(...subSteps);
       }
+    } else if (child.type === 'decision') {
+      steps.push(JSON.parse(JSON.stringify(child.data)) as PipelineStep);
+    } else if (child.type === 'retrieval') {
+      steps.push(JSON.parse(JSON.stringify(child.data)) as PipelineStep);
     } else if (child.type === 'agent') {
       const agentData = child.data as AgentConfig;
       const agentId = agentData._id || child.id;
-      const prevStep = previousSteps?.find(s => s._agentId === agentId);
+      const prevStep = previousSteps?.find(s => s._agentId ? s._agentId === agentId : s.agent === agentData.name);
       // Read step defaults from the parent group's stepDefaults (source of truth for group editor)
       const parentGroup = nodes.value.find(n => n.id === groupId);
       const groupStepDef = (parentGroup?.data as GroupConfig)?.stepDefaults?.[agentId];
       steps.push({
-        name: agentData.name,
+        ...prevStep,
+        name: prevStep?.name || agentData.name,
         agent: agentData.name,
         _agentId: agentId,
         task: prevStep?.task ?? groupStepDef?.task,
@@ -1631,7 +1612,7 @@ function syncGroupToOrchestrator(groupId: string) {
   }
 }
 
-onConnect((params) => {
+function connectBuilderNodes(params: Connection) {
   saveSnapshot();
   // Validate connection types
   const sourceNode = nodes.value.find(n => n.id === params.source);
@@ -1747,9 +1728,10 @@ onConnect((params) => {
     }
     updateNodeData(sourceNode.id, orchData, { replace: true });
   }
-});
+}
+onConnect(connectBuilderNodes);
 
-onNodeClick((event) => {
+function selectBuilderNode(event: { node: Node; event: { metaKey: boolean; ctrlKey: boolean } }) {
   const clickedNode = event.node;
   const clickedParent = clickedNode.parentNode ?? null;
   const isMultiClick = event.event.metaKey || event.event.ctrlKey;
@@ -1816,7 +1798,49 @@ onNodeClick((event) => {
   showEditor.value = true;
   showSettings.value = false;
   dropMenu.value = null;
-});
+}
+onNodeClick(selectBuilderNode);
+
+function selectSvgNode(id: string, event: MouseEvent | KeyboardEvent) {
+  const node = nodes.value.find(node => node.id === id);
+  if (!node) return;
+  if ((event.metaKey || event.ctrlKey) && (node.parentNode ?? null) === selectionScope.value) {
+    const current = node as Node & { selected?: boolean };
+    current.selected = !current.selected;
+  }
+  selectBuilderNode({ node, event });
+}
+
+function connectSvgNodes(source: string, target: string, sourceHandle?: string, targetHandle?: string) {
+  if (canvasMode.value !== 'design') return;
+  const sourceNode = nodes.value.find(node => node.id === source);
+  const targetNode = nodes.value.find(node => node.id === target);
+  if (!sourceNode || !targetNode) return;
+  if (!sourceHandle && (sourceNode.type === 'agent' || sourceNode.type === 'orchestrator')) {
+    if (targetNode.type === 'tool' || targetNode.type === 'skill') sourceHandle = 'tools';
+    else if (targetNode.type === 'orchestrator') sourceHandle = 'orchestrators';
+    else sourceHandle = 'agents';
+  }
+  connectBuilderNodes({ source, target, sourceHandle, targetHandle });
+}
+
+function moveSvgNode(id: string, position: { x: number; y: number }, event: PointerEvent, groupId?: string) {
+  const node = nodes.value.find(node => node.id === id);
+  if (!node || canvasMode.value !== 'design') return;
+  saveSnapshot();
+  node.position = position;
+  if (node.parentNode) scheduleAutoFit(node.parentNode);
+  const target = nodes.value.find(node => node.id === groupId);
+  if (target) openGroupDropMenu(target, [node], event);
+}
+
+function foldSvgGroup(id: string) {
+  const group = nodes.value.find(node => node.id === id && node.type === 'group');
+  if (!group) return;
+  const data = group.data as GroupConfig;
+  data.viewMode = data.viewMode === 'compact' ? 'mixed' : 'compact';
+  data.collapsed = data.viewMode === 'compact';
+}
 
 // Check if nodeId is a descendant of groupId (any depth)
 function isDescendantOf(nodeId: string, groupId: string): boolean {
@@ -1893,7 +1917,8 @@ function contextMenuDuplicate() {
   if (isMultiSelect.value) {
     duplicateSelection();
   } else {
-    duplicateSelectedNode();
+    const node = nodes.value.find(node => node.id === contextMenu.value?.nodeId);
+    if (node) duplicateSelectedNode(node);
   }
   contextMenu.value = null;
 }
@@ -2090,10 +2115,15 @@ function handleNodeDragStop(event: { node: Node; nodes: Node[]; event: MouseEven
     if (isDescendantOf(target.id, gid)) return;
   }
 
+  openGroupDropMenu(target, draggedNodes, event.event);
+}
+
+function openGroupDropMenu(target: Node, draggedNodes: Node[], event: MouseEvent | TouchEvent) {
+  const point = event instanceof MouseEvent ? event : event.changedTouches[0];
   const groupData = target.data as GroupConfig;
   dropMenu.value = {
-    x: event.event instanceof MouseEvent ? event.event.clientX : (event.event as TouchEvent).changedTouches?.[0]?.clientX ?? 300,
-    y: event.event instanceof MouseEvent ? event.event.clientY : (event.event as TouchEvent).changedTouches?.[0]?.clientY ?? 300,
+    x: point?.clientX ?? 300,
+    y: point?.clientY ?? 300,
     groupId: target.id,
     groupName: groupData.name,
     nodeIds: draggedNodes.map(n => n.id),
@@ -2101,12 +2131,15 @@ function handleNodeDragStop(event: { node: Node; nodes: Node[]; event: MouseEven
 }
 
 function confirmDropToGroup() {
-  saveSnapshot();
   if (!dropMenu.value) return;
   const { groupId, nodeIds } = dropMenu.value;
   const group = nodes.value.find(n => n.id === groupId);
-  if (!group) { dropMenu.value = null; return; }
+  if (group?.type !== 'group' || nodeIds.some(id => id === groupId || isDescendantOf(groupId, id))) {
+    dropMenu.value = null;
+    return;
+  }
 
+  saveSnapshot();
   const groupAbs = getAbsolutePosition(group);
 
   nodes.value = nodes.value.map(n => {
@@ -2137,6 +2170,43 @@ function cancelDropToGroup() {
   dropMenu.value = null;
 }
 
+// The GroupNode watcher owns the actual fold/unfold mechanics. These actions
+// only change the same viewMode field, keeping serialization and undo intact.
+function setAllGroupsFolded(folded: boolean) {
+  const groups = nodes.value.filter(n => n.type === 'group');
+  if (groups.length === 0) return;
+  saveSnapshot();
+  for (const group of groups) {
+    (group.data as GroupConfig).viewMode = folded ? 'compact' : 'mixed';
+    (group.data as GroupConfig).collapsed = folded;
+  }
+  nextTick(() => relayoutDesign());
+}
+
+function moveSelectionToGroup(groupId: string) {
+  const target = nodes.value.find(n => n.id === groupId && n.type === 'group');
+  const moving = selectedNodes.value;
+  if (!target || moving.length === 0 || moving.some(n => n.id === target.id || isDescendantOf(target.id, n.id))) return;
+  saveSnapshot();
+  const oldParents = new Set(moving.flatMap(n => n.parentNode ? [n.parentNode] : []));
+  const ids = new Set(moving.map(n => n.id));
+  nodes.value = nodes.value.map(n => ids.has(n.id) ? {
+    ...n,
+    parentNode: groupId,
+    extent: 'parent' as const,
+    expandParent: true,
+    position: { x: 24, y: 55 },
+  } : n);
+  nextTick(() => {
+    rearrangeSiblings(groupId);
+    for (const id of new Set([...oldParents, groupId])) {
+      scheduleAutoFit(id);
+      const root = findRootGroup(id);
+      if (root) syncGroupToOrchestrator(root);
+    }
+  });
+}
+
 // Counter for unique IDs
 let nodeCounter = 0;
 
@@ -2163,6 +2233,76 @@ function newNodeParentProps(): { position: { x: number; y: number }; parentNode?
   return {
     position: { x: 100 + Math.random() * 200, y: 100 + Math.random() * 200 },
   };
+}
+
+const decisionGroup = computed(() => {
+  const group = nodes.value.find(node => node.id === (selectionScope.value || selectedNode.value?.id));
+  return group?.type === 'group' && (group.data as GroupConfig).blockType === 'pipeline' && !group.parentNode
+    ? group : undefined;
+});
+
+function addDecisionNode() {
+  const group = decisionGroup.value;
+  if (!group) return;
+  saveSnapshot();
+  const id = `decision-${++nodeCounter}`;
+  const siblings = nodes.value.filter(node => node.parentNode === group.id);
+  const data: PipelineStep = {
+    name: id,
+    type: 'decision',
+    decision: {
+      backend: 'laya',
+      input: { from: 'query' },
+      questions: {
+        needs_review: { type: 'predicate', instructions: 'Does this request need human review?' },
+      },
+    },
+  };
+  const node: Node = {
+    id, type: 'decision', data, parentNode: group.id, extent: 'parent', expandParent: true,
+    position: { x: Math.max(0, ...siblings.map(child => child.position.x)) + 200, y: Math.max(50, ...siblings.map(child => child.position.y)) },
+  };
+  addNodes([node]);
+  syncGroupToOrchestrator(group.id);
+}
+
+function addRetrievalNode() {
+  const group = decisionGroup.value;
+  if (!group) return;
+  saveSnapshot();
+  const id = `retrieval-${++nodeCounter}`;
+  const siblings = nodes.value.filter(node => node.parentNode === group.id);
+  const data: PipelineStep = { name: 'search', type: 'retrieval', retrieval: { directory: 'docs', top_k: 3 } };
+  addNodes([{ id, type: 'retrieval', data, parentNode: group.id, extent: 'parent', expandParent: true,
+    position: { x: Math.max(0, ...siblings.map(child => child.position.x)) + 200, y: Math.max(50, ...siblings.map(child => child.position.y)) } }]);
+  syncGroupToOrchestrator(group.id);
+}
+
+function updatePipelineStep(step: PipelineStep) {
+  const node = selectedNode.value;
+  if (!node || node.type !== step.type) return;
+  saveSnapshot();
+  const previousName = (node.data as PipelineStep).name;
+  if (previousName !== step.name) {
+    const group = nodes.value.find(parent => parent.id === node.parentNode);
+    const groupId = (group?.data as GroupConfig | undefined)?._id || group?.id;
+    for (const candidate of nodes.value) {
+      if (candidate.parentNode === node.parentNode && (candidate.type === 'decision' || candidate.type === 'retrieval') && candidate.id !== node.id) {
+        const sibling = candidate.data as PipelineStep;
+        const input = sibling.decision?.input;
+        if (input && input.from !== 'query' && input.step === previousName) input.step = step.name;
+        sibling.depends_on = sibling.depends_on?.map(dep => dep === previousName ? step.name : dep);
+      }
+      if (candidate.type !== 'orchestrator') continue;
+      const orchestrator = candidate.data as OrchestratorConfig;
+      if (orchestrator._connectedGroupId !== groupId) continue;
+      for (const sibling of orchestrator.pipeline?.steps ?? []) {
+        sibling.depends_on = sibling.depends_on?.map(dep => dep === previousName ? step.name : dep);
+      }
+    }
+  }
+  updateNodeData(node.id, step, { replace: true });
+  if (node.parentNode) syncGroupToOrchestrator(node.parentNode);
 }
 
 function addAgentNode() {
@@ -2360,11 +2500,9 @@ function ungroupNode(groupId: string) {
   nodes.value = nodes.value.filter(n => n.id !== groupId);
 }
 
-function duplicateSelectedNode() {
+function duplicateSelectedNode(sourceNode = selectedNode.value) {
+  if (!sourceNode) return;
   saveSnapshot();
-  if (!selectedNode.value) return;
-
-  const sourceNode = selectedNode.value;
   const newId = `${sourceNode.type}-${++nodeCounter}`;
 
   // Deep copy the data
@@ -2462,6 +2600,18 @@ function propagateRename(entityType: string, oldName: string, newName: string) {
         }
       }
     } else if (entityType === 'agent') {
+      function renameSteps(steps: PipelineStep[]) {
+        for (const step of steps) {
+          if (step.agent === oldName) {
+            step.agent = newName;
+            changed = true;
+          }
+          if (step.steps) renameSteps(step.steps);
+          if (step.decision?.otherwise) renameSteps(step.decision.otherwise);
+          for (const route of step.decision?.routes ?? []) renameSteps(route.steps);
+        }
+      }
+      if (n.type === 'decision') renameSteps([d as unknown as PipelineStep]);
       // Orchestrator.agents[] and pipeline step agent references
       if (n.type === 'orchestrator') {
         const agents = d.agents as string[] | undefined;
@@ -2470,15 +2620,8 @@ function propagateRename(entityType: string, oldName: string, newName: string) {
           changed = true;
         }
         // Pipeline steps
-        const pipeline = d.pipeline as { steps?: Array<{ agent?: string }> } | undefined;
-        if (pipeline?.steps) {
-          for (const step of pipeline.steps) {
-            if (step.agent === oldName) {
-              step.agent = newName;
-              changed = true;
-            }
-          }
-        }
+        const pipeline = (d as unknown as OrchestratorConfig).pipeline;
+        if (pipeline?.steps) renameSteps(pipeline.steps);
       }
     }
 
@@ -2613,6 +2756,7 @@ function handleKeyupShift(e: KeyboardEvent) {
 
 // Keyboard shortcuts
 function handleKeydown(e: KeyboardEvent) {
+  if (props.keyboardActive === false) return;
   handleKeydownShift(e);
   // Don't handle if typing in an input
   if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA') return;
@@ -2635,6 +2779,12 @@ function handleKeydown(e: KeyboardEvent) {
     e.preventDefault();
     showHierarchy.value = !showHierarchy.value;
   } else if (e.key === 'Escape') {
+    const addWasOpen = showAddMenu.value;
+    if (addWasOpen || showImportMenu.value || showExportMenu.value || showScaffoldMenu.value) {
+      closeMenus();
+      if (addWasOpen) nextTick(() => addMenuButton.value?.focus());
+      return;
+    }
     if (searchOpen.value) { closeSearch(); return; }
     // Exit full view first
     if (fullViewGroupId.value) {
@@ -2716,10 +2866,12 @@ function collectCanvasData(): {
       for (const name of entry.data.agents || []) {
         if (orchNames.has(name)) subNames.add(name);
       }
-      const markStepRefs = (steps: { agent?: string; steps?: any[] }[]) => {
+      const markStepRefs = (steps: PipelineStep[]) => {
         for (const s of steps || []) {
           if (s.agent && orchNames.has(s.agent)) subNames.add(s.agent);
           if (s.steps) markStepRefs(s.steps);
+          if (s.decision?.otherwise) markStepRefs(s.decision.otherwise);
+          for (const route of s.decision?.routes ?? []) markStepRefs(route.steps);
         }
       };
       if (entry.data.pipeline?.steps) markStepRefs(entry.data.pipeline.steps);
@@ -2765,6 +2917,11 @@ function collectCanvasData(): {
 // --- Auto-arrange: layered layout that avoids overlaps ---
 // --- Auto-arrange: layered layout with recursive nested group support ---
 function autoArrange() {
+  if (svgWorkbench.value) {
+    saveSnapshot();
+    relayoutDesign();
+    return;
+  }
   const NODE_W = 220;
   const NODE_H = 140;
   const PAD_X = 40;
@@ -3075,7 +3232,22 @@ function importConfig(config: Config) {
 
       let stepX = groupPadding;
       for (const step of steps) {
-        if (step.type === 'parallel' && step.steps) {
+        if (step.type === 'retrieval' && step.retrieval) {
+          nodes.value.push({ id: `retrieval-${++nodeCounter}`, type: 'retrieval', parentNode: pipelineGroupId,
+            extent: 'parent', expandParent: true, position: { x: stepX, y: 50 }, data: step });
+          stepX += stepSpacing;
+        } else if (step.type === 'decision' && step.decision) {
+          nodes.value.push({
+            id: `decision-${++nodeCounter}`,
+            type: 'decision',
+            parentNode: pipelineGroupId,
+            extent: 'parent',
+            expandParent: true,
+            position: { x: stepX, y: 50 },
+            data: step,
+          });
+          stepX += stepSpacing;
+        } else if (step.type === 'parallel' && step.steps) {
           // Parallel group inside pipeline
           const parallelGroupId = `group-${++nodeCounter}`;
           const parallelW = Math.max(step.steps.length * stepSpacing, 300);
@@ -3305,9 +3477,21 @@ async function handleDirectoryImport(event: Event) {
 
 // --- Dropdown close ---
 
+function toggleAddMenu() {
+  const open = !showAddMenu.value;
+  closeMenus();
+  showAddMenu.value = open;
+}
+
+function finishAdd() {
+  showAddMenu.value = false;
+  nextTick(() => addMenuButton.value?.focus());
+}
+
 function closeMenus() {
   showImportMenu.value = false;
   showExportMenu.value = false;
+  showAddMenu.value = false;
   showScaffoldMenu.value = false;
 }
 
@@ -3393,7 +3577,10 @@ function applyScaffold(template: ScaffoldTemplate) {
   if (isDirty.value && nodes.value.length > 0) {
     if (!confirm('You have unsaved changes. Scaffold will replace the canvas nodes. Your settings will be kept. Continue?')) return;
   }
-  // Clear only canvas — preserve settings
+  saveSnapshot();
+  clearResults();
+  selectionScope.value = null;
+  // Replace the graph without appending to the previous Vue Flow store.
   nodes.value = [];
   edges.value = [];
   nodeCounter = 0;
@@ -3406,6 +3593,10 @@ function applyScaffold(template: ScaffoldTemplate) {
   for (const edge of edges.value) {
     const srcNode = nodes.value.find(n => n.id === edge.source);
     const tgtNode = nodes.value.find(n => n.id === edge.target);
+    if (srcNode?.type === 'agent' || srcNode?.type === 'orchestrator') {
+      edge.sourceHandle = tgtNode?.type === 'tool' || tgtNode?.type === 'skill' ? 'tools'
+        : tgtNode?.type === 'orchestrator' ? 'orchestrators' : 'agents';
+    }
     if (srcNode?.type === 'orchestrator' && tgtNode?.type === 'group') {
       const orchData = srcNode.data as OrchestratorConfig;
       const grpData = tgtNode.data as GroupConfig;
@@ -3419,13 +3610,13 @@ function scaffoldLLMChat() {
   projectName.value = 'LLM Chat';
   projectId.value = crypto.randomUUID();
   const agentId = `agent-${++nodeCounter}`;
-  addNodes([
+  nodes.value = [
     { id: agentId, type: 'agent', position: { x: 200, y: 80 }, data: {
       name: 'Assistant', role: 'worker', provider: '', model: '',
       system_prompt: 'You are a helpful, friendly assistant. Answer questions clearly and concisely. If you are unsure about something, say so honestly.',
       tools: [], settings: { max_iterations: 15 } as any,
     } as AgentConfig },
-  ]);
+  ];
 }
 
 function scaffoldCodeReview() {
@@ -3435,7 +3626,7 @@ function scaffoldCodeReview() {
   const listFiles = `tool-${++nodeCounter}`;
   const agent = `agent-${++nodeCounter}`;
 
-  addNodes([
+  nodes.value = [
     { id: agent, type: 'agent', position: { x: 180, y: 50 }, data: {
       name: 'CodeReviewer', role: 'worker', provider: '', model: '',
       system_prompt: 'You are an expert code reviewer. Read code and provide structured feedback: correctness, security, performance, style. Cite line numbers and prioritize by severity.',
@@ -3448,11 +3639,11 @@ function scaffoldCodeReview() {
     { id: listFiles, type: 'tool', position: { x: 330, y: 250 }, data: {
       name: 'list_files', type: 'fs', description: 'List files in a directory', operation: 'list',
     } as ToolConfig },
-  ]);
-  addNewEdges([
+  ];
+  edges.value = [
     { id: `e-${Date.now()}`, source: agent, target: readFile, animated: true },
     { id: `e-${Date.now() + 1}`, source: agent, target: listFiles, animated: true },
-  ]);
+  ];
 }
 
 function scaffoldDataAnalysis() {
@@ -3463,7 +3654,7 @@ function scaffoldDataAnalysis() {
   const runCmd = `tool-${++nodeCounter}`;
   const agent = `agent-${++nodeCounter}`;
 
-  addNodes([
+  nodes.value = [
     { id: agent, type: 'agent', position: { x: 200, y: 40 }, data: {
       name: 'DataAnalyst', role: 'worker', provider: '', model: '',
       system_prompt: 'You are a data analyst. Explore data, identify patterns, compute statistics, and present clear insights. Use shell tools for counting and filtering. Always show your work.',
@@ -3480,12 +3671,12 @@ function scaffoldDataAnalysis() {
       name: 'run_command', type: 'cli', description: 'Run analysis commands',
       command: '{{command}}', sandbox: { type: 'local_restricted', allowed_commands: ['awk', 'sort', 'uniq', 'wc', 'head', 'tail', 'cat'] },
     } as ToolConfig },
-  ]);
-  addNewEdges([
+  ];
+  edges.value = [
     { id: `e-${Date.now()}`, source: agent, target: readFile, animated: true },
     { id: `e-${Date.now() + 1}`, source: agent, target: searchFiles, animated: true },
     { id: `e-${Date.now() + 2}`, source: agent, target: runCmd, animated: true },
-  ]);
+  ];
 }
 
 function scaffoldRAGAssistant() {
@@ -3496,7 +3687,7 @@ function scaffoldRAGAssistant() {
   const skill = `skill-${++nodeCounter}`;
   const agent = `agent-${++nodeCounter}`;
 
-  addNodes([
+  nodes.value = [
     { id: agent, type: 'agent', position: { x: 180, y: 40 }, data: {
       name: 'RAGAssistant', role: 'worker', provider: '', model: '',
       system_prompt: 'You are a knowledge assistant. Search the knowledge base, read relevant files, and synthesize cited answers. If no relevant info exists, say so.',
@@ -3514,12 +3705,12 @@ function scaffoldRAGAssistant() {
       tools: ['search_files', 'read_file'],
       prompt_template: 'Given the retrieved documents, synthesize a clear, accurate answer. Cite source files for each key fact.',
     } as SkillConfig },
-  ]);
-  addNewEdges([
+  ];
+  edges.value = [
     { id: `e-${Date.now()}`, source: agent, target: searchFiles, animated: true },
     { id: `e-${Date.now() + 1}`, source: agent, target: readFile, animated: true },
     { id: `e-${Date.now() + 2}`, source: agent, target: skill, animated: true },
-  ]);
+  ];
 }
 
 function scaffoldQAPipeline() {
@@ -3531,7 +3722,7 @@ function scaffoldQAPipeline() {
   const validator = `agent-${++nodeCounter}`;
   const orch = `orchestrator-${++nodeCounter}`;
 
-  addNodes([
+  nodes.value = [
     { id: orch, type: 'orchestrator', position: { x: 230, y: 20 }, data: {
       name: 'QALead', role: 'supervisor', strategy: 'Pipeline', provider: '', model: '',
       system_prompt: 'Coordinate test generation and validation.',
@@ -3557,14 +3748,14 @@ function scaffoldQAPipeline() {
     { id: writeFile, type: 'tool', position: { x: 380, y: 350 }, data: {
       name: 'write_file', type: 'fs', description: 'Write test files', operation: 'write',
     } as ToolConfig },
-  ]);
-  addNewEdges([
+  ];
+  edges.value = [
     { id: `e-${Date.now()}`, source: orch, target: testGen, animated: true },
     { id: `e-${Date.now() + 1}`, source: orch, target: validator, animated: true },
     { id: `e-${Date.now() + 2}`, source: testGen, target: readFile, animated: true },
     { id: `e-${Date.now() + 3}`, source: testGen, target: writeFile, animated: true },
     { id: `e-${Date.now() + 4}`, source: validator, target: readFile, animated: true },
-  ]);
+  ];
 }
 
 function scaffoldSingleAgent() {
@@ -3574,7 +3765,7 @@ function scaffoldSingleAgent() {
   const tool2Id = `tool-${++nodeCounter}`;
   const agentId = `agent-${++nodeCounter}`;
 
-  addNodes([
+  nodes.value = [
     { id: toolId, type: 'tool', position: { x: 50, y: 250 }, data: {
       name: 'cli', type: 'cli', description: 'Execute shell commands',
       command: '{{command}}', sandbox: { type: 'local_restricted', allowed_commands: ['grep', 'find', 'cat', 'ls'] },
@@ -3587,11 +3778,11 @@ function scaffoldSingleAgent() {
       system_prompt: 'You are a helpful assistant with access to CLI and file tools.',
       tools: ['cli', 'files'],
     } as AgentConfig },
-  ]);
-  addNewEdges([
+  ];
+  edges.value = [
     { id: `edge-${Date.now()}`, source: agentId, target: toolId, animated: true },
     { id: `edge-${Date.now() + 1}`, source: agentId, target: tool2Id, animated: true },
-  ]);
+  ];
 }
 
 function scaffoldResearchTeam() {
@@ -3604,7 +3795,7 @@ function scaffoldResearchTeam() {
   const reviewer = `agent-${++nodeCounter}`;
   const orch = `orchestrator-${++nodeCounter}`;
 
-  addNodes([
+  nodes.value = [
     { id: orch, type: 'orchestrator', position: { x: 250, y: 20 }, data: {
       name: 'Orchestrator', role: 'supervisor', strategy: 'ReAct', provider: '', model: '',
       system_prompt: 'You coordinate a research team. First research, then code, then review.',
@@ -3629,15 +3820,15 @@ function scaffoldResearchTeam() {
     { id: toolFiles, type: 'tool', position: { x: 360, y: 350 }, data: {
       name: 'files', type: 'fs', description: 'Read, write, and list files',
     } as ToolConfig },
-  ]);
-  addNewEdges([
+  ];
+  edges.value = [
     { id: `e-${Date.now()}`, source: orch, target: researcher, animated: true },
     { id: `e-${Date.now() + 1}`, source: orch, target: coder, animated: true },
     { id: `e-${Date.now() + 2}`, source: orch, target: reviewer, animated: true },
     { id: `e-${Date.now() + 3}`, source: researcher, target: toolSearch, animated: true },
     { id: `e-${Date.now() + 4}`, source: coder, target: toolFiles, animated: true },
     { id: `e-${Date.now() + 5}`, source: reviewer, target: toolFiles, animated: true },
-  ]);
+  ];
 }
 
 function scaffoldPipeline() {
@@ -3650,7 +3841,7 @@ function scaffoldPipeline() {
   const step3 = `agent-${++nodeCounter}`;
   const orch = `orchestrator-${++nodeCounter}`;
 
-  addNodes([
+  nodes.value = [
     { id: orch, type: 'orchestrator', position: { x: 200, y: 20 }, data: {
       name: 'Pipeline', role: 'supervisor', strategy: 'Pipeline', provider: '', model: '',
       system_prompt: 'Execute the pipeline steps in order.', agents: ['analyze', 'generate', 'review'],
@@ -3678,15 +3869,15 @@ function scaffoldPipeline() {
     { id: toolFs, type: 'tool', position: { x: 360, y: 350 }, data: {
       name: 'files', type: 'fs', description: 'File operations',
     } as ToolConfig },
-  ]);
-  addNewEdges([
+  ];
+  edges.value = [
     { id: `e-${Date.now()}`, source: orch, target: step1, animated: true },
     { id: `e-${Date.now() + 1}`, source: orch, target: step2, animated: true },
     { id: `e-${Date.now() + 2}`, source: orch, target: step3, animated: true },
     { id: `e-${Date.now() + 3}`, source: step1, target: toolCli, animated: true },
     { id: `e-${Date.now() + 4}`, source: step2, target: toolFs, animated: true },
     { id: `e-${Date.now() + 5}`, source: step3, target: toolFs, animated: true },
-  ]);
+  ];
 }
 
 function scaffoldHierarchical() {
@@ -3698,7 +3889,7 @@ function scaffoldHierarchical() {
   const worker2 = `agent-${++nodeCounter}`;
   const worker3 = `agent-${++nodeCounter}`;
 
-  addNodes([
+  nodes.value = [
     { id: supervisor, type: 'orchestrator', position: { x: 250, y: 20 }, data: {
       name: 'Supervisor', role: 'supervisor', strategy: 'Hierarchical', provider: '', model: '',
       system_prompt: 'You are a supervisor. Break tasks into subtasks and delegate to workers.',
@@ -3719,14 +3910,14 @@ function scaffoldHierarchical() {
     { id: toolCli, type: 'tool', position: { x: 250, y: 350 }, data: {
       name: 'cli', type: 'cli', description: 'Execute commands', command: '{{command}}',
     } as ToolConfig },
-  ]);
-  addNewEdges([
+  ];
+  edges.value = [
     { id: `e-${Date.now()}`, source: supervisor, target: worker1, animated: true },
     { id: `e-${Date.now() + 1}`, source: supervisor, target: worker2, animated: true },
     { id: `e-${Date.now() + 2}`, source: supervisor, target: worker3, animated: true },
     { id: `e-${Date.now() + 3}`, source: worker2, target: toolCli, animated: true },
     { id: `e-${Date.now() + 4}`, source: worker3, target: toolCli, animated: true },
-  ]);
+  ];
 }
 
 // Trigger for RunBar to clear its persisted state (incremented on clear/new project)
@@ -3903,6 +4094,8 @@ onMounted(async () => {
   autoSaveEnabled = true;
 });
 onUnmounted(() => {
+  if (cameraFitTimer) clearTimeout(cameraFitTimer);
+  builderStream.disconnect();
   window.removeEventListener('keydown', handleKeydown);
   window.removeEventListener('keyup', handleKeyupShift);
   if (autoSaveTimer) clearTimeout(autoSaveTimer);
@@ -3939,8 +4132,8 @@ onUnmounted(() => {
         />
 
         <div class="dropdown">
-          <button @click.stop="showImportMenu = !showImportMenu; showExportMenu = false" class="btn btn-outline">
-            Import ▾
+          <button @click.stop="showImportMenu = !showImportMenu; showExportMenu = false" class="btn btn-outline icon-action" aria-label="Import" title="Import">
+            ⇧
           </button>
           <div v-if="showImportMenu" class="dropdown-menu" @click.stop>
             <button class="dropdown-item" @click="triggerImport">Import YAML</button>
@@ -3949,8 +4142,8 @@ onUnmounted(() => {
         </div>
 
         <div class="dropdown">
-          <button @click.stop="showExportMenu = !showExportMenu; showImportMenu = false" class="btn btn-primary">
-            Export ▾
+          <button @click.stop="showExportMenu = !showExportMenu; showImportMenu = false" class="btn btn-primary icon-action" aria-label="Export" title="Export">
+            ⇩
           </button>
           <div v-if="showExportMenu" class="dropdown-menu" @click.stop>
             <button class="dropdown-item" @click="exportYaml">Export YAML</button>
@@ -3958,12 +4151,12 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <button @click="toggleSettings" class="btn btn-outline" :class="{ active: showSettings }">
-          Settings
+        <button @click="toggleSettings" class="btn btn-outline icon-action" :class="{ active: showSettings }" aria-label="Settings" title="Settings">
+          ⚙
         </button>
         <div class="dropdown">
-          <button @click.stop="showScaffoldMenu = !showScaffoldMenu; showImportMenu = false; showExportMenu = false" class="btn btn-outline">
-            Scaffold &#x25BE;
+          <button @click.stop="showScaffoldMenu = !showScaffoldMenu; showImportMenu = false; showExportMenu = false" class="btn btn-outline icon-action" aria-label="Scaffold" title="Scaffold">
+            ▦
           </button>
           <div v-if="showScaffoldMenu" class="dropdown-menu scaffold-menu" @click.stop>
             <div v-for="t in scaffoldTemplates" :key="t.id" class="scaffold-item" @click="applyScaffold(t)">
@@ -3972,79 +4165,68 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
-        <button @click="confirmClear" class="btn btn-outline">
-          Clear
+        <button @click="confirmClear" class="btn btn-outline icon-action" aria-label="Clear" title="Clear canvas">
+          ×
         </button>
       </div>
     </div>
 
     <div class="builder-toolbar">
       <div class="toolbar-section">
-        <span class="toolbar-label">Add Nodes:</span>
-        <button @click="addOrchestratorNode" class="btn btn-node orchestrator">
-          🎯 Orchestrator
-        </button>
-        <button @click="addAgentNode" class="btn btn-node agent">
-          🤖 Agent
-        </button>
-        <button @click="addToolNode" class="btn btn-node tool">
-          🔧 Tool
-        </button>
-        <button @click="addSkillNode" class="btn btn-node skill">
-          * Skill
-        </button>
+        <div class="dropdown">
+          <button ref="addMenuButton" @click.stop="toggleAddMenu" class="btn btn-node add-button" :aria-expanded="showAddMenu">+ Add</button>
+          <div v-if="showAddMenu" class="dropdown-menu add-menu" @click.stop>
+            <button @click="addOrchestratorNode(); finishAdd()" class="btn btn-node orchestrator">🎯 Orchestrator</button>
+            <button @click="addAgentNode(); finishAdd()" class="btn btn-node agent">🤖 Agent</button>
+            <button @click="addToolNode(); finishAdd()" class="btn btn-node tool">🔧 Tool</button>
+            <button @click="addSkillNode(); finishAdd()" class="btn btn-node skill">* Skill</button>
+            <button @click="addGroupNode('pipeline'); finishAdd()" class="btn btn-node group-btn pipeline">Pipeline</button>
+            <button :disabled="!decisionGroup" title="Select a pipeline group to add a Decision" @click="addDecisionNode(); finishAdd()" class="btn btn-node group-btn">Decision</button>
+            <button :disabled="!decisionGroup" title="Select a pipeline group to add Retrieval" @click="addRetrievalNode(); finishAdd()" class="btn btn-node group-btn">Retrieval</button>
+            <button @click="addGroupNode('parallel'); finishAdd()" class="btn btn-node group-btn parallel">Parallel</button>
+            <button @click="addGroupNode('team'); finishAdd()" class="btn btn-node group-btn team">Team</button>
+            <button @click="addGroupNode('loop'); finishAdd()" class="btn btn-node group-btn loop">Loop</button>
+            <button @click="addGroupNode('generic'); finishAdd()" class="btn btn-node group-btn generic">Group</button>
+          </div>
+        </div>
       </div>
       <div class="toolbar-section">
-        <button @click="addGroupNode('pipeline')" class="btn btn-node group-btn pipeline">Pipeline</button>
-        <button @click="addGroupNode('parallel')" class="btn btn-node group-btn parallel">Parallel</button>
-        <button @click="addGroupNode('team')" class="btn btn-node group-btn team">Team</button>
-        <button @click="addGroupNode('loop')" class="btn btn-node group-btn loop">Loop</button>
-        <button @click="addGroupNode('generic')" class="btn btn-node group-btn generic">Group</button>
-      </div>
-      <div class="toolbar-section">
-        <button
-          @click="isMultiSelect ? duplicateSelection() : duplicateSelectedNode()"
-          class="btn btn-node duplicate"
-          :disabled="!selectedNode && !isMultiSelect"
+        <button type="button" class="btn btn-node icon-action duplicate" aria-label="Duplicate" title="Duplicate selection"
+          :disabled="!selectedNode && !isMultiSelect" @click="isMultiSelect ? duplicateSelection() : duplicateSelectedNode()">⧉</button>
+        <button v-if="isMultiSelect" type="button" class="btn btn-node icon-action" aria-label="Group selection"
+          title="Group selected nodes" @click="groupSelection('generic')">⊞</button>
+        <button v-if="selectedNode?.type === 'group'" type="button" class="btn btn-node icon-action" aria-label="Ungroup"
+          title="Ungroup" @click="ungroupNode(selectedNode.id)">⊟</button>
+        <button type="button" class="btn btn-node icon-action" :class="{ active: showHierarchy }" :aria-pressed="showHierarchy"
+          aria-label="Hierarchy" title="Toggle hierarchy panel (Cmd+Shift+H)" @click="showHierarchy = !showHierarchy">☷</button>
+        <button type="button" class="btn btn-node icon-action" :class="{ active: searchOpen }" :aria-pressed="searchOpen"
+          aria-label="Search" title="Search canvas (Cmd+F)" @click="toggleSearch">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="10.5" cy="10.5" r="5.5" /><path d="m15 15 5 5" />
+          </svg>
+        </button>
+        <button type="button" class="btn btn-node icon-action" aria-label="Arrange" title="Auto-arrange nodes and fit view"
+          @click="autoArrange">⤢</button>
+        <button type="button" class="btn btn-node icon-action" :disabled="!canUndo" aria-label="Undo" title="Undo (Cmd+Z)" @click="undo">↶</button>
+        <button type="button" class="btn btn-node icon-action" :disabled="!canRedo" aria-label="Redo" title="Redo (Cmd+Shift+Z)" @click="redo">↷</button>
+        <button type="button" class="btn btn-node icon-action" :class="{ active: svgWorkbench }" :aria-pressed="svgWorkbench"
+          :aria-label="svgWorkbench ? 'Classic canvas' : 'SVG workbench preview'" :title="svgWorkbench ? 'Classic canvas' : 'SVG workbench preview'"
+          @click="svgWorkbench = !svgWorkbench">◇</button>
+        <button v-if="!svgWorkbench" type="button" class="btn btn-node icon-action"
+          :class="{ active: autoFitCamera && !cameraWasManuallyMoved }" :aria-pressed="autoFitCamera && !cameraWasManuallyMoved"
+          :aria-label="autoFitCamera && !cameraWasManuallyMoved ? 'Auto-fit On' : 'Auto-fit Off'"
+          :title="autoFitCamera && !cameraWasManuallyMoved ? 'Auto-fit On' : 'Auto-fit Off'" @click="toggleAutoFitCamera">⊡</button>
+        <button type="button" class="btn btn-node icon-action" aria-label="Fold all" title="Fold every group" @click="setAllGroupsFolded(true)">⌄</button>
+        <button type="button" class="btn btn-node icon-action" aria-label="Unfold all" title="Unfold every group" @click="setAllGroupsFolded(false)">⌃</button>
+        <select
+          v-if="selectedNodes.length && nodes.some(n => n.type === 'group')"
+          class="group-move-select"
+          aria-label="Move selected nodes to group"
+          @change="moveSelectionToGroup(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''"
         >
-          Duplicate
-        </button>
-        <button
-          v-if="isMultiSelect"
-          @click="groupSelection('generic')"
-          class="btn btn-node group-btn"
-        >
-          Group ({{ selectedNodes.length }})
-        </button>
-        <button
-          v-if="selectedNode?.type === 'group'"
-          @click="ungroupNode(selectedNode.id)"
-          class="btn btn-node"
-        >
-          Ungroup
-        </button>
-      </div>
-      <div class="toolbar-section">
-        <span class="toolbar-hint">
-          Shift+drag select • Cmd+click toggle • Cmd+F search • Cmd+Shift+H hierarchy
-        </span>
-      </div>
-      <div class="toolbar-section">
-        <button class="btn btn-node" :class="{ active: showHierarchy }" @click="showHierarchy = !showHierarchy" title="Toggle hierarchy panel (Cmd+Shift+H)">
-          Hierarchy
-        </button>
-        <button class="btn btn-node" :class="{ active: searchOpen }" @click="toggleSearch" title="Search canvas (Cmd+F)">
-          Search
-        </button>
-        <button class="btn btn-node" @click="autoArrange" title="Auto-arrange nodes to avoid overlaps and fit view">
-          Arrange
-        </button>
-        <button class="btn btn-node" :disabled="!canUndo" @click="undo" title="Undo (Cmd+Z)">
-          Undo
-        </button>
-        <button class="btn btn-node" :disabled="!canRedo" @click="redo" title="Redo (Cmd+Shift+Z)">
-          Redo
-        </button>
+          <option value="">Move to group…</option>
+          <option v-for="g in nodes.filter(n => n.type === 'group')" :key="g.id" :value="g.id">{{ (g.data as GroupConfig).name }}</option>
+        </select>
       </div>
     </div>
 
@@ -4135,9 +4317,9 @@ onUnmounted(() => {
       />
 
       <div class="builder-canvas" :class="{ 'has-wallpaper': wallpaperEnabled }">
-        <WallpaperHost />
+        <WallpaperHost v-if="!showResultGraph" />
         <!-- Canvas search bar -->
-        <div v-if="searchOpen" class="canvas-search-bar">
+        <div v-if="searchOpen && !showResultGraph" class="canvas-search-bar">
           <input
             v-model="searchQuery"
             type="text"
@@ -4162,8 +4344,9 @@ onUnmounted(() => {
           <button class="search-close-btn" @click="closeSearch">x</button>
         </div>
         <VueFlow
+          v-show="!showResultGraph && !svgWorkbench"
           v-model:nodes="nodes"
-          v-model:edges="edges"
+          v-model:edges="canvasEdges"
           :node-types="mergedNodeTypes as any"
           :edge-types="edgeTypes as any"
           :selection-key-code="'Shift'"
@@ -4171,10 +4354,13 @@ onUnmounted(() => {
           :snap-to-grid="true"
           :snap-grid="[16, 16]"
           :default-edge-options="{ type: 'smoothstep' }"
+          @node-drag-start="stopCameraFollow({ event: true })"
           @node-drag="handleNodeDrag"
           @node-drag-stop="handleNodeDragStop"
+          @move-start="stopCameraFollow"
           fit-view-on-init
           class="vue-flow-container"
+          :class="{ 'workflow-only': isLiveExecution && liveWorkflow }"
           @node-context-menu="handleNodeContextMenu"
           @pane-click="handlePaneClick"
         >
@@ -4232,11 +4418,51 @@ onUnmounted(() => {
             </button>
           </div>
         </VueFlow>
+        <BuilderSvgCanvas
+          v-if="svgWorkbench && !showResultGraph"
+          :key="projectId"
+          :nodes="nodes"
+          :edges="edges"
+          :editable="canvasMode === 'design'"
+          @select="selectSvgNode"
+          @move="moveSvgNode"
+          @context="handleNodeContextMenu"
+          @connect="connectSvgNodes"
+          @fold="foldSvgGroup"
+        />
+        <BlockDiagramStyle
+          v-if="showResultGraph"
+          :key="selectedSnapshot?.id ?? 'latest'"
+          class="builder-result-graph"
+          :roots="isLiveExecution ? debugTreeRoots : selectedSnapshot?.treeRoots ?? debugTreeRoots"
+          :active-ids="noActiveResultNodes"
+          :selected-id="execDetailNodeId ?? undefined"
+          :render-key="debugRenderKey"
+          :visible-up-to="-1"
+          :total-events="isLiveExecution ? liveEvents.length : 0"
+          :events="isLiveExecution ? liveEvents : noResultEvents"
+          @node-click="selectResultNode"
+        />
       </div>
       
       <!-- Single node editor -->
+      <DecisionEditor
+        v-if="showEditor && selectedNode?.type === 'decision' && !isMultiSelect"
+        :key="selectedNode.id"
+        :step="selectedNode.data as PipelineStep"
+        :agent-names="canvasAgentNames"
+        @update="updatePipelineStep"
+        @close="closeEditor"
+      />
+      <RetrievalEditor
+        v-else-if="showEditor && selectedNode?.type === 'retrieval' && !isMultiSelect"
+        :key="selectedNode.id"
+        :step="selectedNode.data as PipelineStep"
+        @update="updatePipelineStep"
+        @close="closeEditor"
+      />
       <NodeEditor
-        v-if="showEditor && selectedNode && !isMultiSelect"
+        v-else-if="showEditor && selectedNode && !isMultiSelect"
         :node-id="selectedNode.id"
         :node-type="selectedNode.type as 'agent' | 'tool' | 'skill' | 'orchestrator' | 'group'"
         :node-data="selectedNode.data"
@@ -4346,34 +4572,16 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- RunBar: persistent run form / execution controls -->
-    <RunBar
-      :canvas-mode="canvasMode"
-      :self-url="selfUrl"
-      :initial-workdir="runWorkdir"
-      :total-token-count="totalTokenCount"
-      :is-paused="isPaused"
-      :paused-at="pausedCheckpoint ?? undefined"
-      :show-results="showResults"
-      :reset-trigger="runBarResetTrigger"
-      :has-breakpoints="breakpoints.length > 0"
-      :exec-view="execView"
-      @run="handleRunBarRun"
-      @debug="handleRunBarDebug"
-      @stop="handleStop"
-      @attach-debugger="handleAttachDebugger"
-      @pause="debugPause()"
-      @resume="debugResume('resume')"
-      @step="debugResume('step')"
-      @clear-results="clearResults"
-      @expand-all="expandAllExec"
-      @collapse-all="collapseAllExec"
-      @set-exec-view="setExecView"
-      @update:query="tokenizerQuery = $event"
-      @open-tokenizer="showTokenizer = true"
-    />
+    <div v-if="isLiveExecution || matchingReplay" class="builder-workflow-controls">
+      <button v-if="isLiveExecution" type="button" class="btn btn-node" :aria-pressed="liveWorkflow"
+        @click="liveWorkflow = !liveWorkflow; execDetailNodeId = null">
+        {{ liveWorkflow ? 'Show Execution Path' : 'Show Workflow' }}
+      </button>
+      <button v-if="matchingReplay" type="button" class="btn btn-node" :aria-pressed="followReplay"
+        @click="followReplay = !followReplay">Follow replay</button>
+      <span v-if="workflowEvent" class="workflow-step">{{ workflowEvent.agent_name }} · {{ workflowEvent.event_type.replace(/_/g, ' ').toLowerCase() }}</span>
+    </div>
 
-    <!-- Run history strip — shows after first completed run -->
     <div v-if="runSnapshots.length > 0" class="run-history-strip">
       <span class="run-history-label">Runs</span>
       <div class="run-history-items">
@@ -4393,6 +4601,31 @@ onUnmounted(() => {
       </div>
       <button v-if="runSnapshots.length > 1" class="run-history-clear" @click="confirmClearSnapshots" title="Clear all run history">Clear</button>
     </div>
+
+    <!-- RunBar: persistent run form / execution controls -->
+    <RunBar
+      :canvas-mode="canvasMode"
+      :self-url="selfUrl"
+      :initial-workdir="runWorkdir"
+      :total-token-count="totalTokenCount"
+      :is-paused="isPaused"
+      :paused-at="pausedCheckpoint ?? undefined"
+      :show-results="showResults"
+      :results-canvas="resultsCanvas"
+      :reset-trigger="runBarResetTrigger"
+      :has-breakpoints="breakpoints.length > 0"
+      @run="handleRunBarRun"
+      @debug="handleRunBarDebug"
+      @stop="handleStop"
+      @attach-debugger="handleAttachDebugger"
+      @pause="debugPause()"
+      @resume="debugResume('resume')"
+      @step="debugResume('step')"
+      @clear-results="clearResults"
+      @toggle-results-canvas="resultsCanvas = !resultsCanvas; execDetailNodeId = null"
+      @update:query="tokenizerQuery = $event"
+      @open-tokenizer="showTokenizer = true"
+    />
 
     <!-- MonitorCard: floating node detail in monitor/replay/results modes -->
     <MonitorCard
@@ -4483,10 +4716,17 @@ onUnmounted(() => {
 
 <style scoped>
 .visual-builder {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   height: 100%;
   background: var(--surface-0);
+}
+
+@container (max-width: 600px) {
+  .builder-header, .header-left, .header-right { flex-wrap: wrap; }
+  .builder-header { gap: 8px; padding: 8px; }
+  .project-name-input { max-width: 100%; }
 }
 
 .builder-header {
@@ -4585,27 +4825,18 @@ onUnmounted(() => {
 .builder-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px 20px;
+  padding: 5px 10px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border-subtle);
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 5px;
 }
 
 .toolbar-section {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-}
-
-.toolbar-label {
-  font-size: 10px;
-  color: var(--text-muted);
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-family: var(--font-mono);
+  gap: 4px;
 }
 
 .btn-node {
@@ -4649,12 +4880,6 @@ onUnmounted(() => {
   color: var(--status-paused);
 }
 
-.toolbar-hint {
-  font-size: 10px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-}
-
 .builder-main {
   flex: 1;
   display: flex;
@@ -4663,7 +4888,13 @@ onUnmounted(() => {
 
 .builder-canvas {
   flex: 1;
+  min-width: 0;
   position: relative;
+}
+
+.builder-result-graph {
+  position: absolute;
+  inset: 0;
 }
 
 /* --- Exec Detail Panel (right sidebar) --- */
@@ -5195,9 +5426,33 @@ onUnmounted(() => {
 :deep(.vue-flow__node.search-highlight) { box-shadow: 0 0 0 2px var(--status-paused) !important; }
 :deep(.vue-flow__edge.search-dim) { opacity: 0.1 !important; }
 
-/* Edge styling — muted orthogonal wires */
-:deep(.vue-flow__edge-path) { stroke: #4a4a60; stroke-width: 1.5; }
-:deep(.vue-flow__edge.animated .vue-flow__edge-path) { stroke: var(--status-running); }
+/* Use the execution diagram's card palette without moving editable nodes or pins. */
+.builder-canvas :deep(.agent-node) { --diagram-accent: var(--accent-agent); }
+.builder-canvas :deep(.tool-node) { --diagram-accent: var(--accent-tool); }
+.builder-canvas :deep(.skill-node) { --diagram-accent: var(--accent-skill); }
+.builder-canvas :deep(.orchestrator-node) { --diagram-accent: var(--accent-orch); }
+
+.builder-canvas :deep(:is(.agent-node, .tool-node, .skill-node, .orchestrator-node)) {
+  background: color-mix(in srgb, var(--diagram-accent) var(--diagram-card-tint), var(--surface-2));
+  border-top-color: color-mix(in srgb, var(--diagram-accent) 40%, var(--border-default));
+  border-right-color: color-mix(in srgb, var(--diagram-accent) 40%, var(--border-default));
+  border-bottom-color: color-mix(in srgb, var(--diagram-accent) 40%, var(--border-default));
+  border-radius: var(--diagram-card-radius);
+}
+
+.builder-canvas :deep(:is(.agent-node, .tool-node, .skill-node, .orchestrator-node) .node-header) {
+  background: color-mix(in srgb, var(--diagram-accent) 8%, transparent);
+  border-radius: calc(var(--diagram-card-radius) - 1px) calc(var(--diagram-card-radius) - 1px) 0 0;
+}
+
+.builder-workflow-controls {
+  display: flex; align-items: center; gap: 8px; padding: 5px 10px;
+  background: var(--surface-1); border-top: 1px solid var(--border-subtle);
+}
+.workflow-step { color: var(--text-secondary); font-size: 12px; }
+.workflow-only :deep(.vue-flow__node[data-id^="exec_"]),
+.workflow-only :deep(.vue-flow__edge[data-id^="exec_edge_"]) { display: none; }
+/* Edge styling — quiet orthogonal wires */
 :deep(.vue-flow__connection-line) { stroke: var(--accent-agent); stroke-width: 1.5; }
 
 /* Execution mode: dim design edges */
@@ -5219,19 +5474,13 @@ onUnmounted(() => {
 
 /* --- Run history strip --- */
 .run-history-strip {
-  position: absolute;
-  bottom: 56px;
-  left: 50%;
-  transform: translateX(-50%);
   display: flex;
   align-items: center;
+  flex-shrink: 0;
   gap: 6px;
   padding: 4px 10px;
   background: var(--surface-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: 16px;
-  z-index: 20;
-  max-width: 80vw;
+  border-top: 1px solid var(--border-subtle);
   overflow-x: auto;
 }
 .run-history-label {
@@ -5435,5 +5684,22 @@ onUnmounted(() => {
 }
 .btn-danger { color: #f44336 !important; border-color: #f44336 !important; }
 .btn-danger:hover { background: rgba(244, 67, 54, 0.1) !important; }
+
+.icon-action {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+}
+.add-button { min-height: 32px; font-weight: 600; }
+.add-menu { display: grid; grid-template-columns: repeat(2, minmax(120px, 1fr)); gap: 4px; min-width: 270px; padding: 6px; }
+.add-menu .btn { text-align: left; min-height: 32px; }
+@media (max-width: 760px) {
+  .builder-header { gap: 6px; }
+  .header-right { gap: 4px; }
+}
 
 </style>

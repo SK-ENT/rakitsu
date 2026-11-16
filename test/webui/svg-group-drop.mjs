@@ -1,0 +1,61 @@
+import assert from 'node:assert/strict';
+import puppeteer from 'puppeteer-core';
+
+const browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH, headless: true });
+try {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 1600, height: 1000 });
+  await page.goto(process.env.RAKITSU_BASE_URL);
+  const button = label => page.locator(`.builder-toolbar button[aria-label="${label}"]`);
+  await page.locator('.builder-toolbar button::-p-text(+ Add)').click();
+  await page.locator('.builder-toolbar button.agent').click();
+  await page.locator('.builder-toolbar button::-p-text(+ Add)').click();
+  await page.locator('.builder-toolbar button.loop').click();
+  await button('Arrange').click();
+  await button('SVG workbench preview').click();
+  const agent = '[data-builder-svg-canvas] [data-type="agent"]';
+  const frame = '[data-builder-svg-canvas] [data-group] .group-frame';
+  const fold = '[data-builder-svg-canvas] [data-group] [aria-label^="Fold"]';
+  const dragIntoGroup = async () => {
+    await page.locator('.svg-controls button::-p-text(Fit view)').click();
+    const a = await (await page.waitForSelector(agent, { visible: true })).boundingBox();
+    const b = await (await page.waitForSelector(frame, { visible: true })).boundingBox();
+    assert(a && b);
+    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+    await page.mouse.down();
+    const targetX = b.x + b.width / 2;
+    const targetY = b.y + b.height / 2;
+    const offset = Math.abs(targetX - a.x - a.width / 2) < 25 ? 45 : 0;
+    await page.mouse.move(targetX + offset, targetY, { steps: 18 });
+    await page.waitForSelector(frame + '.drop-target', { visible: true });
+    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2, { steps: 12 });
+    await page.waitForSelector(frame + '.drop-target', { hidden: true });
+    await page.mouse.move(targetX + offset, targetY, { steps: 12 });
+    await page.waitForSelector(frame + '.drop-target', { visible: true });
+    await page.mouse.up();
+    await page.waitForSelector(frame + '.drop-target', { hidden: true });
+    await page.waitForSelector('.drop-menu-info', { visible: true, timeout: 5000 });
+  };
+  await dragIntoGroup();
+  await page.locator('.node-context-menu button::-p-text(Cancel)').click();
+  await page.locator(fold).click();
+  await page.waitForSelector(agent, { visible: true });
+  await page.locator('[data-builder-svg-canvas] [aria-label^="Unfold"]').click();
+  await button('Undo').click();
+  await dragIntoGroup();
+  await page.locator('.node-context-menu button::-p-text(Add to group)').click();
+  await page.locator(fold).click();
+  await page.waitForSelector(agent, { hidden: true });
+  await page.locator('[data-builder-svg-canvas] [aria-label^="Unfold"]').click();
+  await page.waitForSelector(agent, { visible: true });
+  await page.locator(agent).click({ button: 'right' });
+  await page.waitForSelector('.node-context-menu', { visible: true });
+  const menu = await page.$eval('.node-context-menu', el => el.textContent);
+  assert(menu.includes('Copy Settings') && menu.includes('Duplicate') && menu.includes('Delete'));
+  await page.locator('.node-context-menu button::-p-text(Duplicate)').click();
+  await page.waitForFunction(selector => document.querySelectorAll(selector).length === 2, {}, agent);
+  console.log('PASS SVG node context menu and Duplicate action');
+  console.log('PASS SVG drag opens group menu; Cancel leaves the node outside and Add reparents it');
+} finally {
+  await browser.close();
+}

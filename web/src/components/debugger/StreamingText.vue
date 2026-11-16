@@ -44,12 +44,13 @@ watch(() => props.text, async () => {
 
 <style scoped>
 .streaming-text {
-  background: #f8f8f8;
-  border: 1px solid #eee;
+  background: var(--surface-0);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
   border-radius: 4px;
   padding: 8px;
   font-size: 11px;
-  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 400px;
@@ -58,13 +59,13 @@ watch(() => props.text, async () => {
   line-height: 1.5;
 }
 .streaming-text.active {
-  border-color: #667eea;
-  background: #fafafe;
+  border-color: var(--border-focus);
+  background: var(--surface-2);
 }
 
 .cursor {
   animation: blink 0.8s step-end infinite;
-  color: #667eea;
+  color: var(--accent-agent);
   font-weight: bold;
 }
 
@@ -82,25 +83,24 @@ watch(() => props.text, async () => {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: #666;
+  color: var(--text-secondary);
   margin: 4px 0 2px 0;
   font-weight: 600;
 }
 
 .variant-reasoning .streaming-text {
-  background: #fafaf6;
-  border-color: #e8e8d8;
-  color: #6a6a6a;
+  background: var(--surface-1);
+  color: var(--text-secondary);
   font-style: italic;
 }
 .variant-reasoning .streaming-text.active {
-  border-color: #b8a878;
-  background: #fbfbf4;
+  border-color: var(--accent-skill);
+  background: var(--surface-2);
 }
 .variant-reasoning .streaming-label {
-  color: #8a7a4a;
+  color: var(--accent-skill);
 }
 .variant-reasoning .cursor {
-  color: #b8a878;
+  color: var(--accent-skill);
 }
 </style>

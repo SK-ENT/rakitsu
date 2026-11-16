@@ -1,0 +1,1 @@
+A change removes the login check from GET /account/export. The route takes a user ID and returns account data.

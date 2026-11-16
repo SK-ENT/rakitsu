@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, computed } from 'vue';
+import { type ComputedRef, inject, computed } from 'vue';
 import { Handle, Position } from '@vue-flow/core';
 import BuilderSideHandles from './BuilderSideHandles.vue';
 import type { ToolConfig } from '../../types';
@@ -16,11 +16,13 @@ const props = defineProps<{
 const canvasMode = inject<Ref<string>>('canvasMode');
 const isExecution = computed(() => canvasMode?.value !== 'design');
 const toggleToolBreakpoint = inject<(toolName: string) => void>('toggleToolBreakpoint');
+const workflowFocus = inject<ComputedRef<{ agent: string; tool: string } | null>>('builderWorkflowFocus');
 </script>
 
 <template>
   <div
     class="tool-node"
+    :data-workflow-active="workflowFocus?.tool === data.name || undefined"
     :class="[{ selected }, data._runStatus && `status-${data._runStatus}`, isExecution && !data._runStatus && 'status-pending']"
   >
     <!-- Breakpoint dot -->

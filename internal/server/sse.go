@@ -322,9 +322,31 @@ func (s *SSEServer) handleSSE(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 	flusher.Flush()
 
+	// In-process web runs write to the session store instead of the hub buffer.
+	// Subscribe first, then replay the prefix and drop any overlapping live events.
+	replayed := make(map[string]struct{})
+	if s.runner != nil && s.sessionStore != nil {
+		runID, recordingID := s.runner.activeRecording()
+		if recordingID != "" && (sessionFilter == "" || sessionFilter == runID) {
+			if events, err := s.sessionStore.GetSessionEvents(recordingID); err == nil {
+				for _, event := range events {
+					if event.SessionID == runID {
+						s.sendEvent(w, string(event.EventType), event)
+						replayed[event.ID] = struct{}{}
+					}
+				}
+				flusher.Flush()
+			}
+		}
+	}
+
 	for {
 		select {
 		case event := <-eventCh:
+			if _, duplicate := replayed[event.ID]; duplicate {
+				delete(replayed, event.ID)
+				continue
+			}
 			if sessionFilter != "" && event.SessionID != sessionFilter {
 				continue
 			}

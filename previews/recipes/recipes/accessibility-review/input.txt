@@ -1,0 +1,1 @@
+A tester found A-1: pressing Tab cannot reach the checkout button. A-2: screen reader announces the search input as unlabeled edit. A-3: promotional banner has a cosmetic spacing issue. Release policy: task-blocking keyboard bugs are blockers, unlabeled controls are high priority, spacing is low priority. /no_think

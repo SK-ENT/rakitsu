@@ -2,6 +2,8 @@
 import { ref, watch } from 'vue';
 import type { CanvasMode } from './VisualBuilder.vue';
 
+const composerOpen = ref(true);
+
 const RUNBAR_STORAGE_KEY = 'rakitsu-runbar-state';
 // Env-var values are never persisted to localStorage — only the names are
 // remembered, so values must be re-typed. A name-based filter (the old
@@ -16,9 +18,9 @@ const props = defineProps<{
   isPaused?: boolean;
   pausedAt?: string;
   showResults?: boolean;
+  resultsCanvas?: boolean;
   resetTrigger?: number; // incremented by parent on clear/new project
   hasBreakpoints?: boolean; // true when breakpoints are set — auto-enables debug
-  execView?: 'tree' | 'graph'; // current exec layout view
 }>();
 
 const emit = defineEmits<{
@@ -27,9 +29,7 @@ const emit = defineEmits<{
   stop: [];
   'attach-debugger': [];
   'clear-results': [];
-  'expand-all': [];
-  'collapse-all': [];
-  'set-exec-view': [view: 'tree' | 'graph'];
+  'toggle-results-canvas': [];
   pause: [];
   resume: [];
   step: [];
@@ -154,26 +154,13 @@ function selectBrowseDir() {
   <!-- Results banner: shown in design mode after run completes -->
   <div v-if="canvasMode === 'design' && showResults" class="run-bar run-bar--results">
     <span class="rbar-results-badge">RUN COMPLETE</span>
-    <span class="rbar-status-text">CLICK NODES TO INSPECT RESULTS</span>
+    <span v-if="!resultsCanvas" class="rbar-status-text">CLICK NODES TO INSPECT RESULTS</span>
     <span v-if="totalTokenCount && totalTokenCount > 0" class="rbar-tokens">
       {{ totalTokenCount >= 1000 ? (totalTokenCount / 1000).toFixed(1) + 'k' : totalTokenCount }} tokens
     </span>
-    <div class="rbar-view-toggle">
-      <button
-        class="rbar-btn rbar-btn--toggle"
-        :class="{ active: execView === 'tree' }"
-        @click="emit('set-exec-view', 'tree')"
-        title="Call tree layout"
-      >Tree</button>
-      <button
-        class="rbar-btn rbar-btn--toggle"
-        :class="{ active: execView === 'graph' }"
-        @click="emit('set-exec-view', 'graph')"
-        title="Auto graph layout"
-      >Graph</button>
-    </div>
-    <button class="rbar-btn rbar-btn--tree" @click="emit('expand-all')" title="Expand all call tree nodes">Expand All</button>
-    <button class="rbar-btn rbar-btn--tree" @click="emit('collapse-all')" title="Collapse all call tree nodes">Collapse All</button>
+    <button class="rbar-btn rbar-btn--toggle" @click="emit('toggle-results-canvas')">
+      {{ resultsCanvas ? 'Show Results' : 'Back to Canvas' }}
+    </button>
     <button class="rbar-btn rbar-btn--clear" @click="emit('clear-results')">Clear Results</button>
   </div>
 
@@ -182,6 +169,7 @@ function selectBrowseDir() {
     <div class="run-bar-main">
       <div class="run-bar-prompt">
         <textarea
+          v-show="composerOpen"
           v-model="query"
           class="rbar-query"
           placeholder="Enter prompt... (Cmd+Enter to run)"
@@ -189,8 +177,13 @@ function selectBrowseDir() {
           @keydown.meta.enter="handleRun"
           @keydown.ctrl.enter="handleRun"
         />
+        <button type="button" class="rbar-btn rbar-composer-toggle" :aria-expanded="composerOpen" :aria-label="composerOpen ? 'Collapse run composer' : 'Expand run composer'"
+          :title="composerOpen ? 'Collapse run composer' : 'Expand run composer'"
+          @click="composerOpen = !composerOpen">
+          {{ composerOpen ? '⌃' : '⌄' }}
+        </button>
       </div>
-      <div class="run-bar-controls">
+      <div v-show="composerOpen" class="run-bar-controls">
         <div class="run-bar-inline">
           <label class="rbar-label">Timeout</label>
           <input v-model.number="timeout" type="number" class="rbar-timeout" min="10" max="3600" />
@@ -199,8 +192,9 @@ function selectBrowseDir() {
         <button
           class="rbar-btn rbar-btn--tokenizer"
           @click="emit('open-tokenizer')"
+          aria-label="Prompt tokenizer"
           title="Prompt tokenizer — see token breakdown"
-        >Tk</button>
+        >⌗</button>
         <button
           class="rbar-btn"
           :class="hasBreakpoints ? 'rbar-btn--debug' : 'rbar-btn--run'"
@@ -214,6 +208,8 @@ function selectBrowseDir() {
           class="rbar-btn rbar-btn--adv"
           :class="{ active: showAdvanced }"
           @click="showAdvanced = !showAdvanced"
+          aria-label="Workspace and environment variables"
+          :aria-expanded="showAdvanced"
           title="Workspace & environment variables"
         >
           ⚙ {{ showAdvanced ? '▲' : '▼' }}
@@ -222,7 +218,7 @@ function selectBrowseDir() {
     </div>
 
     <!-- Advanced section: workspace + env vars -->
-    <div v-if="showAdvanced" class="run-bar-adv">
+    <div v-if="showAdvanced" v-show="composerOpen" class="run-bar-adv">
       <div class="adv-field">
         <label class="adv-label">Workspace</label>
         <div class="adv-workdir-row">
@@ -274,20 +270,6 @@ function selectBrowseDir() {
     <span v-if="totalTokenCount && totalTokenCount > 0" class="rbar-tokens">
       {{ totalTokenCount >= 1000 ? (totalTokenCount / 1000).toFixed(1) + 'k' : totalTokenCount }} tokens
     </span>
-    <div class="rbar-view-toggle">
-      <button
-        class="rbar-btn rbar-btn--toggle"
-        :class="{ active: execView === 'tree' }"
-        @click="emit('set-exec-view', 'tree')"
-        title="Call tree layout"
-      >Tree</button>
-      <button
-        class="rbar-btn rbar-btn--toggle"
-        :class="{ active: execView === 'graph' }"
-        @click="emit('set-exec-view', 'graph')"
-        title="Auto graph layout"
-      >Graph</button>
-    </div>
   </div>
 
   <!-- Debug mode: controls -->
@@ -304,20 +286,6 @@ function selectBrowseDir() {
       <button class="rbar-btn rbar-btn--pause" @click="emit('pause')">⏸ Pause</button>
       <span class="rbar-status-text">Debug mode</span>
     </template>
-    <div class="rbar-view-toggle">
-      <button
-        class="rbar-btn rbar-btn--toggle"
-        :class="{ active: execView === 'tree' }"
-        @click="emit('set-exec-view', 'tree')"
-        title="Call tree layout"
-      >Tree</button>
-      <button
-        class="rbar-btn rbar-btn--toggle"
-        :class="{ active: execView === 'graph' }"
-        @click="emit('set-exec-view', 'graph')"
-        title="Auto graph layout"
-      >Graph</button>
-    </div>
   </div>
 
   <!-- Replay mode: controls -->
@@ -340,6 +308,7 @@ function selectBrowseDir() {
 
 /* === Design mode === */
 .run-bar--design { gap: 6px; }
+
 
 .run-bar-main { display: flex; gap: 10px; align-items: flex-start; }
 .run-bar-prompt { flex: 1; min-width: 0; }
@@ -478,4 +447,14 @@ function selectBrowseDir() {
 .run-bar--monitor, .run-bar--debug, .run-bar--replay { flex-direction: row; align-items: center; gap: 12px; min-height: 40px; }
 .rbar-status-text { font-size: 12px; font-family: var(--font-mono); color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
 .rbar-tokens { font-size: 11px; font-family: var(--font-mono); color: var(--text-secondary); background: var(--surface-3); padding: 2px 8px; border-radius: var(--node-radius); border: 1px solid var(--border-default); }
+
+@media (min-width: 560px) {
+  .run-bar-main { align-items: center; }
+  .run-bar-controls { flex-direction: row; align-items: center; flex-wrap: wrap; }
+}
+@media (max-width: 559px) {
+  .run-bar-main { flex-wrap: wrap; }
+  .run-bar-prompt { flex-basis: 100%; }
+  .run-bar-controls { flex-direction: row; align-items: center; flex-wrap: wrap; }
+}
 </style>

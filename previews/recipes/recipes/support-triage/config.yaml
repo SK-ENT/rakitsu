@@ -1,0 +1,45 @@
+# Rakitsu tested build: v0.3.2 (09c37a8e)
+name: Support ticket triage
+version: "1.0"
+description: Have separate agents assess urgency and assign owners, then combine their findings into one queue.
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://127.0.0.1:11434/v1
+      default_model: qwen3:4b-q4_K_M
+  defaults:
+    temperature: 0
+    max_tokens: 1400
+agents:
+  - name: Urgency
+    role: worker
+    system_prompt: Classify all three tickets by severity. Use P1 for a broad outage, P2 for a routine request, and P3 for cosmetic issues.
+    settings: { max_iterations: 1 }
+  - name: Ownership
+    role: worker
+    system_prompt: Route checkout failures to Payments, receipt requests to Support, and documentation typos to Docs.
+    settings: { max_iterations: 1 }
+  - name: Dispatcher
+    role: worker
+    system_prompt: Merge the urgency and ownership assessments. Output a Markdown table under the heading Triage queue. Use exactly three rows. Use the bare ticket IDs S-101, S-102, and S-103. Preserve the owners and priorities from the assessments.
+    settings: { max_iterations: 1 }
+orchestrator:
+  name: Recipe
+  strategy: Pipeline
+  agents: [Urgency, Ownership, Dispatcher]
+  pipeline:
+    steps:
+      - name: assess
+        type: parallel
+        steps:
+          - name: urgency
+            agent: Urgency
+            task: Classify all three tickets by severity. Use P1 for a broad outage, P2 for a routine request, and P3 for cosmetic issues. /no_think
+          - name: ownership
+            agent: Ownership
+            task: Route checkout failures to Payments, receipt requests to Support, and documentation typos to Docs. /no_think
+      - name: dispatcher
+        agent: Dispatcher
+        task: Merge the urgency and ownership assessments. Output a Markdown table under the heading Triage queue. Use exactly three rows. Use the bare ticket IDs S-101, S-102, and S-103. Preserve the owners and priorities from the assessments. /no_think

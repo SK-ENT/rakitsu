@@ -11,6 +11,7 @@ import (
 	"github.com/SK-ENT/rakitsu/internal/session"
 	"github.com/SK-ENT/rakitsu/internal/store"
 	"github.com/SK-ENT/rakitsu/internal/telemetry"
+	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
 
@@ -36,13 +37,14 @@ type BreakpointEntry struct {
 }
 
 type RunRequest struct {
+	RunID       string            `json:"run_id,omitempty"` // optional UUID chosen before subscribing to run events
 	ConfigID    string            `json:"config_id"`
 	ProjectID   string            `json:"project_id,omitempty"` // links run to a project (from web UI)
 	Query       string            `json:"query"`
-	Timeout     int               `json:"timeout"`              // seconds, default 300
+	Timeout     int               `json:"timeout"` // seconds, default 300
 	Debug       bool              `json:"debug"`
-	Workdir     string            `json:"workdir,omitempty"`    // working directory for tool execution
-	EnvVars     map[string]string `json:"env_vars,omitempty"`   // environment variables for this run
+	Workdir     string            `json:"workdir,omitempty"`     // working directory for tool execution
+	EnvVars     map[string]string `json:"env_vars,omitempty"`    // environment variables for this run
 	Breakpoints []BreakpointEntry `json:"breakpoints,omitempty"` // pre-load breakpoints before run starts (debug mode)
 }
 
@@ -52,7 +54,6 @@ type RunResponse struct {
 	Status    string `json:"status"`
 	Error     string `json:"error,omitempty"`
 }
-
 
 // AgentRunner manages agent execution lifecycle for web-launched runs.
 // Only one run is active at a time (single-run mutex).
@@ -150,6 +151,21 @@ func (r *AgentRunner) Start(req RunRequest) (*RunResponse, error) {
 		return &RunResponse{SessionID: sid, Status: "error", Error: "a run is already in progress"}, nil
 	}
 
+	runID := uuid.New()
+	if req.RunID != "" {
+		id, err := uuid.Parse(req.RunID)
+		if err != nil || id.Version() != 4 || id.String() != req.RunID {
+			r.mu.Unlock()
+			return nil, fmt.Errorf("run_id must be a canonical version 4 UUID")
+		}
+		runID = id
+	}
+	sessionID := "web-" + runID.String()
+	if sessionID == r.sessionID {
+		r.mu.Unlock()
+		return nil, fmt.Errorf("run_id was already used")
+	}
+
 	// Load config with run-scoped env overrides (never touches process env)
 	cfg, configPath, err := r.configStore.GetWithEnv(req.ConfigID, req.EnvVars)
 	if err != nil {
@@ -166,19 +182,18 @@ func (r *AgentRunner) Start(req RunRequest) (*RunResponse, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 
+	runBus := r.eventBus.WithSession(sessionID)
+
 	// Create debug controller if requested
 	var debugCtrl *debug.DebugController
 	if req.Debug {
-		debugCtrl = debug.NewDebugController(r.eventBus)
+		debugCtrl = debug.NewDebugController(runBus)
 		// Pre-load breakpoints before run starts (no race condition)
 		for _, bp := range req.Breakpoints {
 			debugCtrl.SetBreakpoint(debug.BreakpointKey{EventType: bp.EventType, AgentName: bp.AgentName})
 		}
 		r.sseServer.SetDebugController(debugCtrl)
 	}
-
-	// Generate session ID
-	sessionID := fmt.Sprintf("web-%s", time.Now().Format("20060102-150405"))
 
 	// Resolve project ID: prefer request (from web UI), fall back to config (auto-generated if missing)
 	projectID := req.ProjectID
@@ -279,17 +294,19 @@ func (r *AgentRunner) Start(req RunRequest) (*RunResponse, error) {
 			go func() {
 				defer wg.Done()
 				for ev := range eventCh {
-					r.sessionStore.WriteEvent(ev)
+					if ev.SessionID == sessionID {
+						r.sessionStore.WriteEvent(ev)
+					}
 				}
 			}()
 		}
 
 		// Execute
-		result, runErr := r.runFunc(ctx, cfg, r.eventBus, debugCtrl, req.Query, r.RegisterAttachables)
+		result, runErr := r.runFunc(ctx, cfg, runBus, debugCtrl, req.Query, r.RegisterAttachables)
 
 		// Emit error/completion event BEFORE unsubscribing so session recording captures it
 		if runErr != nil {
-			r.eventBus.Emit("system", telemetry.EventError, telemetry.ErrorPayload{
+			runBus.Emit("system", telemetry.EventError, telemetry.ErrorPayload{
 				Message: runErr.Error(),
 			})
 		}
@@ -354,15 +371,18 @@ func (r *AgentRunner) StartFromPath(_ context.Context, configPath, query string,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 
+	now := time.Now()
+	sessionID := fmt.Sprintf("web-%s-%d", now.Format("20060102-150405"), now.UnixNano())
+	runBus := r.eventBus.WithSession(sessionID)
+
 	// Create debug controller if requested
 	wantDebug := len(enableDebug) > 0 && enableDebug[0]
 	var debugCtrl *debug.DebugController
 	if wantDebug {
-		debugCtrl = debug.NewDebugController(r.eventBus)
+		debugCtrl = debug.NewDebugController(runBus)
 		r.sseServer.SetDebugController(debugCtrl)
 	}
 
-	sessionID := fmt.Sprintf("web-%s", time.Now().Format("20060102-150405"))
 	agentNames := make([]string, len(cfg.Agents))
 	for i, a := range cfg.Agents {
 		agentNames[i] = a.Name
@@ -449,16 +469,18 @@ func (r *AgentRunner) StartFromPath(_ context.Context, configPath, query string,
 			go func() {
 				defer wg.Done()
 				for ev := range eventCh {
-					r.sessionStore.WriteEvent(ev)
+					if ev.SessionID == sessionID {
+						r.sessionStore.WriteEvent(ev)
+					}
 				}
 			}()
 		}
 
-		result, runErr := r.runFunc(ctx, cfg, r.eventBus, debugCtrl, query, r.RegisterAttachables)
+		result, runErr := r.runFunc(ctx, cfg, runBus, debugCtrl, query, r.RegisterAttachables)
 
 		// Emit error event BEFORE unsubscribing so session recording captures it
 		if runErr != nil {
-			r.eventBus.Emit("system", telemetry.EventError, telemetry.ErrorPayload{
+			runBus.Emit("system", telemetry.EventError, telemetry.ErrorPayload{
 				Message: runErr.Error(),
 			})
 		}
@@ -555,7 +577,7 @@ func (r *AgentRunner) AttachDebuggerForSession(id string, breakpoints []Breakpoi
 		r.mu.Unlock()
 		return dc, nil
 	}
-	dc := debug.NewDebugController(r.eventBus)
+	dc := debug.NewDebugController(r.eventBus.WithSession(r.sessionID))
 	for _, bp := range breakpoints {
 		dc.SetBreakpoint(debug.BreakpointKey{EventType: bp.EventType, AgentName: bp.AgentName})
 	}
@@ -612,7 +634,7 @@ func (r *AgentRunner) AttachDebugger(breakpoints []BreakpointEntry) (*debug.Debu
 		// Already attached — just return existing controller
 		return r.debugCtrl, nil
 	}
-	dc := debug.NewDebugController(r.eventBus)
+	dc := debug.NewDebugController(r.eventBus.WithSession(r.sessionID))
 	for _, bp := range breakpoints {
 		dc.SetBreakpoint(debug.BreakpointKey{EventType: bp.EventType, AgentName: bp.AgentName})
 	}
@@ -641,6 +663,16 @@ func (r *AgentRunner) DetachDebugger() {
 }
 
 // Status returns the current run state.
+// activeRecording identifies the persisted event stream for the current web run.
+func (r *AgentRunner) activeRecording() (sessionID, recordingID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.status != "running" || r.sessionStore == nil {
+		return "", ""
+	}
+	return r.sessionID, r.sessionStore.CurrentSessionID()
+}
+
 func (r *AgentRunner) Status() map[string]interface{} {
 	r.mu.Lock()
 	defer r.mu.Unlock()

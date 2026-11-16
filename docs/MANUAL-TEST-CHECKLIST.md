@@ -627,21 +627,21 @@ Run `rakitsu run --trace test/configs/gemini-pipeline.yaml "Review README.md"` a
 
 ## 15. Web UI
 
-> Requires embedded build (`make build-embedded`). Start with `rakitsu ui --port 8080`.
+> Requires embedded build (`make build-embedded`). Start with `rakitsu serve --port 8080`.
 
 Check browser console (F12 → Console) for JavaScript errors during each test.
 
-### 15.1 All tabs load
+### 15.1 Workspace panes load
 | | |
 |---|---|
 | **Steps** | Open `http://localhost:8080` |
-| **Expected** | Five tabs visible: Builder, Inspector, Debugger, Sessions, Chat. Each loads without JS errors. |
+| **Expected** | Builder, Inspector, Debugger, Sessions, Chat, Run Log, and Run Timeline open without JavaScript errors. |
 | **Result** | |
 
 ### 15.2 Visual Builder — add and connect nodes
 | | |
 |---|---|
-| **Steps** | Drag agent and tool nodes from toolbar onto canvas. Connect them with edges. |
+| **Steps** | Use **+ Add → Agent** and **+ Add → Tool**. Drag the agent’s tool handle to the tool’s input handle. |
 | **Expected** | Nodes appear, can be moved, and connections are drawn between them. |
 | **Result** | |
 

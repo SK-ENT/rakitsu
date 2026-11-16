@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>North Array Observatory</title>
+<link rel="stylesheet" href="../../kit/tokens.css">
+<script type="module" src="../../kit/components.js">
+</script>
+<style>.wrap{max-width:1240px;margin:auto;padding:28px}.top{display:flex;justify-content:space-between;align-items:end;border-bottom:1px solid var(--line);padding-bottom:22px}.brand h1{font-size:30px;letter-spacing:-.04em;margin:5px 0}.clock{font-variant-numeric:tabular-nums;color:var(--amber)}.grid{display:grid;grid-template-columns:300px 1fr;gap:18px;margin-top:18px}.queue-panel{padding:14px}.queue-head{display:flex;gap:8px;align-items:center}.queue-filter{width:100%;background:#101719;border:1px solid var(--line);border-radius:7px;color:var(--ink);padding:10px}.queue-count{font-size:11px;color:var(--muted)}.queue-list{display:grid;gap:7px;margin-top:12px}.queue-row{display:flex;justify-content:space-between;text-align:left;color:var(--ink);background:transparent;border:1px solid transparent;border-radius:9px;padding:12px}.queue-row:hover,.is-selected{background:#26383c;border-color:#4c6970}.queue-row span{display:grid;gap:4px}.queue-row small{color:var(--muted);font-size:11px}.status-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);margin-top:4px}.status-dot.watch{background:var(--amber)}.status-dot.live{background:var(--green);box-shadow:0 0 8px var(--green)}.status-dot.alert{background:var(--red)}.right{display:grid;gap:18px}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.metric{padding:17px;background:var(--panel);border:1px solid var(--line);border-radius:12px}.metric strong{display:block;font-size:31px;margin:7px 0}.metric small{color:var(--green)}.metric small.warn{color:var(--amber)}.hero{padding:22px;min-height:245px;position:relative;overflow:hidden}.hero:after{pointer-events:none;content:'';position:absolute;inset:42px 24px 24px;background:repeating-linear-gradient(0deg,#ffffff05 0 1px,transparent 1px 28px),repeating-linear-gradient(90deg,#ffffff05 0 1px,transparent 1px 52px);border:1px solid #50636a44}.hero h2{margin:4px 0;font-size:23px}.telemetry{position:relative;z-index:1;display:flex;gap:24px;margin-top:28px}.telemetry b{display:block;font-size:24px}.action{margin-top:18px}.primary,.ghost{border:0;border-radius:7px;padding:10px 14px}.primary{background:var(--cyan);color:#102124;font-weight:800}.ghost{background:#2a383d;color:var(--ink)}dialog{background:#182125;color:var(--ink);border:1px solid var(--line);border-radius:14px;width:min(440px,calc(100% - 30px));box-shadow:var(--shadow)}dialog::backdrop{background:#051013aa}.drawer-content{padding:26px}.drawer-content h2{margin-top:0}.drawer-actions{padding:14px 20px;border-top:1px solid var(--line);display:flex;justify-content:end;gap:8px}.close{position:absolute;right:15px;top:10px;background:none;color:var(--muted);border:0;font-size:24px}.field{display:grid;gap:6px;margin:18px 0}.field input,.field select{background:#101719;color:var(--ink);border:1px solid var(--line);padding:10px;border-radius:7px}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}@media(max-width:760px){.wrap{padding:18px}.grid{grid-template-columns:1fr}.metrics{grid-template-columns:1fr 1fr}.top{align-items:start;gap:12px;flex-direction:column}}</style>
+</head>
+<body>
+<main class="wrap">
+<header class="top">
+<div class="brand">
+<span class="eyebrow">NORTH ARRAY / OPERATIONS</span>
+<h1>Observatory control</h1>
+<span class="muted">Deep-sky sensor network · shift 07</span>
+</div>
+<div class="clock" id="clock">
+</div>
+</header>
+<div class="grid">
+<aside class="panel queue-panel">
+<span class="eyebrow">Live queue</span>
+<ops-queue id="queue">
+</ops-queue>
+</aside>
+<section class="right">
+<div class="metrics">
+<ops-metric label="Array health" value="98.6%" delta="▲ 1.2%" variant="good">
+</ops-metric>
+<ops-metric label="Open incidents" value="04" delta="2 need review" variant="warn">
+</ops-metric>
+<ops-metric label="Signal yield" value="7.42 TB" delta="last 24 hours">
+</ops-metric>
+</div>
+<article class="panel hero">
+<span class="eyebrow">Selected observation</span>
+<h2 id="selected-title">Select a record</h2>
+<p id="selected-detail" class="muted">Queue records retain their selection while you filter the list.</p>
+<div class="telemetry">
+<div>
+<span class="eyebrow">band</span>
+<b id="band">—</b>
+</div>
+<div>
+<span class="eyebrow">confidence</span>
+<b id="confidence">—</b>
+</div>
+<div>
+<span class="eyebrow">operator</span>
+<b id="operator">—</b>
+</div>
+</div>
+<button class="primary action" id="review">Review observation</button>
+<p role="status" id="saved">
+</p>
+</article>
+</section>
+</div>
+</main>
+<ops-drawer id="drawer">
+<h2>Observation review</h2>
+<p class="muted">Record <b id="drawer-id">
+</b> is ready for a handoff note.</p>
+<label class="field">Disposition<select>
+<option>Keep in analysis queue</option>
+<option>Escalate to calibration</option>
+<option>Archive as noise</option>
+</select>
+</label>
+<label class="field">Note<input placeholder="Short operator note" aria-label="Operator note">
+</label>
+</ops-drawer>
+<script type="module">const records=[{id:'OBS-417',title:'Cygnus filament / 03:14Z',detail:'North Array · 3 min ago',status:'live',band:'L-band',confidence:'94%',operator:'M. Ito'},{id:'OBS-416',title:'Perseus drift / 03:02Z',detail:'East dish · 15 min ago',status:'watch',band:'X-band',confidence:'81%',operator:'A. Reed'},{id:'OBS-410',title:'Calibration pulse / 02:44Z',detail:'South Array · 33 min ago',status:'alert',band:'S-band',confidence:'62%',operator:'Auto'}];const q=document.querySelector('#queue');q.records=records;q.selectedId=records[0].id;const show=id=>{let r=records.find(x=>x.id===id);if(!r)return;document.querySelector('#selected-title').textContent=r.title;document.querySelector('#selected-detail').textContent=r.detail;['band','confidence','operator'].forEach(k=>document.querySelector('#'+k).textContent=r[k]);document.querySelector('#drawer-id').textContent=r.id};q.addEventListener('queue-selected',e=>show(e.detail.id));show(records[0].id);document.querySelector('#review').onclick=()=>document.querySelector('#drawer').open();document.querySelector("#drawer").addEventListener("drawer-saved",()=>{document.querySelector("#saved").textContent="Review saved for "+document.querySelector("#drawer-id").textContent});setInterval(()=>document.querySelector('#clock').textContent=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})+' JST',1000)</script>
+</body>
+</html>
+

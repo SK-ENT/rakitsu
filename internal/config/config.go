@@ -37,6 +37,11 @@ type Config struct {
 	Monitors           []MonitorConfig      `mapstructure:"monitors" yaml:"monitors,omitempty"` // serve config: autostarted wake sessions
 	Healthz            HealthzConfig        `mapstructure:"healthz" yaml:"healthz,omitempty"`
 
+	// SourceFiles lists the absolute config sources (the main YAML plus the
+	// auto-discovery directories next to it) so a file tool can protect them.
+	// Filled by load(); never read from or written to YAML.
+	SourceFiles []string `mapstructure:"-" yaml:"-"`
+
 	// settingsEnvRefs maps a settings field (see settingsRefKey) to the
 	// ${VAR} text it held before Load expanded it, so Redacted can write the
 	// reference back instead of the resolved value. Unexported: never parsed
@@ -69,6 +74,8 @@ type Settings struct {
 	SessionsDir      string                        `mapstructure:"sessions_dir" yaml:"sessions_dir,omitempty"` // session JSONL dir; default ~/.rakitsu/sessions
 	Wake             WakeConfig                    `mapstructure:"wake" yaml:"wake,omitempty"`
 	RedactKeywords   []string                      `mapstructure:"redact_keywords" yaml:"redact_keywords,omitempty"` // extra credential-shaped keywords for telemetry redaction, on top of the built-in list
+	Focus            FocusConfig                   `mapstructure:"focus" yaml:"focus,omitempty"`
+	Permissions      PermissionsConfig             `mapstructure:"permissions" yaml:"permissions,omitempty"`
 }
 
 // SessionMsgConfig gates cross-session messaging for a session: whether it
@@ -604,16 +611,18 @@ type PipelineConfig struct {
 // PipelineStep defines a step in the pipeline.
 // Type defaults to "sequential" (single agent). "parallel" and "loop" contain nested steps.
 type PipelineStep struct {
-	Name            string         `mapstructure:"name" yaml:"name"`
-	Type            string         `mapstructure:"type,omitempty" yaml:"type,omitempty"`                         // "sequential" (default), "parallel", "loop"
-	Agent           string         `mapstructure:"agent,omitempty" yaml:"agent,omitempty"`                       // sequential: agent name
-	Task            string         `mapstructure:"task,omitempty" yaml:"task,omitempty"`                         // task description
-	Steps           []PipelineStep `mapstructure:"steps,omitempty" yaml:"steps,omitempty"`                       // parallel/loop: sub-steps
-	MaxIterations   int            `mapstructure:"max_iterations,omitempty" yaml:"max_iterations,omitempty"`     // loop: max iterations (default 5)
-	ConditionAgent  string         `mapstructure:"condition_agent,omitempty" yaml:"condition_agent,omitempty"`   // loop: agent to evaluate pass/fail
-	ConditionPrompt string         `mapstructure:"condition_prompt,omitempty" yaml:"condition_prompt,omitempty"` // loop: prompt for pass/fail check
-	TimeoutSec      int            `mapstructure:"timeout_sec,omitempty" yaml:"timeout_sec,omitempty"`           // per-step timeout in seconds
-	DependsOn       []string       `mapstructure:"depends_on,omitempty" yaml:"depends_on,omitempty"`             // names of steps that must complete before this one
+	Retrieval       *LocalRetrievalConfig `mapstructure:"retrieval,omitempty" yaml:"retrieval,omitempty"`
+	Decision        *DecisionConfig       `mapstructure:"decision,omitempty" yaml:"decision,omitempty"`
+	Name            string                `mapstructure:"name" yaml:"name"`
+	Type            string                `mapstructure:"type,omitempty" yaml:"type,omitempty"`                         // "sequential" (default), "parallel", "loop"
+	Agent           string                `mapstructure:"agent,omitempty" yaml:"agent,omitempty"`                       // sequential: agent name
+	Task            string                `mapstructure:"task,omitempty" yaml:"task,omitempty"`                         // task description
+	Steps           []PipelineStep        `mapstructure:"steps,omitempty" yaml:"steps,omitempty"`                       // parallel/loop: sub-steps
+	MaxIterations   int                   `mapstructure:"max_iterations,omitempty" yaml:"max_iterations,omitempty"`     // loop: max iterations (default 5)
+	ConditionAgent  string                `mapstructure:"condition_agent,omitempty" yaml:"condition_agent,omitempty"`   // loop: agent to evaluate pass/fail
+	ConditionPrompt string                `mapstructure:"condition_prompt,omitempty" yaml:"condition_prompt,omitempty"` // loop: prompt for pass/fail check
+	TimeoutSec      int                   `mapstructure:"timeout_sec,omitempty" yaml:"timeout_sec,omitempty"`           // per-step timeout in seconds
+	DependsOn       []string              `mapstructure:"depends_on,omitempty" yaml:"depends_on,omitempty"`             // names of steps that must complete before this one
 
 	// RequireToolCall is a mechanical cross-check: if set, the step's agent
 	// run must have actually invoked the named tool (matching
@@ -734,9 +743,14 @@ func load(configPath string) (*Config, error) {
 	}
 
 	var config Config
+	if err := loadPermissions(configPath, &config); err != nil {
+		return nil, err
+	}
+	focus, permissions := config.Settings.Focus, config.Settings.Permissions
 	if err := v.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
+	config.Settings.Focus, config.Settings.Permissions = focus, permissions
 
 	// Auto-generate project ID if not set
 	if config.ProjectID == "" {
@@ -1365,6 +1379,7 @@ func (c *Config) Validate() []*ValidationError {
 		errs = append(errs, &ValidationError{Field: field, Message: msg})
 	}
 
+	c.validatePermissions(add)
 	c.validateToolSecurity(add)
 	if err := validateSessionsDir(c.Settings.SessionsDir); err != nil {
 		add("settings.sessions_dir", err.Error())
@@ -1509,6 +1524,47 @@ func (c *Config) Validate() []*ValidationError {
 func validatePipelineSteps(steps []PipelineStep, runners map[string]bool, prefix string, errs *[]*ValidationError) {
 	for i, s := range steps {
 		path := fmt.Sprintf("%s.steps[%d]", prefix, i)
+		if s.Type == "retrieval" {
+			if err := s.Retrieval.Validate(); err != nil {
+				*errs = append(*errs, &ValidationError{Field: path, Message: err.Error()})
+			}
+			if strings.TrimSpace(s.Name) == "" || strings.Contains(prefix, ".steps[") || s.Agent != "" || len(s.Steps) != 0 || s.Task != "" || s.RequireToolCall != nil || s.ConditionAgent != "" || s.ConditionPrompt != "" || s.MaxIterations != 0 {
+				*errs = append(*errs, &ValidationError{Field: path, Message: "retrieval must be a named top-level step without agent or loop fields"})
+			}
+			for j, peer := range steps {
+				if j != i && s.Name == peer.Name {
+					*errs = append(*errs, &ValidationError{Field: path, Message: "retrieval step name must be unique in the pipeline"})
+					break
+				}
+			}
+		} else if s.Retrieval != nil {
+			*errs = append(*errs, &ValidationError{Field: path, Message: "retrieval configuration requires type: retrieval"})
+		}
+
+		if s.Type == "decision" {
+			if strings.TrimSpace(s.Name) == "" || strings.Contains(prefix, ".steps[") {
+				*errs = append(*errs, &ValidationError{Field: path, Message: "decision requires a name and must be a top-level pipeline step"})
+			}
+			for j, peer := range steps {
+				if j != i && s.Name == peer.Name {
+					*errs = append(*errs, &ValidationError{Field: path, Message: "decision step name must be unique in the pipeline"})
+					break
+				}
+			}
+			if err := s.Decision.Validate(); err != nil {
+				*errs = append(*errs, &ValidationError{Field: path, Message: err.Error()})
+			} else {
+				for _, branch := range s.Decision.Branches() {
+					validatePipelineSteps(branch, runners, path+".decision", errs)
+				}
+			}
+			if s.Agent != "" || len(s.Steps) != 0 || s.RequireToolCall != nil || s.Task != "" || s.ConditionAgent != "" || s.ConditionPrompt != "" || s.MaxIterations != 0 {
+				*errs = append(*errs, &ValidationError{Field: path, Message: "decision steps cannot configure agent, loop, or tool gate fields"})
+			}
+		} else if s.Decision != nil {
+			*errs = append(*errs, &ValidationError{Field: path, Message: "decision configuration requires type: decision"})
+		}
+
 		if s.Agent != "" && !runners[s.Agent] {
 			*errs = append(*errs, &ValidationError{
 				Field:   path,

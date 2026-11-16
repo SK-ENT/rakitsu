@@ -1,0 +1,43 @@
+# Rakitsu tested build: v0.3.2 (09c37a8e)
+name: Paper study and implementation
+version: "1.0"
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://127.0.0.1:11434/v1
+      default_model: qwen3:4b-q4_K_M
+  defaults:
+    temperature: 0
+    max_tokens: 2800
+agents:
+  - name: PaperReader
+    role: worker
+    system_prompt: Explain the supplied paper notes in three bullets. Identify the difference between possible membership and exact membership.
+    settings: {max_iterations: 1}
+  - name: DesignReviewer
+    role: worker
+    system_prompt: "Reply to PaperReader in two sentences. One-bit case: candidate true, exact_match false. Empty filter: candidate false, skip exact lookup. Explain why these two guarantees differ."
+    settings: {max_iterations: 1}
+  - name: Implementer
+    model: qwen2.5-coder:3b
+    model_config: {temperature: 0, max_tokens: 4096}
+    role: worker
+    system_prompt: Implement the design after reading both study contributions. Return exactly the two requested methods at top-level indentation in one Python fence. In confirm, use a conditional expression so a negative candidate skips the exact lookup. No prose or imports. They will be inserted into the starter class.
+    settings: {max_iterations: 1}
+orchestrator:
+  name: Paper study
+  strategy: Pipeline
+  agents: [PaperReader, DesignReviewer, Implementer]
+  pipeline:
+    steps:
+      - name: paper_notes
+        agent: PaperReader
+        task: "Explain the paper's bit array and false positive tradeoff. /no_think"
+      - name: review
+        agent: DesignReviewer
+        task: "Respond to paper_notes. Use size=1 explicitly. A collision must report candidate true and exact_match false. Also describe the no-lookup rule for an empty filter. /no_think"
+      - name: implementation
+        agent: Implementer
+        task: "Use paper_notes and review to implement the two missing membership methods in one Python fence. Do not repeat the starter. /no_think"

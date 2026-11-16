@@ -1,0 +1,23 @@
+{
+  "stock": 115,
+  "trucks": {"heavy": 70, "light": 45},
+  "reports": [
+    {"site":"North School","units":70,"priority":3,"time":800},
+    {"site":"North School","units":70,"priority":3,"time":800},
+    {"site":"East Hall","units":60,"priority":2,"time":805},
+    {"site":"Hill Library","units":30,"priority":1,"time":810}
+  ],
+  "roads": [
+    {"road":"North Bridge","open":true,"time":810},
+    {"road":"Ridge Lane","open":true,"time":815},
+    {"road":"East Road","open":true,"time":815},
+    {"road":"Hill Road","open":true,"time":815}
+  ],
+  "routes": [
+    {"site":"North School","road":"North Bridge","trucks":["heavy","light"],"minutes":25},
+    {"site":"North School","road":"Ridge Lane","trucks":["light"],"minutes":55},
+    {"site":"East Hall","road":"East Road","trucks":["heavy","light"],"minutes":35},
+    {"site":"Hill Library","road":"Hill Road","trucks":["heavy","light"],"minutes":20}
+  ],
+  "max_trip_minutes": 60
+}

@@ -74,12 +74,13 @@ export function useAgentRun(baseUrl: Ref<string>) {
     }
   }
 
-  async function startRun(configId: string, query: string, timeout = 300, workdir = '', debug = false, envVars: Record<string, string> = {}, breakpoints: { event_type: string; agent_name: string }[] = [], projectId = '') {
+  async function startRun(configId: string, query: string, timeout = 300, workdir = '', debug = false, envVars: Record<string, string> = {}, breakpoints: { event_type: string; agent_name: string }[] = [], projectId = '', runId?: string): Promise<string | null> {
     runError.value = null;
     runResult.value = null;
     try {
       const body: Record<string, unknown> = { config_id: configId, query, timeout, debug };
       if (projectId) body.project_id = projectId;
+      if (runId) body.run_id = runId;
       if (workdir) body.workdir = workdir;
       if (Object.keys(envVars).length > 0) body.env_vars = envVars;
       if (breakpoints.length > 0) body.breakpoints = breakpoints;
@@ -92,14 +93,16 @@ export function useAgentRun(baseUrl: Ref<string>) {
       if (data.error) {
         runError.value = data.error;
         runStatus.value = 'error';
-        return;
+        return null;
       }
       sessionId.value = data.session_id;
       runStatus.value = 'running';
       pollStatus();
+      return data.session_id ?? null;
     } catch {
       runError.value = 'Failed to start run';
       runStatus.value = 'error';
+      return null;
     }
   }
 

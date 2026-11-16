@@ -372,7 +372,9 @@ npm install
 ### Key Technologies
 
 - **Vue 3** with `<script setup lang="ts">` and Composition API
-- **Vue Flow** for the visual graph builder (nodes, edges, handles)
+- **Vue Flow** for the classic Builder canvas. `BuilderSvgCanvas.vue` renders the opt-in SVG workbench.
+- **WorkspaceDock** hosts dockable panes and the Debug and Replay layouts.
+- **VisualBuilder** places node and group creation under **+ Add**. **RunBar** keeps the **Run** and **Debug** labels and lets users collapse the composer without losing their draft. See the [Web UI manual](WEBUI.md#workspace-layouts).
 - **Vite 7** for bundling and dev server
 - **TypeScript 5.9** with strict mode enabled
 

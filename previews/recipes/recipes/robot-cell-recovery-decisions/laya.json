@@ -1,0 +1,33 @@
+{
+  "name": "Runtime decision",
+  "version": "1.0",
+  "agents": [],
+  "orchestrator": {
+    "name": "decision",
+    "strategy": "Pipeline",
+    "pipeline": {
+      "steps": [
+        {
+          "name": "classify",
+          "type": "decision",
+          "decision": {
+            "backend": "laya",
+            "input": {
+              "from": "query"
+            },
+            "questions": {
+              "result": {
+                "type": "choice",
+                "instructions": "What is the primary event in the operator report?",
+                "choices": {
+                  "jam": "Pallet or material jam",
+                  "network": "Loss of network communication"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,33 @@
+name: Learn UI prefab reuse
+version: "1"
+project_id: ui-prefab-lab
+settings:
+  default_provider: codex
+  providers:
+    codex:
+      type: codex
+  memory:
+    enabled: true
+    dir: harness/state/memory
+agents:
+  - name: Learner
+    role: worker
+    max_iterations: 12
+    tools: [read_source]
+    system_prompt: |
+      Inspect both working apps and the shared kit from the provided evidence paths.
+      Extract actionable, project-specific UI prefab reuse know-how from the code.
+      Write one project-scoped memory_add node of type procedure with ID prefab-ui-reuse.
+      Start with a trigger line that includes image-to-UI, shared components, and spec.
+      Explain selection and filtering, initialization, events, state ownership, dialog
+      lifecycle, token adaptation, and how to test genuine reuse. Cite real source paths.
+      Distinguish verified source behavior from assumptions and any fixture limitations.
+      Report the stored ID.
+tools:
+  - name: read_source
+    type: fs
+    operation: read
+    allowed_paths: [apps, kit]
+    description: Read fixture source by relative path.
+    parameters:
+      path: {type: string, required: true, description: Fixture path}

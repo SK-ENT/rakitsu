@@ -74,8 +74,8 @@ const blockTypeLabels: Record<string, string> = {
       <!-- Execution status LED in header -->
       <span v-if="isExecution && data._runStatus" class="led" :class="data._runStatus" />
       <div v-if="!isExecution" class="view-mode-group" @click.stop>
-        <button class="vm-btn" :class="{ active: viewMode() === 'compact' }" title="Compact" @click="setMode('compact')">_</button>
-        <button class="vm-btn" :class="{ active: viewMode() === 'mixed' }" title="Mixed" @click="setMode('mixed')">M</button>
+        <button class="vm-btn" :class="{ active: viewMode() === 'compact' }" title="Compact" aria-label="Fold group" @click="setMode('compact')">−</button>
+        <button class="vm-btn" :class="{ active: viewMode() === 'mixed' }" title="Mixed" aria-label="Unfold group" @click="setMode('mixed')">+</button>
         <button class="vm-btn" :class="{ active: viewMode() === 'full' }" title="Full" @click="setMode('full')">F</button>
       </div>
     </div>

@@ -533,7 +533,7 @@ func runAgent(cmd *cobra.Command, args []string) (runErr error) {
 		if dryRun {
 			return fmt.Errorf("--attach is not supported with --dry-run (image cost estimation is not implemented in this release)")
 		}
-		if cfg.Orchestrator != nil && len(cfg.Agents) > 0 {
+		if cfg.Orchestrator != nil && (len(cfg.Agents) > 0 || cfg.Orchestrator.RunsWithoutChatProvider()) {
 			return fmt.Errorf("--attach is not supported with multi-agent/orchestrator configs yet — use a single-agent config")
 		}
 		if len(cfg.Agents) == 0 {
@@ -926,7 +926,7 @@ func runAgent(cmd *cobra.Command, args []string) (runErr error) {
 	}
 
 	// Check if we have an orchestrator (multi-agent mode)
-	if cfg.Orchestrator != nil && len(cfg.Agents) > 0 {
+	if cfg.Orchestrator != nil && (len(cfg.Agents) > 0 || cfg.Orchestrator.RunsWithoutChatProvider()) {
 		// Standalone runs (failed/disabled hub registration) get no session
 		// id or hub URL, so BuildRunner's sessionmsg gate stays off even if
 		// the config opted in.
@@ -1168,6 +1168,7 @@ func runMultiAgent(
 					Name:       v.Name,
 					Output:     v.Output,
 					DurationNs: int64(v.Duration),
+					Decision:   v.Decision,
 				}
 			}
 			_ = sessionStore.WriteCheckpoint(sd)
@@ -1194,6 +1195,7 @@ func runMultiAgent(
 				Name:     v.Name,
 				Output:   v.Output,
 				Duration: time.Duration(v.DurationNs),
+				Decision: v.Decision,
 			}
 		}
 		orch.SetCheckpoint(agentCP)
@@ -1509,6 +1511,9 @@ func executeConfig(ctx context.Context, cfg *config.Config, eventBus *telemetry.
 // RunWithHistory(conv.History) and conv.Summarize is set to a summarizer over
 // that agent's own provider. Multi-agent/orchestrator configs ignore conv.
 func executeConfigConv(ctx context.Context, cfg *config.Config, eventBus *telemetry.EventBus, debugCtrl *debug.DebugController, query string, registrar func([]debug.Attachable), conv *acp.ConvTurn) (string, error) {
+	if err := cfg.ValidatePlan(); err != nil {
+		return "", err
+	}
 	toolRegistry := createToolRegistry(ctx, cfg)
 	defer toolRegistry.CloseAll()
 
@@ -1528,7 +1533,7 @@ func executeConfigConv(ctx context.Context, cfg *config.Config, eventBus *teleme
 		defer spawnRT.cleanupAll() // closes the global tool registry spawned children share (MCP subprocesses etc.)
 	}
 
-	if cfg.Orchestrator != nil && len(cfg.Agents) > 0 {
+	if cfg.Orchestrator != nil && (len(cfg.Agents) > 0 || cfg.Orchestrator.RunsWithoutChatProvider()) {
 		agents := make(map[string]*agent.Agent)
 		// Each agent below gets its own registry (separate from the shared
 		// toolRegistry above) so per-agent tool sets don't collide. Only the
@@ -1636,7 +1641,7 @@ func executeConfigConv(ctx context.Context, cfg *config.Config, eventBus *teleme
 		if orchModelConfig == nil {
 			orchModelConfig = &config.ModelConfig{Temperature: 0.3}
 		}
-		orchProvider, err := createLLMProvider(ctx, cfg, cfg.Orchestrator.Provider, cfg.Orchestrator.Model, orchModelConfig)
+		orchProvider, err := createOrchestratorProvider(ctx, cfg, cfg.Orchestrator, orchModelConfig)
 		if err != nil {
 			return "", fmt.Errorf("cannot create orchestrator provider %q: %w\n  hint: verify the provider is defined under settings.providers", cfg.Orchestrator.Provider, err)
 		}
@@ -1644,7 +1649,7 @@ func executeConfigConv(ctx context.Context, cfg *config.Config, eventBus *teleme
 		if debugCtrl != nil {
 			orch.SetDebugController(debugCtrl)
 		}
-		if rootGuard != nil {
+		if rootGuard != nil && orchProvider != nil {
 			orchPricing, orchPricingKnown := agent.ResolvePricing(orchProvider.GetModel(), cfg.Settings.Pricing)
 			orch.SetRootGuard(rootGuard, orchPricing, orchPricingKnown)
 		}
@@ -1716,6 +1721,9 @@ func executeConfigConv(ctx context.Context, cfg *config.Config, eventBus *teleme
 func registerToolDefs(ctx context.Context, registry *tools.ToolRegistry, allowedCommands []string, defs []config.ToolDefinition) {
 	for i := range defs {
 		def := &defs[i]
+		if registry.Plan() && (def.Type != "fs" || !config.PlanFileOperation(def.Operation)) {
+			continue
+		}
 		switch def.Type {
 		case "cli":
 			registry.RegisterTool(clitool.NewTool(def, allowedCommands))
@@ -1744,8 +1752,15 @@ func registerToolDefs(ctx context.Context, registry *tools.ToolRegistry, allowed
 	}
 }
 
+func newRuntimeToolRegistry(cfg *config.Config) *tools.ToolRegistry {
+	if cfg.Settings.Plan() {
+		return tools.NewPlanToolRegistry()
+	}
+	return tools.NewToolRegistry()
+}
+
 func createToolRegistry(ctx context.Context, cfg *config.Config) *tools.ToolRegistry {
-	registry := tools.NewToolRegistry()
+	registry := newRuntimeToolRegistry(cfg)
 	registerToolDefs(ctx, registry, cfg.Settings.AllowedCommands, cfg.Tools)
 	return registry
 }

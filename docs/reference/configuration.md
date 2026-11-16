@@ -137,7 +137,21 @@ settings:
 | `session_msg` | object | Cross-session messaging gate. |
 | `sessions_dir` | string | Session files directory. |
 | `wake` | object | Wake timer. See [wake timer](wake-timer.md). |
+| `focus` | object | Set `mode: plan` for a read-only agent. |
+| `permissions` | object | Selects the permission policy. Defaults to `legacy`. |
 | `redact_keywords` | list | Extra words that mark a key as secret in logs and events. |
+
+### settings.focus and settings.permissions
+
+Set `settings.focus.mode: plan` for a single direct agent with read-only
+tools. Plan permits filesystem `read`, `list`, and `search` within the
+configured filesystem paths. It rejects shell commands, filesystem writes,
+delegation, orchestration, memory, spawning, session messaging, wake
+timers, and monitors. The configured model provider still receives
+prompts and tool results during inference.
+
+`settings.permissions.mode` defaults to `legacy`. The `ask`, `semi_auto`,
+and `auto` modes are disabled in this build.
 
 ### settings.default_provider, api_keys, base_urls, credentials_files, locations, projects
 

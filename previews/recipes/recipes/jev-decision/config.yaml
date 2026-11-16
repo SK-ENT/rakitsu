@@ -1,0 +1,22 @@
+# Rakitsu tested build: v0.3.0-alpha.1-internal.1897 (loopback protocol check)
+name: "Jev code review routing"
+version: "1.0"
+agents: []
+orchestrator:
+  name: decision
+  strategy: Pipeline
+  pipeline:
+    steps:
+      - name: classify
+        type: decision
+        decision:
+          backend: jev
+          input: {from: query}
+          questions:
+            queue:
+              type: choice
+              instructions: "Which engineering review queue should handle this change?"
+              choices:
+                security: "Authentication, authorization or sensitive data"
+                database: "Schema or storage changes"
+                general: "Other code changes"

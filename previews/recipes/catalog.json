@@ -1,0 +1,616 @@
+[
+  {
+    "id": "evidence-brief",
+    "problem": "Summarize scattered evidence",
+    "title": "Evidence-checked brief",
+    "category": "Writing & research",
+    "description": "Turn source notes into a short brief and have a second agent flag unsupported claims.",
+    "pattern": "Draft, then review",
+    "flow": "Draft → Check",
+    "version": "v0.3.2 (09c37a8e)",
+    "model": "qwen3:4b-q4_K_M",
+    "command": "rakitsu run --no-hub --timeout 180 config.yaml \"$(cat input.txt)\"",
+    "tags": [
+      "ollama",
+      "pipeline"
+    ]
+  },
+  {
+    "id": "support-triage",
+    "problem": "Prioritize a support backlog",
+    "title": "Support ticket triage",
+    "category": "Operations",
+    "description": "Have separate agents assess urgency and assign owners, then combine their findings into one queue.",
+    "pattern": "Parallel analysis",
+    "flow": "Urgency + Ownership → Queue",
+    "version": "v0.3.2 (09c37a8e)",
+    "model": "qwen3:4b-q4_K_M",
+    "command": "rakitsu run --no-hub --timeout 180 config.yaml \"$(cat input.txt)\"",
+    "tags": [
+      "ollama",
+      "pipeline",
+      "parallel"
+    ]
+  },
+  {
+    "id": "change-review",
+    "problem": "Catch risks before merging code",
+    "title": "Code change risk review",
+    "category": "Engineering",
+    "description": "Identify risks in a proposed change and have a second agent turn them into checks a reviewer can run.",
+    "pattern": "Draft, then review",
+    "flow": "Inspect → Verify",
+    "version": "v0.3.2 (09c37a8e)",
+    "model": "qwen3:4b-q4_K_M",
+    "command": "rakitsu run --no-hub --timeout 180 config.yaml \"$(cat input.txt)\"",
+    "tags": [
+      "ollama",
+      "pipeline"
+    ]
+  },
+  {
+    "id": "incident-handoff",
+    "problem": "Hand over a live outage",
+    "title": "Incident shift handoff",
+    "category": "Reliability",
+    "description": "Separate verified observations from guesses and hand the next on-call engineer a clear action list.",
+    "pattern": "Extract, then reconcile",
+    "flow": "Timeline → Handoff",
+    "version": "v0.3.2 (09c37a8e)",
+    "model": "qwen3:4b-q4_K_M",
+    "command": "rakitsu run --no-hub --timeout 180 config.yaml \"$(cat input.txt)\"",
+    "tags": [
+      "ollama",
+      "pipeline"
+    ]
+  },
+  {
+    "id": "shipment-exceptions",
+    "problem": "Find shipments that need a call today",
+    "title": "Shipment exception queue",
+    "category": "Logistics",
+    "description": "Compare delivery promises to dispatch status and produce a customer follow-up queue.",
+    "pattern": "Extract, then reconcile",
+    "flow": "Compare → Prioritize",
+    "version": "v0.3.2 (09c37a8e)",
+    "model": "qwen3:4b-q4_K_M",
+    "command": "rakitsu run --no-hub --timeout 180 config.yaml \"$(cat input.txt)\"",
+    "tags": [
+      "ollama",
+      "pipeline"
+    ]
+  },
+  {
+    "id": "invoice-match",
+    "problem": "Catch invoice discrepancies before approval",
+    "title": "Invoice exception review",
+    "category": "Procurement",
+    "description": "Compare an invoice to the purchase order and receiving note, then draft a hold reason.",
+    "pattern": "Extract, then reconcile",
+    "flow": "Match records → Review",
+    "version": "v0.3.2 (09c37a8e)",
+    "model": "qwen3:4b-q4_K_M",
+    "command": "rakitsu run --no-hub --timeout 180 config.yaml \"$(cat input.txt)\"",
+    "tags": [
+      "ollama",
+      "pipeline"
+    ]
+  },
+  {
+    "id": "onboarding-handoff",
+    "problem": "Prepare for a new starter",
+    "title": "New starter readiness",
+    "category": "People operations",
+    "description": "Combine equipment and access requests into a first-day handoff with owners and due dates.",
+    "pattern": "Extract, then reconcile",
+    "flow": "Collect blockers → Assign owners",
+    "version": "v0.3.2 (09c37a8e)",
+    "model": "qwen3:4b-q4_K_M",
+    "command": "rakitsu run --no-hub --timeout 180 config.yaml \"$(cat input.txt)\"",
+    "tags": [
+      "ollama",
+      "pipeline"
+    ]
+  },
+  {
+    "id": "site-maintenance",
+    "problem": "Prioritize maintenance across a site",
+    "title": "Facilities dispatch plan",
+    "category": "Facilities",
+    "description": "Apply the site’s escalation rules and turn maintenance reports into a dispatch list.",
+    "pattern": "Draft, then review",
+    "flow": "Classify → Dispatch",
+    "version": "v0.3.2 (09c37a8e)",
+    "model": "qwen3:4b-q4_K_M",
+    "command": "rakitsu run --no-hub --timeout 180 config.yaml \"$(cat input.txt)\"",
+    "tags": [
+      "ollama",
+      "pipeline"
+    ]
+  },
+  {
+    "id": "data-import-review",
+    "problem": "Spot bad records before import",
+    "title": "Import quality review",
+    "category": "Data operations",
+    "description": "Check a small data extract against its schema and produce a quarantine list.",
+    "pattern": "Draft, then review",
+    "flow": "Validate → Quarantine",
+    "version": "v0.3.2 (09c37a8e)",
+    "model": "qwen3:4b-q4_K_M",
+    "command": "rakitsu run --no-hub --timeout 180 config.yaml \"$(cat input.txt)\"",
+    "tags": [
+      "ollama",
+      "pipeline"
+    ]
+  },
+  {
+    "id": "accessibility-review",
+    "problem": "Triage accessibility findings before release",
+    "title": "Accessibility repair brief",
+    "category": "Product design",
+    "description": "Turn observed usability failures into repair tasks with concrete verification steps.",
+    "pattern": "Draft, then review",
+    "flow": "Identify barriers → Define checks",
+    "version": "v0.3.2 (09c37a8e)",
+    "model": "qwen3:4b-q4_K_M",
+    "command": "rakitsu run --no-hub --timeout 180 config.yaml \"$(cat input.txt)\"",
+    "tags": [
+      "ollama",
+      "pipeline"
+    ]
+  },
+  {
+    "id": "access-review",
+    "problem": "Spot access that should have expired",
+    "title": "Access review shortlist",
+    "category": "Security operations",
+    "description": "Compare fictional access grants with a policy and give a human reviewer a shortlist.",
+    "pattern": "Extract, then reconcile",
+    "flow": "Check grants → Review exceptions",
+    "version": "v0.3.2 (09c37a8e)",
+    "model": "qwen3:4b-q4_K_M",
+    "command": "rakitsu run --no-hub --timeout 180 config.yaml \"$(cat input.txt)\"",
+    "tags": [
+      "ollama",
+      "pipeline"
+    ]
+  },
+  {
+    "id": "invoice-payment-holds",
+    "problem": "Flag invoices before a payment run",
+    "title": "Invoice payment hold report",
+    "category": "Procurement",
+    "description": "Compare billed prices and quantities with approved purchase orders and goods received.",
+    "pattern": "Read, reconcile, write",
+    "flow": "Read exports → Compare → Save report",
+    "version": "v0.3.2 (09c37a8e)",
+    "model": "qwen3:4b-q4_K_M",
+    "command": "rakitsu run --no-hub --timeout 300 config.yaml \"$(cat input.txt)\"",
+    "fixtures": [
+      "fixtures/invoices.csv",
+      "fixtures/receiving.csv"
+    ],
+    "toolAccess": "Reads the two bundled CSVs. Writes output/report.md.",
+    "tags": [
+      "ollama",
+      "pipeline",
+      "filesystem",
+      "csv",
+      "tool-gate"
+    ]
+  },
+  {
+    "id": "shipment-customer-escalations",
+    "problem": "Decide who to contact after a carrier delay",
+    "title": "Late shipment contact queue",
+    "category": "Logistics",
+    "description": "Join customer delivery promises with carrier updates and produce the day’s contact queue.",
+    "pattern": "Read, reconcile, write",
+    "flow": "Read exports → Compare → Save report",
+    "version": "v0.3.2 (09c37a8e)",
+    "model": "qwen3:4b-q4_K_M",
+    "command": "rakitsu run --no-hub --timeout 300 config.yaml \"$(cat input.txt)\"",
+    "fixtures": [
+      "fixtures/promises.csv",
+      "fixtures/carrier.csv"
+    ],
+    "toolAccess": "Reads the two bundled CSVs. Writes output/report.md.",
+    "tags": [
+      "ollama",
+      "pipeline",
+      "filesystem",
+      "csv",
+      "tool-gate"
+    ]
+  },
+  {
+    "id": "contractor-access-cleanup",
+    "problem": "Catch active accounts after contracts end",
+    "title": "Contractor access review queue",
+    "category": "Security operations",
+    "description": "Compare local contract and access exports against a fixed review date and produce a queue for human review.",
+    "pattern": "Deterministic policy check",
+    "flow": "Read exports → Apply rules → Save review queue",
+    "version": "v0.3.2 (09c37a8e)",
+    "model": "qwen3:4b-q4_K_M",
+    "command": "rakitsu run --no-hub --timeout 300 config.yaml \"$(cat input.txt)\"",
+    "fixtures": [
+      "fixtures/contracts.csv",
+      "fixtures/access.csv"
+    ],
+    "supportFiles": [
+      "check_access.py"
+    ],
+    "toolAccess": "Requires Python 3.9+. Runs the bundled checker, reads two CSVs, and writes output/access-review.csv.",
+    "tags": [
+      "ollama",
+      "pipeline",
+      "python",
+      "cli",
+      "csv",
+      "policy-check",
+      "tool-gate"
+    ]
+  },
+  {
+    "id": "night-shift",
+    "problem": "Make game characters respond to shared world state",
+    "title": "Night Shift workshop RPG",
+    "category": "Games",
+    "description": "Walk through a blackout workshop, talk to the dispatcher and quartermaster, and repair two machines before ending your shift.",
+    "pattern": "Typed decisions",
+    "flow": "Interact → Ask Rakitsu → Apply a legal choice",
+    "version": "v0.3.0-alpha.1-internal.1897",
+    "model": "Laya 0.4.31",
+    "runtime": "Local Laya · Node.js 22.12+",
+    "command": "npm ci && npm run dev",
+    "toolAccess": "Start local Laya and rakitsu serve first. The ZIP includes the game and settings. See README for all setup steps.",
+    "projectFiles": [
+      "index.html",
+      "main.ts",
+      "NightShift.vue",
+      "nightShift.ts",
+      "vite.config.mjs",
+      "decision.json",
+      "package.json",
+      "package-lock.json"
+    ],
+    "tags": [
+      "rakitsu-http",
+      "laya",
+      "typed-decisions",
+      "vue"
+    ]
+  },
+  {
+    "id": "image-to-ui-verified-lessons",
+    "problem": "Turn design screenshots into testable interfaces",
+    "title": "Image to UI with reusable components and verified lessons",
+    "category": "Product design",
+    "description": "Generate from a screenshot and spec, check the result in Chrome, repair a measured failure, and retrieve the verified procedure in a fresh session.",
+    "pattern": "Generate, verify, repair, learn",
+    "flow": "Image + spec → Shared UI → Browser checks → Project memory",
+    "version": "a3633661 (dev build, modified worktree)",
+    "runtime": "Codex provider · Chrome · Python 3 · Node.js",
+    "command": "bash harness/run-arm.sh recall",
+    "toolAccess": "Start with the learner in README. Inputs go to your configured Codex provider.",
+    "projectFiles": [
+      "CERTIFICATION.md",
+      "CHECKLIST.md",
+      "apps/observatory/index.html",
+      "apps/rail-yard/index.html",
+      "followup/RESULTS.md",
+      "followup/learn.yaml",
+      "followup/reference/intake.png",
+      "followup/reference/spec.md",
+      "followup/run-arm.sh",
+      "harness/check.mjs",
+      "harness/generate.yaml",
+      "harness/learn.yaml",
+      "harness/materialize.py",
+      "harness/repair.yaml",
+      "harness/run-arm.sh",
+      "kit/components.js",
+      "kit/tokens.css",
+      "reference/sort-control.png",
+      "reference/spec.md"
+    ],
+    "tags": [
+      "codex",
+      "vision",
+      "project-memory",
+      "auto-recall",
+      "chrome",
+      "puppeteer"
+    ]
+  },
+  {
+    "id": "all-agent-company",
+    "problem": "Run a wholesale order desk with an all-agent staff",
+    "title": "All-agent company order desk",
+    "category": "Business operations",
+    "description": "Sales, Operations, Finance, and Customer Success process a wholesale order. Fixed rules check stock, delivery dates, pricing and approval before a reply is drafted.",
+    "pattern": "Department handoffs and policy gate",
+    "flow": "Order intake → Supply check → Policy decision → Customer draft",
+    "fixtures": [
+      "fixtures/order.json",
+      "fixtures/company.json"
+    ],
+    "supportFiles": [
+      "order_desk.py"
+    ],
+    "toolAccess": "Python 3. Writes output/decision.json. No external actions.",
+    "ja": {
+      "problem": "受注業務をエージェントだけで回したい",
+      "title": "全員がエージェントの会社：受注窓口",
+      "description": "営業、物流、財務、顧客対応の各エージェントが注文を引き継ぎます。固定ルールで在庫、納期、価格、承認を確認し、返信案を作ります。",
+      "pattern": "部門間の引き継ぎとルール判定",
+      "flow": "受注 → 供給確認 → 可否判定 → 返信案",
+      "toolAccess": "Python 3 が必要です。output/decision.json に判定を保存します。外部への送信や発注は行いません。"
+    },
+    "version": "v0.3.2 (09c37a8e)",
+    "model": "qwen3:4b-q4_K_M",
+    "command": "rakitsu run --no-hub --timeout 300 config.yaml \"$(cat input.txt)\"",
+    "tags": [
+      "ollama",
+      "pipeline",
+      "python",
+      "cli",
+      "multi-agent",
+      "policy-check",
+      "tool-gate"
+    ]
+  },
+  {
+    "id": "jev-decision",
+    "problem": "Route code changes to the right reviewer",
+    "title": "Jev code review routing",
+    "category": "Engineering",
+    "description": "A synthetic change removes login from an account export. A typed review label feeds a fixed checklist selector.",
+    "pattern": "Typed decisions",
+    "flow": "Synthetic input → Typed choice → Review queue",
+    "version": "v0.3.0-alpha.1-internal.1897",
+    "runtime": "Jev · live API tested",
+    "command": "python3 smoke.py",
+    "supportFiles": [
+      "smoke.py",
+      "review_queue.py",
+      "web-ui.png"
+    ],
+    "tags": [
+      "jev",
+      "typed-decisions",
+      "pipeline"
+    ],
+    "toolAccess": "Local smoke test: Python 3, no API key. Before a live run, obtain a TypeSafe Jev API key and set TYPESAFE_API_KEY in your shell. Use the pinned internal build above. Native Decision support targets 0.4.0.",
+    "ja": {
+      "problem": "認証やデータベースの変更を適切な担当へ振り分けたい",
+      "title": "Jev：コードレビューの振り分け",
+      "description": "変更内容を判定し、認証・データベース・一般の確認項目を選びます。",
+      "flow": "サンプル入力 → 型付き判定 → 担当窓口",
+      "runtime": "Jev · 実 API でテスト済み",
+      "toolAccess": "ローカルテストには Python 3 が必要です。API キーは不要です。実サービスで実行する前に、TypeSafe Jev の API キーを取得し、環境変数 TYPESAFE_API_KEY に設定してください。 上記の内部ビルドを使用してください。Decision の正式対応は 0.4.0 を予定しています。"
+    },
+    "screenshot": "web-ui.png"
+  },
+  {
+    "id": "openai-decision",
+    "problem": "Route payment and outage reports",
+    "title": "OpenAI Decisions support routing",
+    "category": "Operations",
+    "description": "Classify a duplicate-payment report into a support queue.",
+    "pattern": "Typed decisions",
+    "flow": "Synthetic input → Typed choice → Review queue",
+    "version": "v0.3.0-alpha.1-internal.1897",
+    "runtime": "OpenAI Decisions · live API tested",
+    "command": "python3 smoke.py",
+    "supportFiles": [
+      "smoke.py",
+      "web-ui.png"
+    ],
+    "tags": [
+      "openai",
+      "typed-decisions",
+      "pipeline"
+    ],
+    "toolAccess": "Local smoke test: Python 3, no API key. Before a live run, obtain a OpenAI Decisions API key and set OPENAI_API_KEY in your shell. Use the pinned internal build above. Native Decision support targets 0.4.0.",
+    "ja": {
+      "problem": "支払いと障害の報告を仕分けたい",
+      "title": "OpenAI Decisions：問い合わせの振り分け",
+      "description": "二重請求の報告を分類し、担当窓口を選びます。",
+      "flow": "サンプル入力 → 型付き判定 → 担当窓口",
+      "runtime": "OpenAI Decisions · 実 API でテスト済み",
+      "toolAccess": "ローカルテストには Python 3 が必要です。API キーは不要です。実サービスで実行する前に、OpenAI Decisions の API キーを取得し、環境変数 OPENAI_API_KEY に設定してください。 上記の内部ビルドを使用してください。Decision の正式対応は 0.4.0 を予定しています。"
+    },
+    "screenshot": "web-ui.png"
+  },
+  {
+    "id": "gemini-decision",
+    "problem": "Triage accessibility reports by barrier",
+    "title": "Gemini Decisions accessibility routing",
+    "category": "Product design",
+    "description": "Classify an accessibility report by the interaction barrier it describes.",
+    "pattern": "Typed decisions",
+    "flow": "Synthetic input → Typed choice → Review queue",
+    "version": "v0.3.0-alpha.1-internal.1897",
+    "runtime": "Gemini Decisions · live API tested",
+    "command": "python3 smoke.py",
+    "supportFiles": [
+      "smoke.py",
+      "web-ui.png"
+    ],
+    "tags": [
+      "gemini",
+      "typed-decisions",
+      "pipeline"
+    ],
+    "toolAccess": "Local smoke test: Python 3, no API key. Before a live run, obtain a Gemini Decisions API key and set GEMINI_API_KEY or GOOGLE_API_KEY in your shell. Use the pinned internal build above. Native Decision support targets 0.4.0.",
+    "ja": {
+      "problem": "アクセシビリティの報告を担当別に仕分けたい",
+      "title": "Gemini Decisions：操作上の問題の振り分け",
+      "description": "報告内容を分類し、キーボード操作・読み上げラベル・視覚表示の担当を選びます。",
+      "flow": "サンプル入力 → 型付き判定 → 担当窓口",
+      "runtime": "Gemini Decisions · 実 API でテスト済み",
+      "toolAccess": "ローカルテストには Python 3 が必要です。API キーは不要です。実サービスで実行する前に、Gemini Decisions の API キーを取得し、環境変数 GEMINI_API_KEY または GOOGLE_API_KEY に設定してください。 上記の内部ビルドを使用してください。Decision の正式対応は 0.4.0 を予定しています。"
+    },
+    "screenshot": "web-ui.png"
+  },
+  {
+    "id": "runtime-question-decision",
+    "problem": "Ask a new question as game or automation state changes",
+    "title": "Decision questions at runtime",
+    "category": "Games",
+    "description": "Supply the question and input at launch. Rakitsu returns a fixed yes/no choice even when your question changes.",
+    "pattern": "Typed decisions",
+    "flow": "Runtime question + state → Decision → Yes/no",
+    "runtime": "Live tested with local Laya",
+    "command": "python3 run.py --question \"Does the clinic radio still need repair?\" --input \"The clinic radio is broken and waiting for parts.\"",
+    "toolAccess": "Python 3.9+ and a local Laya endpoint. Optional cloud providers require their own keys.",
+    "projectFiles": [
+      "config.json",
+      "driver.py",
+      "run.py"
+    ],
+    "ja": {
+      "problem": "ゲームや自動化の状態に応じて質問を変えたい",
+      "title": "実行時に質問を指定する Decision",
+      "description": "起動時に質問と入力を渡します。質問を変えても、回答は yes または no です。",
+      "flow": "実行時の質問と状態 → Decision → Yes/no",
+      "runtime": "ローカル Laya で実行確認済み",
+      "toolAccess": "Python 3.9 以降とローカル Laya が必要です。クラウドを使う場合は各 API キーを設定します。"
+    },
+    "version": "v0.3.0-alpha.1-internal.1897",
+    "tags": [
+      "laya",
+      "jev",
+      "openai",
+      "gemini",
+      "typed-decisions",
+      "python",
+      "runtime-question"
+    ]
+  },
+  {
+    "id": "robot-cell-recovery-decisions",
+    "problem": "Coordinate recovery when a factory robot cell stops",
+    "title": "Robot-cell recovery review",
+    "category": "Manufacturing",
+    "description": "Four Decision providers assess a jam, maintenance history, quality notes and team ownership. A fixed rule holds the cell for human review if the interlock or lockout is unresolved.",
+    "pattern": "Typed decisions",
+    "flow": "Workcell evidence → Four decisions → Fixed safety rule → Review packet",
+    "runtime": "Live Laya · simulated Jev, OpenAI and Gemini",
+    "command": "python3 run.py",
+    "toolAccess": "Python 3.9+ and local Laya. Optional cloud mode requires provider keys. Simulation only, no equipment control.",
+    "projectFiles": [
+      "cell-event.json",
+      "stages.json",
+      "laya.json",
+      "jev.json",
+      "openai.json",
+      "gemini.json",
+      "driver.py",
+      "run.py",
+      "fixture.py"
+    ],
+    "ja": {
+      "problem": "工場のロボットセル停止時に復旧判断を整理したい",
+      "title": "ロボットセルの復旧レビュー",
+      "description": "4つの Decision が停止原因、保全履歴、品質と担当部署を判定します。インターロックやロックアウトが未確認の場合は、固定ルールで保留にします。",
+      "flow": "設備の記録 → 4つの判定 → 固定ルール → 確認用レポート",
+      "runtime": "Laya は実行済み。Jev・OpenAI・Gemini は模擬応答。",
+      "toolAccess": "Python 3.9 以降とローカル Laya が必要です。クラウド実行には各 API キーが必要です。設備を制御しないシミュレーションです。"
+    },
+    "version": "v0.3.0-alpha.1-internal.1897",
+    "tags": [
+      "laya",
+      "jev",
+      "openai",
+      "gemini",
+      "typed-decisions",
+      "python",
+      "policy-check",
+      "robotics"
+    ]
+  },
+  {
+    "id": "flood-relief-replan",
+    "problem": "Reroute emergency supplies when a bridge closes",
+    "title": "Flood relief logistics replan",
+    "category": "Logistics",
+    "description": "A duplicate shelter request and conflicting bridge updates arrive while stock and trucks are limited. Rakitsu builds a feasible allocation, then an independent verifier checks it against the latest roads and warehouse stock.",
+    "pattern": "Reconcile, plan, verify",
+    "flow": "Conflicting reports → Feasible plan → Independent verification",
+    "version": "v0.3.2 (09c37a8e)",
+    "model": "qwen3:4b-q4_K_M",
+    "command": "python3 run.py closure",
+    "toolAccess": "Python 3 and local Ollama. Synthetic inputs and fixed local tools. Produces a review packet for a dispatcher.",
+    "fixtures": [
+      "fixtures/base.json",
+      "fixtures/bridge-closed.json"
+    ],
+    "supportFiles": [
+      "dispatch.py",
+      "run.py"
+    ],
+    "tags": [
+      "ollama",
+      "pipeline",
+      "python",
+      "cli",
+      "tool-gate",
+      "multi-agent",
+      "policy-check"
+    ],
+    "spotlight": "A bridge closes. Rakitsu reroutes the light truck and shows exactly which shelters are still short.",
+    "ja": {
+      "problem": "橋が通行止めになった後に救援物資を再配分したい",
+      "title": "洪水時の救援物資：配送計画の再作成",
+      "description": "重複する避難所の要請と矛盾する道路情報を整理し、限られた在庫と車両で配送計画を立てます。別の工程で通行可否と積載量を検証します。",
+      "pattern": "照合・計画・独立検証",
+      "flow": "複数の報告 → 配送計画 → 独立検証",
+      "toolAccess": "Python 3 とローカル Ollama が必要です。架空のデータで人が確認するレポートを作成します。",
+      "spotlight": "橋が閉鎖されたら、小型車を迂回させ、物資が不足する避難所を明示します。"
+    }
+  },
+  {
+    "id": "paper-study-bloom",
+    "problem": "Turn a paper study discussion into working code",
+    "title": "Paper study group: Bloom filter precheck",
+    "category": "Research & development",
+    "description": "Three agents discuss a Bloom filter paper, challenge the design with a collision, and produce a Python module for independent tests.",
+    "pattern": "Paper study and implementation",
+    "flow": "Paper notes → Design review → Python module → Independent tests",
+    "version": "v0.3.2 (09c37a8e)",
+    "model": "Qwen3 4B + Qwen2.5-Coder 3B",
+    "command": "python3 run.py",
+    "toolAccess": "Python 3 and local Ollama. Review the generated code before running the independent tests.",
+    "supportFiles": [
+      "bloom_precheck.py",
+      "paper-notes.md",
+      "run.py",
+      "starter.py",
+      "test_bloom_precheck.py",
+      "captured-implementation.py"
+    ],
+    "tags": [
+      "ollama",
+      "pipeline",
+      "python",
+      "multi-agent",
+      "paper-study"
+    ],
+    "ja": {
+      "problem": "論文の輪読から動く実装を作りたい",
+      "title": "エージェント輪読会：ブルームフィルタの事前判定",
+      "description": "3体のエージェントが論文を議論し、ハッシュ衝突を検討してから Python で実装します。生成されたコードは独立したテストで確認します。",
+      "pattern": "輪読・設計レビュー・実装",
+      "flow": "論文メモ → 設計レビュー → Python 実装 → 独立テスト",
+      "toolAccess": "Python 3 とローカル Ollama が必要です。生成コードを確認してから独立テストを実行してください。",
+      "spotlight": "3体のエージェントが論文を Python コードに落とし込み、意図的なハッシュ衝突のテストに合格しました。",
+      "runtime": "ローカル Ollama · Qwen3 4B と Qwen2.5-Coder 3B"
+    },
+    "spotlight": "Three agents turn a paper into Python. The finished module passes a forced-collision test.",
+    "runtime": "Local Ollama · Qwen3 4B and Qwen2.5-Coder 3B"
+  }
+]

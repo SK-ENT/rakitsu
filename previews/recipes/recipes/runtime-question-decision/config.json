@@ -1,0 +1,33 @@
+{
+  "name": "Runtime decision",
+  "version": "1.0",
+  "agents": [],
+  "orchestrator": {
+    "name": "decision",
+    "strategy": "Pipeline",
+    "pipeline": {
+      "steps": [
+        {
+          "name": "classify",
+          "type": "decision",
+          "decision": {
+            "backend": "laya",
+            "input": {
+              "from": "query"
+            },
+            "questions": {
+              "result": {
+                "type": "choice",
+                "instructions": "Does the clinic radio still need repair?",
+                "choices": {
+                  "yes": "The answer is yes",
+                  "no": "The answer is no"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

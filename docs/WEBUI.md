@@ -1,14 +1,20 @@
 # Rakitsu Web UI Manual
 
+[日本語](WEBUI.ja.md)
+
 ## Overview
 
-The rakitsu web UI is a full-featured agent IDE accessed via `rakitsu serve`. It provides five views:
+This manual describes the 0.4.0 development workspace.
+
+The rakitsu web UI is a full-featured agent IDE accessed via `rakitsu serve`. The workspace has seven dockable panels:
 
 - **Builder** — Visual drag-and-drop agent configuration
 - **Debugger** — Real-time execution monitoring with breakpoints
 - **Inspector** — Event stream viewer
 - **Sessions** — Session history and inspection
 - **Chat** — Interactive agent conversations
+- **Run Log** — Events for the latest run, a selected session, or all received events
+- **Run Timeline** — Playback and event details for a recorded run
 
 Start the UI:
 ```bash
@@ -24,7 +30,87 @@ before writing your own config.
 
 ---
 
+## Workspace layouts
+
+Use **Layouts → Debug** to put Builder beside the Debugger Block graph, with
+Run Log and Run Timeline below. The log follows the latest web run until you
+choose another source. Use **Layouts → Replay** to give the execution graph
+more space. Choose a recording in Run Timeline and use **Play** or the slider
+to move the graph and recorded log together. Switching presets keeps the
+selected recording and playback position. In narrow windows the panes stack.
+
+Use a pane’s **⋯** menu to float, dock, maximize, or join another tab group.
+Drag a pane by its tab or floating title bar to snap it into place.
+In Builder, use the composer chevron to collapse the prompt controls and
+free canvas space. The prompt and run settings are kept when you expand it.
+Recent runs appear in the Builder footer.
+
+[Watch the 0.4.0 Web UI walkthrough](assets/showcase/web-ui-workbench.mp4).
+It shows a pipeline in Builder, a breakpoint in the Debug layout, and a
+recorded run in the Replay layout.
+
+<a id="build-debug-and-replay-a-code-review"></a>
+
+## Example workflow for a Python code review
+
+These teaching diagrams follow a two-agent review. The recordings show the
+workspace in use, including a separate Retrieval → Decision pipeline that
+runs without agents.
+
+1. **Build the two steps.** In **Settings**, configure a provider and model.
+   Use **+ Add** to create an Orchestrator, a Pipeline group, and two agents
+   named Reviewer and Test Writer. Connect the Orchestrator to the group. Drag
+   both agents into the group and confirm **Add to group**. Place Reviewer
+   above Test Writer so the pipeline runs them in that order. Ask Reviewer to
+   describe the bug and fix, and Test Writer to suggest a regression test
+   from the review. Enter this Python input in the Builder composer.
+
+   ```python
+   def clamp(x, lo, hi):
+       return min(lo, max(x, hi))
+   ```
+
+   The `min` and `max` calls are reversed. The intended fix is
+   `max(lo, min(x, hi))`. The suggested test is `clamp(12, 0, 10) == 10`.
+   The agents propose the fix and the test in their responses.
+
+   ![Build teaching diagram with the faulty clamp input and Reviewer followed by Test Writer in the pipeline](assets/diagrams/workflow-build.svg)
+
+2. **Debug the live run.** On Reviewer, use the Builder context menu's
+   **Break before thought** action. The composer offers **Debug** when a
+   breakpoint is set. Choose **Layouts → Debug**, then start with **Debug**.
+   At the breakpoint, inspect the paused Reviewer in the graph and the events
+   received so far in **Run Log**. The Reviewer's thought has not run yet and
+   Test Writer is waiting. Click **Resume** to continue the live execution.
+   Let both steps finish so the completed recording is available for replay.
+
+   ![Debug teaching diagram with Reviewer paused before its thought, Test Writer waiting, and the live log stopped at the breakpoint](assets/diagrams/workflow-debug.svg)
+
+3. **Replay the completed recording.** Choose **Layouts → Replay** and select
+   that completed run in **Run Timeline**. Scrub the slider to the Reviewer's
+   completed response. The graph and recorded **Run Log** follow the same
+   event, where Reviewer has described the fix and Test Writer is still
+   waiting. Use **Play** or scrub forward to the Test Writer's suggested
+   `clamp(12, 0, 10) == 10` check. Playback moves the viewing position
+   through the saved events.
+
+   ![Replay teaching diagram with a selected completed recording, the event slider at Reviewer output, and graph and recorded log aligned](assets/diagrams/workflow-replay.svg)
+
 ## Visual Builder
+
+Use **+ Add** to create nodes and groups. Hover over an icon to see its
+action. Use **Tab** to reach the choices in **+ Add**, and **Esc** to close it
+and return focus to the button. The composer shows **Run**, or **Debug**
+when a breakpoint is set.
+
+Choose **SVG workbench preview** in the toolbar to switch canvases. **Classic
+canvas** returns to the default view. **Arrange** lays out the SVG preview
+left to right. Use the fold control on a group, or **Fold all** and
+**Unfold all** in the toolbar.
+
+Builder opens the **Execution Path** when a run starts. Use **Show
+Workflow** to see the configured graph while it runs. After a run, **Back to
+Canvas** restores editing and **Show Results** opens the execution graph again.
 
 ### Canvas Basics
 
@@ -33,7 +119,7 @@ before writing your own config.
 | Pan canvas | Click and drag on empty space |
 | Zoom | Scroll wheel or pinch |
 | Fit view | Click the fit-view button in bottom-left controls |
-| Add node | Click toolbar buttons: Agent, Tool, Skill, Orchestrator |
+| Add node | Open **+ Add** and choose Agent, Tool, Skill, or Orchestrator |
 | Move node | Click and drag a node |
 | Connect nodes | Drag from a source handle to a target handle |
 | Edit node | Click a node to open the side panel editor |
@@ -49,6 +135,15 @@ before writing your own config.
 | **Skill** | Reusable tool+prompt combination | In (top) |
 | **Orchestrator** | Manages agent coordination strategy | In (top), Out to agents (bottom) |
 | **Group** | Container block for grouping nodes | In (top), Out (bottom) |
+| **Decision** | Asks typed questions and can route to agent steps | Branch wires come from the Decision configuration |
+| **Retrieval** | Searches a local document corpus and returns cited passages | An evidence wire connects to a Decision configured to use the results |
+
+Select a pipeline group to enable **Decision** and **Retrieval** in **+ Add**.
+Open the Decision editor to set its backend, questions and routes.
+Set the corpus directory in the Retrieval editor and start `rakitsu serve`
+with `RAKITSU_RETRIEVAL_ROOT` pointing at the approved corpus. See the
+[pipeline reference](reference/agents-orchestrators.md#decision-and-retrieval-steps)
+for the evidence input rules.
 
 ### Connection Rules
 
@@ -87,8 +182,8 @@ When multiple nodes are selected, a **Bulk Edit** panel appears:
 
 | Method | How |
 |---|---|
-| Empty group | Click **Pipeline**, **Parallel**, **Team**, or **Group** in toolbar |
-| Group selection | Select 2+ nodes → click **Group (N)** button |
+| Empty group | Open **+ Add** and choose **Pipeline**, **Parallel**, **Team**, **Loop**, or **Group** |
+| Group selection | Select two or more nodes, then use the **Group selection** icon |
 | Right-click menu | Multi-select → right-click → "Group as Pipeline/Parallel/Team" |
 
 ### Group Types
@@ -258,12 +353,12 @@ All dropdowns use a custom **ComboBox** component:
 
 ### Visualization Styles
 
-Switch with the **Style Selector** dropdown:
+Switch using the **Tree** and **Block** buttons or open the other graph styles:
 
 | Style | Best For |
 |---|---|
 | **Tree** | Hierarchical view, compact, most detail |
-| **Block Diagram** | Vue Flow graph, visual connections |
+| **Block** | Execution cards and the visual path through the run |
 | **Timeline** | Time-based horizontal view |
 | **Mind Map** | Organic radial layout |
 
@@ -327,16 +422,16 @@ While paused, override parameters in the Detail Panel:
 
 | Format | How |
 |---|---|
-| Single YAML | File menu → Import YAML |
-| Modular directory | File menu → Import Directory (ZIP or folder) |
-| Scaffold template | Toolbar → scaffold preset buttons |
+| Single YAML | **Import → Import YAML** |
+| Modular directory | **Import → Import Directory** |
+| Scaffold template | **Scaffold**, then choose a preset |
 
 ### Export
 
 | Format | How |
 |---|---|
-| Single YAML | File menu → Export YAML |
-| Modular ZIP | File menu → Export Modular |
+| Single YAML | **Export → Export YAML** |
+| Modular ZIP | **Export → Export Modular (ZIP)** |
 
 Internal fields (`_id`, `_providerId`, `_inherited`) are automatically stripped on export.
 

@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
 # Build the static spec-site tree for GitHub Pages (one directory per release tag).
-# Usage: scripts/build-pages.sh [--verify-tags <git-remote-or-url>] [outdir]
+# Usage: scripts/build-pages.sh [--verify-tags <git-remote-or-url> | --preview-0.4.0] [outdir]
 #   outdir defaults to /tmp/rk-pages-out and must be outside the git repo.
 #   --verify-tags (optional, uses the network): fail if any data file's "commit"
 #   differs from the peeled commit of that tag on the given (public) remote, and
 #   if any covered tag (see "covers" in site/data/versions.json) is not a public tag.
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd -P)"
-verify=""; out_arg=""
+verify=""; preview=""; out_arg=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --verify-tags) [ $# -ge 2 ] || { echo "--verify-tags needs a remote or url" >&2; exit 1; }; verify="$2"; shift 2;;
+    --preview-0.4.0) preview=1; shift;;
+    --*) echo "unknown flag: $1" >&2; exit 1;;
     *) out_arg="$1"; shift;;
   esac
 done
+if [ -n "$preview" ] && [ -n "$verify" ]; then
+  echo "an unreleased preview cannot be included in a tag-verified build" >&2
+  exit 1
+fi
 out="${out_arg:-/tmp/rk-pages-out}"
 mkdir -p "$out"; out="$(cd "$out" && pwd -P)"
 top="$(cd "$(git -C "$here" rev-parse --show-toplevel)" && pwd -P)"
@@ -126,6 +132,9 @@ assert 'RK_TAG' in h and '"../assets/app.css' in h
 sys.stdout.write(h)
 PY
 done
+if [ -n "$preview" ]; then
+  node "$here/scripts/build-pages-preview.mjs" "$out"
+fi
 if grep -rIEn '(href|src)="/|(["(])/(assets|data)/' "$out" >/dev/null; then echo "absolute URL found in output" >&2; exit 1; fi
 echo "Built $out (default $default)"
 (cd "$out" && find . -type f | sort | while read -r f; do printf '%8s  %s\n' "$(wc -c <"$f" | tr -d ' ')" "$f"; done; du -sh . | awk '{print "total "$1}')

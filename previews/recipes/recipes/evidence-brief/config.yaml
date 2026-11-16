@@ -1,0 +1,35 @@
+# Rakitsu tested build: v0.3.2 (09c37a8e)
+name: Evidence-checked brief
+version: "1.0"
+description: Turn source notes into a short brief and have a second agent flag unsupported claims.
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://127.0.0.1:11434/v1
+      default_model: qwen3:4b-q4_K_M
+  defaults:
+    temperature: 0
+    max_tokens: 1400
+agents:
+  - name: Drafter
+    role: worker
+    system_prompt: Draft three short bullets from the supplied evidence. Preserve all counts.
+    settings: { max_iterations: 1 }
+  - name: Checker
+    role: worker
+    system_prompt: Check the draft against the original notes. Return a corrected brief under a heading called Evidence brief. Explicitly mention the missing control group.
+    settings: { max_iterations: 1 }
+orchestrator:
+  name: Recipe
+  strategy: Pipeline
+  agents: [Drafter, Checker]
+  pipeline:
+    steps:
+      - name: drafter
+        agent: Drafter
+        task: Draft three short bullets from the supplied evidence. Preserve all counts. /no_think
+      - name: checker
+        agent: Checker
+        task: Check the draft against the original notes. Return a corrected brief under a heading called Evidence brief. Explicitly mention the missing control group. /no_think

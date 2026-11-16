@@ -558,3 +558,20 @@ func TestConsoleTracer_HandlesEvents_NoPanic(t *testing.T) {
 		t.Fatal("Stop deadlocked after emitting events")
 	}
 }
+
+func TestEventBusWithSessionPreservesNestedOrigin(t *testing.T) {
+	bus := NewEventBus(2)
+	ch := bus.Subscribe()
+	defer bus.Unsubscribe(ch)
+
+	bus.WithSession("builder").WithOrigin("delegated-turn").Emit("agent", EventAgentStart, nil)
+	bus.Emit("other", EventAgentStart, nil)
+
+	event := <-ch
+	if event.SessionID != "builder" || event.Origin != "delegated-turn" {
+		t.Fatalf("unexpected run event tags: session=%q origin=%q", event.SessionID, event.Origin)
+	}
+	if event := <-ch; event.SessionID != "" {
+		t.Fatalf("unscoped event inherited session %q", event.SessionID)
+	}
+}

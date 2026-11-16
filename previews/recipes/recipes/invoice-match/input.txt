@@ -1,0 +1,1 @@
+Invoice INV-81 bills 50 filters at USD 18 each. PO-17 authorizes 50 at USD 16 each. Receiving note GR-22 confirms 46 accepted and 4 missing. Policy: hold on any price mismatch or receiving shortfall. Do not authorize payment. /no_think

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Rakitsu Recipes — small, reproducible orchestration patterns for real work.">
+  <title>Rakitsu Recipes</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23226b52'/%3E%3Cpath d='M10 24V8h7a5 5 0 0 1 0 10h-7m6 0 6 6' stroke='white' stroke-width='2.5' fill='none'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="Rakitsu Recipes home"><span class="brand-mark">R</span><span>Rakitsu <em>Recipes</em></span></a>
+      <div class="status"><span class="pulse"></span> <span id="private-catalog-label">Private catalog</span> <span class="slash">/</span> <span id="catalog-total">0</span> <span id="tested-recipes-label">tested recipes</span></div>
+      <button id="language-toggle" class="language-toggle" type="button" aria-label="Switch to Japanese">日本語</button>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="page-title">
+        <div class="hero-copy">
+          <p class="eyebrow" id="hero-eyebrow">ORCHESTRATION ROUTING MAP <span>↗</span></p>
+          <h1 id="page-title"><span id="hero-title-main">Start with the problem.</span><br><span id="hero-title-sub">Leave with a pattern.</span></h1>
+          <p class="lede" id="hero-lede">Small, versioned recipes for getting useful work through Rakitsu. Trace the route from a messy input to a checked output, then download the exact bundle that was tested.</p>
+        </div>
+        <div class="hero-note"><span class="note-label" id="hero-note-label">HOW TO READ THIS</span><p id="hero-note-copy">Choose a <b>problem</b> on the left. Each route lands on a recipe, then reveals the shared pattern underneath.</p></div>
+      </section>
+
+      <section id="spotlights" class="spotlights" hidden></section>
+
+      <section class="toolbar" aria-label="Recipe controls">
+        <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" aria-label="Search recipes" placeholder="Search problems, recipes, patterns…" autocomplete="off"><kbd>/</kbd></label>
+        <label class="category-filter"> <span class="sr-only">Filter by category</span><select id="category" aria-label="Filter by category"><option value="">All categories</option></select></label>
+        <select class="tag-filter" id="tag-filter" aria-label="Filter by technology or feature"><option value="">All technologies and features</option></select>
+        <div class="result-count" id="result-count" aria-live="polite">Loading recipes…</div>
+      </section>
+
+      <section class="map-layout" aria-label="Recipe map">
+        <div class="map-panel">
+          <div class="map-heading"><span class="section-kicker" id="routes-label">ROUTES</span><span class="legend"><i class="dot problem-dot"></i> <span id="legend-problem">problem</span> <i class="dot recipe-dot"></i> <span id="legend-recipe">recipe</span> <i class="dot pattern-dot"></i> <span id="legend-pattern">pattern</span></span></div>
+          <div id="graph" class="graph" role="group" aria-label="Problem, recipe, and pattern graph"></div>
+          <p class="graph-hint" id="graph-hint">Select a node to inspect its route <span>→</span></p>
+        </div>
+        <aside class="detail-panel" id="detail" aria-live="polite"></aside>
+      </section>
+    </main>
+    <footer><span>Rakitsu / Recipes</span><span id="footer-copy">Search stays on this device. Analytics counts recipe opens, preview clicks, and ZIP clicks without visitor IDs.</span><a id="analytics-link" href="/analytics">Analytics</a></footer>
+  </div>
+  <script src="ja.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

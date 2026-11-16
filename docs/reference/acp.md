@@ -60,6 +60,10 @@ Every session uses the config passed at launch. For a custom agent in Zed, add t
 
 Supply provider credentials through the environment used to launch the agent. The [ACP example](../../examples/acp/) includes a LiteLLM configuration with file tools and an allowlisted shell tool.
 
+With a 0.4.x build, a custom YAML config can enable
+[Plan focus](configuration.md#settingsfocus-and-settingspermissions) for a
+single direct agent with read-only filesystem tools.
+
 See [CLI](cli.md#rakitsu-acp) for `--max-sessions`, `--session-idle-timeout`, and `--timeout`.
 
 ## What the server speaks

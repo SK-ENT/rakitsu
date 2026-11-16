@@ -1,0 +1,33 @@
+{
+  "name": "Runtime decision",
+  "version": "1.0",
+  "agents": [],
+  "orchestrator": {
+    "name": "decision",
+    "strategy": "Pipeline",
+    "pipeline": {
+      "steps": [
+        {
+          "name": "classify",
+          "type": "decision",
+          "decision": {
+            "backend": "openai",
+            "input": {
+              "from": "query"
+            },
+            "questions": {
+              "result": {
+                "type": "choice",
+                "instructions": "Does the inspection note say the affected parts need quarantine?",
+                "choices": {
+                  "yes": "Hold the batch for inspection",
+                  "no": "No quarantine is requested"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,6 +1,9 @@
 package agent
 
-import "time"
+import (
+	"github.com/SK-ENT/rakitsu/internal/decision"
+	"time"
+)
 
 // CheckpointData holds serialized pipeline progress for resume support.
 // It lives in the agent package to avoid a circular import with store.
@@ -13,6 +16,7 @@ type CheckpointData struct {
 
 // CheckpointStep is the persisted form of a completed pipeline step.
 type CheckpointStep struct {
+	Decision *decision.Result `json:",omitempty"`
 	Name     string
 	Output   string
 	Duration time.Duration
@@ -52,6 +56,7 @@ func buildCheckpoint(pctx *PipelineContext, prior *CheckpointData) CheckpointDat
 				Name:     r.Name,
 				Output:   r.Output,
 				Duration: r.Duration,
+				Decision: r.Decision,
 			}
 		}
 	}

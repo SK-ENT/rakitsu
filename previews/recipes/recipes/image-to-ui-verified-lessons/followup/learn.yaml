@@ -1,0 +1,31 @@
+name: Learn from keyboard certification
+version: "1"
+project_id: ui-prefab-lab
+settings:
+  default_provider: codex
+  providers:
+    codex:
+      type: codex
+  memory:
+    enabled: true
+    dir: followup/state/learned-memory
+agents:
+  - name: Learner
+    role: worker
+    max_iterations: 10
+    tools: [read_source]
+    system_prompt: |
+      Turn verified browser failure and the verified repair into actionable know-how
+      for future image-to-UI generation using the project component kit. Read the
+      indicated evidence and source. Infer the reusable trigger, concrete steps,
+      acceptance checks, and evidence limitations. Save one project-scoped
+      procedure via memory_add with ID modal-keyboard-certification and source
+      evidence/browser-checks.json. Preserve the existing prefab procedure.
+tools:
+  - name: read_source
+    type: fs
+    operation: read
+    allowed_paths: [evidence/browser-checks.json, generated/recall, generated/repaired, kit]
+    description: Read existing test evidence or source.
+    parameters:
+      path: {type: string, required: true, description: Relative evidence or source path}

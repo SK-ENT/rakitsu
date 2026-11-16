@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>Rail Yard Dispatch</title>
+<link rel="stylesheet" href="../../kit/tokens.css">
+<script type="module" src="../../kit/components.js">
+</script>
+<style>.shell{max-width:1280px;margin:auto;padding:24px}.mast{display:flex;justify-content:space-between;align-items:center}.mast h1{font-size:28px;margin:6px 0}.signal{display:flex;gap:8px;align-items:center;color:var(--green);font-size:12px}.signal i{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 12px var(--green)}.dashboard{display:grid;grid-template-columns:1fr 340px;gap:18px;margin-top:22px}.board{padding:18px}.board-head{display:flex;justify-content:space-between;align-items:end}.board h2{margin:4px 0 0}.lanes{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:18px}.lane{background:#101719;border:1px solid var(--line);border-radius:10px;padding:10px;min-height:300px}.lane h3{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between}.card{width:100%;text-align:left;color:var(--ink);background:var(--panel2);border:1px solid #46575b;border-radius:8px;padding:13px;margin:9px 0;cursor:pointer}.card:hover{border-color:var(--cyan);transform:translateY(-1px)}.card strong{display:block}.card small{display:block;color:var(--muted);margin-top:7px}.tag{display:inline-block;color:var(--amber);font-size:10px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:9px}.side{display:grid;gap:12px;align-content:start}.side .panel{padding:15px}.manifest{display:grid;gap:10px}.manifest div{display:flex;justify-content:space-between;border-bottom:1px solid #ffffff0d;padding-bottom:9px}.manifest b{font-size:14px}.queue-row{width:100%}.queue-filter{margin-top:10px}.queue-head{display:block}.primary,.ghost{border:0;border-radius:7px;padding:10px 14px}.primary{background:var(--amber);color:#231c0e;font-weight:800}.ghost{background:#2a383d;color:var(--ink)}dialog{background:#182125;color:var(--ink);border:1px solid var(--line);border-radius:14px;width:min(440px,calc(100% - 30px));box-shadow:var(--shadow)}dialog::backdrop{background:#051013aa}.drawer-content{padding:26px}.drawer-content h2{margin-top:0}.drawer-actions{padding:14px 20px;border-top:1px solid var(--line);display:flex;justify-content:end;gap:8px}.close{position:absolute;right:15px;top:10px;background:none;color:var(--muted);border:0;font-size:24px}.field{display:grid;gap:6px;margin:18px 0}.field input,.field select{background:#101719;color:var(--ink);border:1px solid var(--line);padding:10px;border-radius:7px}@media(max-width:900px){.dashboard{grid-template-columns:1fr}.lanes{grid-template-columns:1fr 1fr}}@media(max-width:600px){.shell{padding:15px}.lanes{grid-template-columns:1fr}}</style>
+</head>
+<body>
+<main class="shell">
+<header class="mast">
+<div>
+<span class="eyebrow">EAST GATE / DISPATCH</span>
+<h1>Rail yard control desk</h1>
+<span class="muted">Tuesday, 18 June · freight window 04</span>
+</div>
+<div class="signal">
+<i>
+</i>All tracks reporting</div>
+</header>
+<div class="dashboard">
+<section class="panel board">
+<div class="board-head">
+<div>
+<span class="eyebrow">Movement board</span>
+<h2>Outbound consist plan</h2>
+</div>
+<button class="primary" id="new-job">+ New movement</button>
+</div>
+<div class="lanes">
+<div class="lane">
+<h3>Staged <span>02</span>
+</h3>
+<button type="button" class="card" data-id="YD-204">
+<span class="tag">Priority</span>
+<strong>YD-204 · Harbor steel</strong>
+<small>Track 6 · 18 wagons · 14:20</small>
+</button>
+<button type="button" class="card" data-id="YD-205">
+<span class="tag">Cold chain</span>
+<strong>YD-205 · Northbound produce</strong>
+<small>Track 4 · 12 wagons · 15:05</small>
+</button>
+</div>
+<div class="lane">
+<h3>In motion <span>01</span>
+</h3>
+<button type="button" class="card" data-id="YD-198">
+<span class="tag">Live</span>
+<strong>YD-198 · Empty returns</strong>
+<small>Signal 8A · 9 wagons · ETA 14:42</small>
+</button>
+</div>
+<div class="lane">
+<h3>Cleared <span>02</span>
+</h3>
+<button type="button" class="card" data-id="YD-191">
+<span class="tag">Complete</span>
+<strong>YD-191 · Grain loop</strong>
+<small>South lead · departed 13:10</small>
+</button>
+</div>
+</div>
+</section>
+<aside class="side">
+<section class="panel">
+<span class="eyebrow">Shift pulse</span>
+<div class="manifest">
+<ops-metric label="Movements today" value="18">
+</ops-metric>
+<ops-metric label="Dwell average" value="42m">
+</ops-metric>
+<ops-metric label="Crew on duty" value="07">
+</ops-metric>
+</div>
+</section>
+<section class="panel">
+<span class="eyebrow">Find movement</span>
+<ops-queue id="queue">
+</ops-queue>
+</section>
+</aside>
+</div>
+</main>
+<ops-drawer id="drawer">
+<h2 id="drawer-title">New movement</h2>
+<p class="muted">Create a dispatch record for the next freight window.</p>
+<label class="field">Movement ID<input id="move-id" value="YD-206" aria-label="Movement ID">
+</label>
+<label class="field">Route<select>
+<option>East Gate → Port terminal</option>
+<option>East Gate → North interchange</option>
+</select>
+</label>
+</ops-drawer>
+<script type="module">const records=[{id:'YD-204',title:'YD-204 · Harbor steel',detail:'Staged · Track 6',status:'watch'},{id:'YD-205',title:'YD-205 · Northbound produce',detail:'Staged · Track 4',status:'watch'},{id:'YD-198',title:'YD-198 · Empty returns',detail:'In motion · Signal 8A',status:'live'},{id:'YD-191',title:'YD-191 · Grain loop',detail:'Cleared · South lead',status:'live'}];const q=document.querySelector('#queue');q.records=records;q.selectedId=records[0].id;const drawer=document.querySelector('#drawer');const open=id=>{document.querySelector('#drawer-title').textContent=id?'Review '+id:'New movement';document.querySelector('#move-id').value=id||'YD-206';drawer.open()};q.addEventListener('queue-selected',e=>open(e.detail.id));document.querySelectorAll('.card').forEach(c=>c.onclick=()=>open(c.dataset.id));document.querySelector('#new-job').onclick=()=>open();drawer.addEventListener('drawer-saved',e=>{document.querySelector('#new-job').textContent='✓ Movement saved';setTimeout(()=>document.querySelector('#new-job').textContent='+ New movement',1800)})</script>
+</body>
+</html>
+

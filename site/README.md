@@ -30,6 +30,24 @@ Optional check: `scripts/build-pages.sh --verify-tags <git-remote-or-url> [outdi
 Tests (start the server first, or run `tests/run-all.sh`, which starts and stops it): `node site/tests/validate.mjs` (data, ids, parser), `node site/tests/functional.mjs` (Play/Step, captions), `node site/tests/ui.mjs` (links, hash, screenshots), `node site/tests/gating.mjs` (version gating), `node site/tests/pages.mjs` (Pages build, covers fixture, 404).
 
 
+## 0.4.0 development preview
+
+Build the indigo documentation preview from the milestone checkout. It uses
+the versioned site's English and Japanese navigation, search, and deep links.
+The Web UI story links to the full README and manual in the selected language.
+
+    npm --prefix web ci
+    out=$(mktemp -d)
+    scripts/build-pages.sh --preview-0.4.0 "$out"
+    python3 -m http.server 8765 --bind 127.0.0.1 -d "$out"
+
+Open http://127.0.0.1:8765/preview/v0.4.0/. The workspace, Decision and
+Retrieval, and Plan focus material describes the milestone. The page labels
+the existing reference sections as inherited from v0.3.2. The opt-in preview
+leaves the release registry and redirects intact. A tag-verified build rejects
+the preview flag. Run `node site/tests/preview-040.mjs` for the preview checks
+using the same Playwright setup as the Pages tests.
+
 ## Beta.4 source and archive preservation
 
 The beta.4 reference is pinned to public release commit `89a9ba62e0f151da25a2103e10f85e096cda2d1b`. Its data is manually audited (`docsGenerated: false`), not extracted automatically from source. Existing beta.3 data and the deployed shared teaching script are retained here to reproduce that archive.

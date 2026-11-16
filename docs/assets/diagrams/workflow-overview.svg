@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="686" viewBox="0 0 720 686" role="img" aria-labelledby="overview-title overview-desc">
+  <title id="overview-title">A Python clamp review in Rakitsu</title>
+  <desc id="overview-desc">Build a pipeline with Reviewer followed by Test Writer. Pause at the Reviewer breakpoint, inspect the live graph and log, then resume. In Replay, scrub to the proposed fix and suggested test.</desc>
+  <rect width="720" height="686" rx="20" fill="#121521"/>
+  <g font-family="system-ui, sans-serif">
+    <text x="32" y="60" fill="#f1f3ff" font-size="37" font-weight="700">Review a Python clamp</text>
+    <text x="32" y="103" fill="#b8c1db" font-size="26">The function calls min and max in the wrong order.</text>
+
+    <rect x="32" y="132" width="656" height="132" rx="16" fill="#1d2235" stroke="#3d4669" stroke-width="2"/>
+    <text x="56" y="172" fill="#a9b4ff" font-size="25" font-weight="700">01 / Build</text>
+    <text x="56" y="223" fill="#f1f3ff" font-size="32" font-weight="700">Reviewer → Test Writer</text>
+    <path d="M360 273v22m-7-7 7 7 7-7" fill="none" stroke="#64749a" stroke-width="3"/>
+
+    <rect x="32" y="304" width="656" height="132" rx="16" fill="#1d2235" stroke="#ffd18a" stroke-width="2"/>
+    <text x="56" y="344" fill="#ffd18a" font-size="25" font-weight="700">02 / Debug live</text>
+    <text x="56" y="395" fill="#f1f3ff" font-size="28">Pause at Reviewer. Inspect, then resume.</text>
+    <path d="M360 445v22m-7-7 7 7 7-7" fill="none" stroke="#64749a" stroke-width="3"/>
+
+    <rect x="32" y="476" width="656" height="154" rx="16" fill="#1d2235" stroke="#9ce4cb" stroke-width="2"/>
+    <text x="56" y="516" fill="#9ce4cb" font-size="25" font-weight="700">03 / Replay the recording</text>
+    <text x="56" y="556" fill="#f1f3ff" font-size="25" font-family="monospace">Reviewer → max(lo, min(x, hi))</text>
+    <text x="56" y="597" fill="#f1f3ff" font-size="25" font-family="monospace">Test Writer → clamp(12, 0, 10) == 10</text>
+    <text x="32" y="661" fill="#b8c1db" font-size="23">Teaching illustration</text>
+  </g>
+</svg>

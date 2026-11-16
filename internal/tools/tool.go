@@ -136,6 +136,7 @@ type FunctionDefinition struct {
 // public exported type — an external caller has no way to know that
 // invariant, so the map itself is mutex-protected rather than relying on it.
 type ToolRegistry struct {
+	plan    bool
 	mu      sync.RWMutex
 	tools   map[string]Tool
 	closers []io.Closer
@@ -147,6 +148,13 @@ func NewToolRegistry() *ToolRegistry {
 		tools: make(map[string]Tool),
 	}
 }
+
+// NewPlanToolRegistry admits only tools that explicitly report read-only behavior.
+func NewPlanToolRegistry() *ToolRegistry {
+	return &ToolRegistry{plan: true, tools: make(map[string]Tool)}
+}
+
+func (r *ToolRegistry) Plan() bool { return r.plan }
 
 // AddCloser registers a closer to be called when CloseAll is invoked.
 func (r *ToolRegistry) AddCloser(c io.Closer) {
@@ -170,6 +178,12 @@ func (r *ToolRegistry) CloseAll() {
 
 // RegisterTool registers a tool
 func (r *ToolRegistry) RegisterTool(tool Tool) {
+	if r.plan {
+		readOnly, ok := tool.(interface{ PlanReadOnly() bool })
+		if !ok || !readOnly.PlanReadOnly() {
+			return
+		}
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.tools == nil {
