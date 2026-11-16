@@ -2195,5 +2195,30 @@
         }
       ]
     }
+  ],
+  "serveGuide": "docs/reference/a2a.md",
+  "cases": [
+    [
+      "examples/jev/10-pipeline-decision",
+      {
+        "en": "Decision-only pipeline",
+        "ja": "Decision のみのパイプライン"
+      },
+      {
+        "en": "Ask typed questions about the input and choose how to route the result.",
+        "ja": "入力に対して型付きの質問を行い、結果に応じた処理先を選びます。"
+      }
+    ],
+    [
+      "examples/jev/11-retrieval-laya",
+      {
+        "en": "Decision with local Retrieval",
+        "ja": "ローカル検索と Decision"
+      },
+      {
+        "en": "Find passages in local files, then use Laya to judge whether the evidence answers the question.",
+        "ja": "ローカルファイルから関連する箇所を検索し、根拠が質問に答えているかを Laya で判定します。"
+      }
+    ]
   ]
 }

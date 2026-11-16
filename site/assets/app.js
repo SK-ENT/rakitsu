@@ -41,7 +41,7 @@ function needOf(raw){var id=Object.prototype.hasOwnProperty.call(ALIAS,raw)?ALIA
  if(id==="card-long-running-monitor"||id==="rough-wake-monitors")return "wake";
  var m=/^(?:ref-)?(wake|monitors)(?:-|$)/.exec(id);return m?m[1]:null;}
 function codeCell(s){return el("code",null,s);}
-function sampleLink(path){var a=el("a","sample-link",T("Open runnable sample","実行可能なサンプルを開く"));a.href=REPO+"/tree/"+encodeURIComponent(data(st.ver).baseline||st.ver)+"/"+path.split("/").map(encodeURIComponent).join("/");a.target="_blank";a.rel="noopener noreferrer";a.setAttribute("aria-label",T("Open sample in GitHub: "+path,"GitHub でサンプルを開く: "+path));return a;}
+function sampleLink(path,guide){var a=el("a","sample-link",guide?T("Open A2A guide","A2A ガイドを開く"):T("Open runnable sample","実行可能なサンプルを開く"));a.href=REPO+(guide?"/blob/":"/tree/")+encodeURIComponent(data(st.ver).baseline||st.ver)+"/"+path.split("/").map(encodeURIComponent).join("/");a.target="_blank";a.rel="noopener noreferrer";a.setAttribute("aria-label",a.textContent+": "+path);return a;}
 function tog(g,c,on){g.classList.toggle(c,!!on);}
 
 /* ---------- static links ----------
@@ -467,7 +467,7 @@ var CASES=[
  ["examples/single/14-long-running-monitor",{en:"Unattended monitoring",ja:"無人モニタリング"},{en:"Run a persistent monitor without watching every tick. Scheduled checks make zero model calls while quiet; a change or alarm wakes the agent. It can start only allowlisted task configs, with hourly and concurrency caps, a kill switch, health checks, and resume after a serve restart.",ja:"各 tick を人が見張らずに、継続するモニターを実行します。静かな間はスケジュール確認だけでモデル呼び出しはゼロ。変化やアラームでエージェントが起動します。起動できるのは許可リストのタスク設定のみで、毎時と同時実行の上限、停止スイッチ、ヘルスチェック、serve 再起動後の再開に対応します。"},"wake"],
  ["examples/single/09-memory-chat",{en:"Memory chat",ja:"メモリ付きチャット"},{en:"An assistant with native memory tools, a rolling summary of older turns and auto-recall of relevant notes.",ja:"組み込みのメモリツール、古いターンのローリング要約、関連ノートの自動リコールを備えたアシスタント。"}],
  ["examples/single/11-vision-chat",{en:"Vision chat",ja:"画像を扱うチャット"},{en:"An agent with vision: true and --attach for image input. It needs a vision-capable model.",ja:"vision: true のエージェントと、画像入力用の --attach。画像対応のモデルが必要です。"}],
- ["rakitsu serve --config",{en:"Agents as endpoints",ja:"エージェントをエンドポイントとして公開"},{en:"With --config, serve exposes registered tools over MCP and configured agents over A2A.",ja:"--config を指定すると、serve は登録したツールを MCP、設定したエージェントを A2A で公開します。"}]];
+ ["rakitsu serve --config",{en:"Agents as endpoints",ja:"エージェントをエンドポイントとして公開"},{en:"Use --config to expose configured agents over A2A. Add --mcp-port to expose registered tools over MCP.",ja:"--config で設定済みのエージェントを A2A で公開します。登録済みのツールを MCP で公開するには --mcp-port を追加します。"}]];
 var WORKS=[
  {en:"The ReAct loop with parallel tool calls, budgets, optional reflection and ground check.",ja:"並列ツール呼び出し、予算、任意の reflection と ground check を備えた ReAct ループ。"},
  {en:"Pipeline with sequential, parallel and loop steps, and the require_tool_call check.",ja:"sequential、parallel、loop のステップと、require_tool_call による確認を備えた Pipeline。"},
@@ -623,7 +623,10 @@ function render(){
   g.appendChild(s);});
  link("can-do",T("What it can do","できること"));
  var cs=section("can-do",{en:"What it can really do",ja:"実際にできること"},{en:"Every card is an example shipped in the repository. None of them is a claim of production use.",ja:"どのカードもリポジトリに同梱の例です。本番利用を示すものではありません。"});
- var cg=el("div","cards");CASES.forEach(function(c){if(!has(c[3]))return;var cd=el("div","card");var ch=el("h3",null,L(c[1]));var cid="card-"+(slug(c[0].split("/").pop().replace(/^\d+-/,"").replace(/^rakitsu\s+/,""))||"x");if(regDom(cid,"highlight",c[1],cd))ch.appendChild(linkBtn(cid));cd.appendChild(ch);cd.appendChild(el("p",null,L(c[2])));cd.appendChild(sampleLink(c[0]));cg.appendChild(cd);});cs.appendChild(cg);g.appendChild(cs);
+ var cg=el("div","cards");CASES.concat(d.cases||[]).forEach(function(c){if(!has(c[3]))return;var cd=el("div","card");var ch=el("h3",null,L(c[1]));var cid="card-"+(slug(c[0].split("/").pop().replace(/^\d+-/,"").replace(/^rakitsu\s+/,""))||"x");if(regDom(cid,"highlight",c[1],cd))ch.appendChild(linkBtn(cid));cd.appendChild(ch);cd.appendChild(el("p",null,L(c[2])));if(c[0]==="rakitsu serve --config"){
+  if(d.serveGuide)cd.appendChild(sampleLink(d.serveGuide,true));
+  else{var guide=el("a","sample-link",T("Open Serve reference","Serve リファレンスを開く"));guide.href=mkLink(st.lang,"ref-hub");cd.appendChild(guide);}
+ }else cd.appendChild(sampleLink(c[0]));cg.appendChild(cd);});cs.appendChild(cg);g.appendChild(cs);
  link("works-today",T("Works today, still rough","動くもの、まだ粗いもの"));
  var ws=section("works-today",{en:"Works today, and what is still rough",ja:"今動くものと、まだ粗いもの"},{en:"Rakitsu is pre-release software and is not production-ready.",ja:"Rakitsu はプレリリース版のソフトウェアで、本番利用の準備はできていません。"});
  var tw=el("div","two");var a1=el("div");a1.appendChild(el("h3","okh",T("Works today","今動くもの")));var l1=el("ul");WORKS.forEach(function(x,i){var li=el("li",null,L(x));var wid="works-"+WORKS_IDS[i];if(regDom(wid,"highlight",x,li))li.appendChild(linkBtn(wid));l1.appendChild(li);});a1.appendChild(l1);
