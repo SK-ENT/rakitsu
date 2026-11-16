@@ -523,7 +523,7 @@ func (o *Orchestrator) executeStep(ctx context.Context, step config.PipelineStep
 	case "loop":
 		output, err = o.executeLoopStep(ctx, step, pctx)
 	case "decision":
-		output, result, err = o.executeDecisionStep(ctx, step, pctx)
+		output, result, retrievalCount, err = o.executeDecisionStep(ctx, step, pctx)
 	case "retrieval":
 		var retrieved retrievalResult
 		retrieved, err = executeRetrievalStep(ctx, step, pctx.Query)

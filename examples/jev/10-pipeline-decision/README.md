@@ -19,7 +19,9 @@ The Gemini adapter calls the native [Gemini Decisions API](https://blog.google/i
 
 The response uses `probability_true` for a predicate, `choice` for a named option, and `score` for a weighted position on an ordered rubric starting at zero. Use labeled examples to check routing thresholds when you change backends.
 
-A Decision without routes returns named answers as JSON. To route to an agent, define the agents in the config and add routes to the Decision. The first matching route runs its agent steps in order. A valid answer that matches no route runs the explicit fallback.
+By default, a Decision reads the original run query. With `input: { from: step, step: prepare }`, it reads only the output of the upstream step named `prepare`.
+
+A Decision without routes returns named answers as JSON. To route to an agent, define the agents in the config and add routes to the Decision. The first matching route runs its agent steps in order. A valid answer that matches no route runs the explicit fallback. Each agent step can use earlier results in that branch, and the final agent step supplies the Decision step’s pipeline output.
 
 ```yaml
 routes:

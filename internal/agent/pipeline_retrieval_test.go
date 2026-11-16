@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 func TestPipelineRetrievalFeedsLaya(t *testing.T) {
@@ -39,11 +40,37 @@ func TestPipelineRetrievalFeedsLaya(t *testing.T) {
 		}},
 	}
 	o := newTestOrchestrator(steps, nil)
-	output, err := o.runPipeline(context.Background(), "Duplicate invoice")
+	run := func(query string, wantCount int) (string, error) {
+		t.Helper()
+		var output string
+		var runErr error
+		events := collectEvents(o.eventBus, func() {
+			output, runErr = o.runPipeline(context.Background(), query)
+		})
+		for _, event := range events {
+			if event.EventType != telemetry.EventPipelineStepEnd {
+				continue
+			}
+			var payload telemetry.PipelineStepEndPayload
+			if err := json.Unmarshal(event.Payload, &payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.StepName != "judge" {
+				continue
+			}
+			if payload.RetrievalCount == nil || *payload.RetrievalCount != wantCount || payload.Output != "" {
+				t.Fatalf("want evidence count %d and redacted output in Decision event, got %s", wantCount, event.Payload)
+			}
+			return output, runErr
+		}
+		t.Fatal("missing Decision step-end event")
+		return output, runErr
+	}
+	output, err := run("Duplicate invoice", 1)
 	if err != nil || !json.Valid([]byte(output)) || !strings.Contains(output, "guide.md") || !strings.Contains(output, "0.95") || calls.Load() != 1 {
 		t.Fatalf("output=%q error=%v calls=%d", output, err, calls.Load())
 	}
-	output, err = o.runPipeline(context.Background(), "zqxv")
+	output, err = run("zqxv", 0)
 	if err != nil || !strings.Contains(output, "no_matches") || calls.Load() != 1 {
 		t.Fatalf("empty retrieval output=%q error=%v calls=%d", output, err, calls.Load())
 	}

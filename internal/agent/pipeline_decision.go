@@ -10,10 +10,10 @@ import (
 	"github.com/SK-ENT/rakitsu/internal/decision"
 )
 
-func (o *Orchestrator) executeDecisionStep(ctx context.Context, step config.PipelineStep, pctx *PipelineContext) (string, *decision.Result, error) {
+func (o *Orchestrator) executeDecisionStep(ctx context.Context, step config.PipelineStep, pctx *PipelineContext) (string, *decision.Result, *int, error) {
 	spec := step.Decision
 	if err := spec.Validate(); err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 	if step.TimeoutSec > 0 {
 		var cancel context.CancelFunc
@@ -30,33 +30,36 @@ func (o *Orchestrator) executeDecisionStep(ctx context.Context, step config.Pipe
 	source := pctx.byName[spec.Input.Step]
 	pctx.mu.RUnlock()
 	var evidence *retrievalResult
+	var retrievalCount *int
 	if spec.Input.From == "step" || spec.Input.From == "retrieval" {
 		if source == nil || source.Error != nil {
-			return "", nil, fmt.Errorf("decision %q input step %q has no successful result", step.Name, spec.Input.Step)
+			return "", nil, nil, fmt.Errorf("decision %q input step %q has no successful result", step.Name, spec.Input.Step)
 		}
 		input = source.Output
 	}
 	if spec.Input.From == "retrieval" {
 		evidence = &retrievalResult{}
 		if err := json.Unmarshal([]byte(input), evidence); err != nil {
-			return "", nil, fmt.Errorf("invalid upstream retrieval result")
+			return "", nil, nil, fmt.Errorf("invalid upstream retrieval result")
 		}
-		if len(evidence.Passages) == 0 {
-			return `{"status":"no_matches","evidence":{"passages":[]}}`, nil, nil
+		count := len(evidence.Passages)
+		retrievalCount = &count
+		if count == 0 {
+			return `{"status":"no_matches","evidence":{"passages":[]}}`, nil, retrievalCount, nil
 		}
 		request, err := json.Marshal(struct {
 			Query    string           `json:"query"`
 			Evidence *retrievalResult `json:"evidence"`
 		}{pctx.Query, evidence})
 		if err != nil {
-			return "", nil, err
+			return "", nil, retrievalCount, err
 		}
 		input = string(request)
 	}
 
 	answers, err := decision.Evaluate(ctx, spec, input)
 	if err != nil {
-		return "", nil, err
+		return "", nil, retrievalCount, err
 	}
 	result := &decision.Result{Backend: spec.Backend, Answers: answers}
 	if evidence != nil {
@@ -64,7 +67,7 @@ func (o *Orchestrator) executeDecisionStep(ctx context.Context, step config.Pipe
 			Decision *decision.Result `json:"decision"`
 			Evidence *retrievalResult `json:"evidence"`
 		}{result, evidence})
-		return string(output), result, err
+		return string(output), result, retrievalCount, err
 	}
 	branch := spec.Otherwise
 	if len(branch) > 0 {
@@ -79,7 +82,7 @@ func (o *Orchestrator) executeDecisionStep(ctx context.Context, step config.Pipe
 	}
 	encoded, err := json.Marshal(result)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 	output := string(encoded)
 	branchContext.addResult(&StepResult{Name: step.Name, Output: output})
@@ -87,10 +90,10 @@ func (o *Orchestrator) executeDecisionStep(ctx context.Context, step config.Pipe
 		child.Name = step.Name + "/" + child.Name
 		output, err = o.executeStep(ctx, child, branchContext)
 		if err != nil {
-			return "", result, err
+			return "", result, nil, err
 		}
 	}
-	return output, result, nil
+	return output, result, nil, nil
 }
 
 func matchesDecision(match config.DecisionMatch, answer decision.Answer) bool {
