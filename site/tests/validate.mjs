@@ -33,6 +33,8 @@ for (const v of files) {
       if (b.t === 'p' || b.t === 'h') ok(bi(b), where + ' EN and JA');
       else if (b.t === 'ul') b.items.forEach((it, j) => ok(bi(it), where + ` item ${j} EN and JA`));
       else if (b.t === 'kv') b.rows.forEach((r, j) => r.forEach((c, k) => { if (c && typeof c === 'object') ok(bi(c), where + ` row ${j} cell ${k} EN and JA`); }));
+      else if (b.t === 'link') ok(bi(b.label) && bi(b.href), where + ' bilingual link');
+      else if (b.t === 'media') ok(bi(b.diagram?.src) && bi(b.diagram?.alt), where + ' bilingual diagram');
       else if (b.t === 'code') ok(typeof b.text === 'string', where + ' text');
       else if (b.t === 'refs') ok(Array.isArray(b.keys), where + ' keys');
       else ok(false, where + ' unknown block type');

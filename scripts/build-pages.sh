@@ -132,6 +132,9 @@ assert 'RK_TAG' in h and '"../assets/app.css' in h
 sys.stdout.write(h)
 PY
 done
+if [ -d "$out/v0.4.0-alpha.1" ]; then
+  node "$here/scripts/build-pages-preview.mjs" "$out" v0.4.0-alpha.1
+fi
 if [ -n "$preview" ]; then
   node "$here/scripts/build-pages-preview.mjs" "$out"
 fi
