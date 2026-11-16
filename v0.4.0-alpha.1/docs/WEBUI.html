@@ -1,0 +1,867 @@
+<!doctype html>
+<html lang="en" data-preview="v0.4.0" class="preview-manual">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rakitsu v0.4.0-alpha.1 · Web UI manual</title>
+<link rel="stylesheet" href="../../assets/app.css">
+<link rel="stylesheet" href="../v0.4.0-indigo.css">
+</head>
+<body><div class="wrap"><main>
+<nav class="preview-doc-nav" aria-label="Documentation">
+  <a href=".././#en.ref-web-ui-story">Reference</a>
+  <a href="WEBUI.ja.html" hreflang="ja" lang="ja">日本語</a>
+</nav>
+<h1 id="rakitsu-web-ui-manual">Rakitsu Web UI Manual</h1>
+<p><a href="WEBUI.ja.html">日本語</a></p>
+<h2 id="overview">Overview</h2>
+<p>This manual describes the 0.4.0 development workspace.</p>
+<p>The rakitsu web UI is a full-featured agent IDE accessed via <code>rakitsu serve</code>. The workspace has seven dockable panels:</p>
+<ul>
+<li><strong>Builder</strong> — Visual drag-and-drop agent configuration</li>
+<li><strong>Debugger</strong> — Real-time execution monitoring with breakpoints</li>
+<li><strong>Inspector</strong> — Event stream viewer</li>
+<li><strong>Sessions</strong> — Session history and inspection</li>
+<li><strong>Chat</strong> — Interactive agent conversations</li>
+<li><strong>Run Log</strong> — Events for the latest run, a selected session, or all received events</li>
+<li><strong>Run Timeline</strong> — Playback and event details for a recorded run</li>
+</ul>
+<p>Start the UI:</p>
+<pre><code class="language-bash">rakitsu serve --port 9100
+# Open http://localhost:9100
+</code></pre>
+<p><strong>First launch, nothing in the config list?</strong> <code>serve</code> only shows configs
+found under <code>.</code>, <code>./examples</code>, <code>./configs</code> (or <code>--config-dir</code>), relative to
+wherever you ran it from. If you don't have a project yet, run <code>rakitsu quickstart</code> first — or open <code>examples/</code> and pick one to try the UI against
+before writing your own config.</p>
+<hr>
+<h2 id="workspace-layouts">Workspace layouts</h2>
+<p>Use <strong>Layouts → Debug</strong> to put Builder beside the Debugger Block graph, with
+Run Log and Run Timeline below. The log follows the latest web run until you
+choose another source. Use <strong>Layouts → Replay</strong> to give the execution graph
+more space. Choose a recording in Run Timeline and use <strong>Play</strong> or the slider
+to move the graph and recorded log together. Switching presets keeps the
+selected recording and playback position. In narrow windows the panes stack.</p>
+<p>Use a pane’s <strong>⋯</strong> menu to float, dock, maximize, or join another tab group.
+Drag a pane by its tab or floating title bar to snap it into place.
+In Builder, use the composer chevron to collapse the prompt controls and
+free canvas space. The prompt and run settings are kept when you expand it.
+Recent runs appear in the Builder footer.</p>
+<p><a href="assets/showcase/web-ui-workbench.mp4">Watch the 0.4.0 Web UI walkthrough</a>.
+It shows a pipeline in Builder, a breakpoint in the Debug layout, and a
+recorded run in the Replay layout.</p>
+<p><a id="build-debug-and-replay-a-code-review"></a></p>
+<h2 id="example-workflow-for-a-python-code-review">Example workflow for a Python code review</h2>
+<p>These teaching diagrams follow a two-agent review. The recordings show the
+workspace in use, including a separate Retrieval → Decision pipeline that
+runs without agents.</p>
+<ol>
+<li>
+<p><strong>Build the two steps.</strong> In <strong>Settings</strong>, configure a provider and model.
+Use <strong>+ Add</strong> to create an Orchestrator, a Pipeline group, and two agents
+named Reviewer and Test Writer. Connect the Orchestrator to the group. Drag
+both agents into the group and confirm <strong>Add to group</strong>. Place Reviewer
+above Test Writer so the pipeline runs them in that order. Ask Reviewer to
+describe the bug and fix, and Test Writer to suggest a regression test
+from the review. Enter this Python input in the Builder composer.</p>
+<pre><code class="language-python">def clamp(x, lo, hi):
+    return min(lo, max(x, hi))
+</code></pre>
+<p>The <code>min</code> and <code>max</code> calls are reversed. The intended fix is
+<code>max(lo, min(x, hi))</code>. The suggested test is <code>clamp(12, 0, 10) == 10</code>.
+The agents propose the fix and the test in their responses.</p>
+<p><img src="assets/diagrams/workflow-build.svg" alt="Build teaching diagram with the faulty clamp input and Reviewer followed by Test Writer in the pipeline"></p>
+</li>
+<li>
+<p><strong>Debug the live run.</strong> On Reviewer, use the Builder context menu's
+<strong>Break before thought</strong> action. The composer offers <strong>Debug</strong> when a
+breakpoint is set. Choose <strong>Layouts → Debug</strong>, then start with <strong>Debug</strong>.
+At the breakpoint, inspect the paused Reviewer in the graph and the events
+received so far in <strong>Run Log</strong>. The Reviewer's thought has not run yet and
+Test Writer is waiting. Click <strong>Resume</strong> to continue the live execution.
+Let both steps finish so the completed recording is available for replay.</p>
+<p><img src="assets/diagrams/workflow-debug.svg" alt="Debug teaching diagram with Reviewer paused before its thought, Test Writer waiting, and the live log stopped at the breakpoint"></p>
+</li>
+<li>
+<p><strong>Replay the completed recording.</strong> Choose <strong>Layouts → Replay</strong> and select
+that completed run in <strong>Run Timeline</strong>. Scrub the slider to the Reviewer's
+completed response. The graph and recorded <strong>Run Log</strong> follow the same
+event, where Reviewer has described the fix and Test Writer is still
+waiting. Use <strong>Play</strong> or scrub forward to the Test Writer's suggested
+<code>clamp(12, 0, 10) == 10</code> check. Playback moves the viewing position
+through the saved events.</p>
+<p><img src="assets/diagrams/workflow-replay.svg" alt="Replay teaching diagram with a selected completed recording, the event slider at Reviewer output, and graph and recorded log aligned"></p>
+</li>
+</ol>
+<h2 id="visual-builder">Visual Builder</h2>
+<p>Use <strong>+ Add</strong> to create nodes and groups. Hover over an icon to see its
+action. Use <strong>Tab</strong> to reach the choices in <strong>+ Add</strong>, and <strong>Esc</strong> to close it
+and return focus to the button. The composer shows <strong>Run</strong>, or <strong>Debug</strong>
+when a breakpoint is set.</p>
+<p>Choose <strong>SVG workbench preview</strong> in the toolbar to switch canvases. <strong>Classic
+canvas</strong> returns to the default view. <strong>Arrange</strong> lays out the SVG preview
+left to right. Use the fold control on a group, or <strong>Fold all</strong> and
+<strong>Unfold all</strong> in the toolbar.</p>
+<p>Builder opens the <strong>Execution Path</strong> when a run starts. Use <strong>Show
+Workflow</strong> to see the configured graph while it runs. After a run, <strong>Back to
+Canvas</strong> restores editing and <strong>Show Results</strong> opens the execution graph again.</p>
+<h3 id="canvas-basics">Canvas Basics</h3>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>How</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pan canvas</td>
+<td>Click and drag on empty space</td>
+</tr>
+<tr>
+<td>Zoom</td>
+<td>Scroll wheel or pinch</td>
+</tr>
+<tr>
+<td>Fit view</td>
+<td>Click the fit-view button in bottom-left controls</td>
+</tr>
+<tr>
+<td>Add node</td>
+<td>Open <strong>+ Add</strong> and choose Agent, Tool, Skill, or Orchestrator</td>
+</tr>
+<tr>
+<td>Move node</td>
+<td>Click and drag a node</td>
+</tr>
+<tr>
+<td>Connect nodes</td>
+<td>Drag from a source handle to a target handle</td>
+</tr>
+<tr>
+<td>Edit node</td>
+<td>Click a node to open the side panel editor</td>
+</tr>
+<tr>
+<td>Delete node</td>
+<td>Select node(s), press Delete or Backspace</td>
+</tr>
+<tr>
+<td>Right-click menu</td>
+<td>Right-click any node for context actions</td>
+</tr>
+</tbody>
+</table>
+<h3 id="node-types">Node Types</h3>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Purpose</th>
+<th>Handles</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Agent</strong></td>
+<td>LLM-powered worker or supervisor</td>
+<td>In (top), Out to tools/skills (bottom)</td>
+</tr>
+<tr>
+<td><strong>Tool</strong></td>
+<td>CLI command, filesystem operation, MCP server call, or A2A delegation</td>
+<td>In (top)</td>
+</tr>
+<tr>
+<td><strong>Skill</strong></td>
+<td>Reusable tool+prompt combination</td>
+<td>In (top)</td>
+</tr>
+<tr>
+<td><strong>Orchestrator</strong></td>
+<td>Manages agent coordination strategy</td>
+<td>In (top), Out to agents (bottom)</td>
+</tr>
+<tr>
+<td><strong>Group</strong></td>
+<td>Container block for grouping nodes</td>
+<td>In (top), Out (bottom)</td>
+</tr>
+<tr>
+<td><strong>Decision</strong></td>
+<td>Asks typed questions and can route to agent steps</td>
+<td>Branch wires come from the Decision configuration</td>
+</tr>
+<tr>
+<td><strong>Retrieval</strong></td>
+<td>Searches a local document corpus and returns cited passages</td>
+<td>An evidence wire connects to a Decision configured to use the results</td>
+</tr>
+</tbody>
+</table>
+<p>Select a pipeline group to enable <strong>Decision</strong> and <strong>Retrieval</strong> in <strong>+ Add</strong>.
+Open the Decision editor to set its backend, questions and routes.
+Set the corpus directory in the Retrieval editor and start <code>rakitsu serve</code>
+with <code>RAKITSU_RETRIEVAL_ROOT</code> pointing at the approved corpus. See the
+<a href="../#en.ref-decision-retrieval">pipeline reference</a>
+for the evidence input rules.</p>
+<h3 id="connection-rules">Connection Rules</h3>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Valid Targets</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Orchestrator</td>
+<td>Agent, Orchestrator, Group</td>
+</tr>
+<tr>
+<td>Agent</td>
+<td>Tool, Skill, Agent, Orchestrator, Group</td>
+</tr>
+<tr>
+<td>Group</td>
+<td>Agent, Tool, Skill, Orchestrator, Group</td>
+</tr>
+<tr>
+<td>Tool</td>
+<td>(leaf node — no outgoing connections)</td>
+</tr>
+<tr>
+<td>Skill</td>
+<td>(leaf node — no outgoing connections)</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="multi-select">Multi-Select</h2>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>How</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Box select</td>
+<td><strong>Shift + drag</strong> on empty canvas</td>
+</tr>
+<tr>
+<td>Toggle node</td>
+<td><strong>Cmd + click</strong> (Mac) / <strong>Ctrl + click</strong> (Win)</td>
+</tr>
+<tr>
+<td>Select all same level</td>
+<td>Shift+drag covers all nodes at current scope</td>
+</tr>
+<tr>
+<td>Deselect all</td>
+<td>Click empty canvas or press <strong>Escape</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="bulk-operations">Bulk Operations</h3>
+<p>When multiple nodes are selected, a <strong>Bulk Edit</strong> panel appears:</p>
+<ul>
+<li>Shows count and types of selected nodes</li>
+<li>If all same type (e.g., all agents): edit shared fields (provider, model)</li>
+<li><strong>Duplicate</strong> — clones all selected nodes + internal edges</li>
+<li><strong>Delete</strong> — removes all selected with confirmation</li>
+</ul>
+<hr>
+<h2 id="block-programming-groups">Block Programming (Groups)</h2>
+<h3 id="creating-groups">Creating Groups</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>How</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Empty group</td>
+<td>Open <strong>+ Add</strong> and choose <strong>Pipeline</strong>, <strong>Parallel</strong>, <strong>Team</strong>, <strong>Loop</strong>, or <strong>Group</strong></td>
+</tr>
+<tr>
+<td>Group selection</td>
+<td>Select two or more nodes, then use the <strong>Group selection</strong> icon</td>
+</tr>
+<tr>
+<td>Right-click menu</td>
+<td>Multi-select → right-click → &quot;Group as Pipeline/Parallel/Team&quot;</td>
+</tr>
+</tbody>
+</table>
+<h3 id="group-types">Group Types</h3>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Color</th>
+<th>Execution Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Pipeline</strong></td>
+<td>Blue</td>
+<td>Children execute sequentially (top to bottom)</td>
+</tr>
+<tr>
+<td><strong>Parallel</strong></td>
+<td>Green</td>
+<td>Children execute concurrently</td>
+</tr>
+<tr>
+<td><strong>Team</strong></td>
+<td>Pink</td>
+<td>Children managed by orchestrator (hierarchical)</td>
+</tr>
+<tr>
+<td><strong>Generic</strong></td>
+<td>Gray</td>
+<td>Visual grouping only — no execution semantics</td>
+</tr>
+</tbody>
+</table>
+<h3 id="adding-nodes-to-groups">Adding Nodes to Groups</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>How</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Drag and drop</td>
+<td>Drag a node over a group → release → overlay menu &quot;Add to group&quot;</td>
+</tr>
+<tr>
+<td>Nested groups</td>
+<td>Drag a node over a nested group → deepest matching group is targeted</td>
+</tr>
+<tr>
+<td>Re-parent</td>
+<td>Drag a node from one group to another → moves between groups</td>
+</tr>
+</tbody>
+</table>
+<p>During drag, the target group <strong>highlights with a blue glow</strong> to show where the node will land.</p>
+<h3 id="removing-nodes-from-groups">Removing Nodes from Groups</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>How</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ungroup all</td>
+<td>Select group → click <strong>Ungroup</strong> or right-click → Ungroup</td>
+</tr>
+<tr>
+<td>Drag out</td>
+<td>(Enter group scope first, then drag node outside)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="group-properties">Group Properties</h3>
+<ul>
+<li><strong>Resizable</strong> — select a group, drag the corner/edge handles</li>
+<li><strong>Minimum size</strong> — 250 x 120 pixels</li>
+<li><strong>Connectable</strong> — groups have input/output handles for edges</li>
+</ul>
+<hr>
+<h2 id="scope-based-selection">Scope-Based Selection</h2>
+<p>Selection follows a <strong>hierarchical scope model</strong> (like Maya/Figma):</p>
+<h3 id="scope-navigation">Scope Navigation</h3>
+<p>The <strong>scope widget</strong> appears at the top center of the canvas:</p>
+<pre><code>[ Canvas ] | Enter: [ Pipeline ] [ Team ]     ← at root
+[ Canvas ] / [ Pipeline ] [ ↑ Up ]            ← inside Pipeline
+[ Canvas ] / [ Pipeline ] / [ Parallel ] [ ↑ Up ]  ← nested
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>How</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Enter a group</td>
+<td><strong>Double-click</strong> the group, or click its name in the scope widget</td>
+</tr>
+<tr>
+<td>Exit group</td>
+<td>Press <strong>Escape</strong>, or click <strong>↑ Up</strong>, or click a parent in the scope path</td>
+</tr>
+<tr>
+<td>Jump to root</td>
+<td>Click <strong>Canvas</strong> in the scope widget</td>
+</tr>
+</tbody>
+</table>
+<h3 id="selection-rules">Selection Rules</h3>
+<ol>
+<li><strong>Same-level only</strong> — you can only select nodes at the current scope level</li>
+<li><strong>Parent overrides children</strong> — if a group is selected, its members can't be individually selected</li>
+<li><strong>Selecting a group deselects its descendants</strong> — cleans up conflicting selections</li>
+<li><strong>Groups are selectable</strong> — groups at the current scope level can be part of multi-select</li>
+<li><strong>Mixed selection</strong> — groups + regular nodes can be selected together at the same level</li>
+</ol>
+<hr>
+<h2 id="settings-panel">Settings Panel</h2>
+<p>Open with the <strong>gear icon</strong> in the toolbar.</p>
+<h3 id="service-providers">Service Providers</h3>
+<p>Define LLM providers before configuring agents:</p>
+<ol>
+<li>Click <strong>+ Add Service Provider</strong></li>
+<li>Set <strong>Name</strong> (e.g., &quot;my-openai&quot;, &quot;litellm-proxy&quot;)</li>
+<li>Set <strong>Type</strong> (openai, anthropic, gemini, ollama, litellm)</li>
+<li>Set <strong>Default Model</strong> — auto-discovers from proxy if base_url is set</li>
+<li>Set <strong>API Key</strong> and <strong>Base URL</strong> as needed</li>
+</ol>
+<h3 id="defaults">Defaults</h3>
+<ul>
+<li><strong>Default Provider</strong> — dropdown shows only defined providers</li>
+<li><strong>Default Model</strong> — auto-discovers from the default provider</li>
+<li><strong>Temperature</strong>, <strong>Max Tokens</strong> — propagated to agents via inherit/override</li>
+</ul>
+<h3 id="inheritoverride-system">Inherit/Override System</h3>
+<p>All auto-filled values follow an <strong>inherit/override</strong> pattern:</p>
+<table>
+<thead>
+<tr>
+<th>Badge</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>inherited</strong> (blue)</td>
+<td>Value syncs with its source (e.g., provider's default model)</td>
+</tr>
+<tr>
+<td><strong>reset</strong> button</td>
+<td>Click to go back to inherited from a manual override</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Inheritable fields:</strong></p>
+<ul>
+<li><code>model</code> ← provider's default_model</li>
+<li><code>temperature</code> ← settings.defaults.temperature</li>
+<li><code>max_tokens</code> ← settings.defaults.max_tokens</li>
+<li><code>max_iterations</code> ← settings.execution.max_iterations</li>
+<li><code>timeout</code> ← settings.execution.timeout_seconds</li>
+</ul>
+<p>Changing the source (e.g., provider default model) automatically updates all agents with inherited values. Manually overridden values are never touched.</p>
+<hr>
+<h2 id="referential-integrity">Referential Integrity</h2>
+<p>All entities have <strong>internal stable IDs</strong> (<code>_id</code>). References survive renames:</p>
+<table>
+<thead>
+<tr>
+<th>Rename</th>
+<th>Auto-updates</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Provider renamed</td>
+<td>All agent/orchestrator <code>provider</code> fields</td>
+</tr>
+<tr>
+<td>Tool renamed</td>
+<td>All agent <code>tools[]</code>, all skill <code>tools[]</code></td>
+</tr>
+<tr>
+<td>Skill renamed</td>
+<td>All agent <code>skills[]</code></td>
+</tr>
+<tr>
+<td>Agent renamed</td>
+<td>Orchestrator <code>agents[]</code>, pipeline step <code>agent</code> refs</td>
+</tr>
+</tbody>
+</table>
+<p>IDs are stripped on YAML export — clean output with no internal metadata.</p>
+<hr>
+<h2 id="node-editor">Node Editor</h2>
+<p>Click any node to open the side panel editor.</p>
+<h3 id="agent-fields">Agent Fields</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Name</td>
+<td>Agent identifier (used in YAML + references)</td>
+</tr>
+<tr>
+<td>Role</td>
+<td><code>worker</code> or <code>supervisor</code></td>
+</tr>
+<tr>
+<td>Provider</td>
+<td>Select from defined providers</td>
+</tr>
+<tr>
+<td>Model</td>
+<td>Auto-discovers from provider, or type custom</td>
+</tr>
+<tr>
+<td>System Prompt</td>
+<td>Agent instructions (multi-line text)</td>
+</tr>
+<tr>
+<td>Tools</td>
+<td>Chip multi-select from canvas tools + custom input</td>
+</tr>
+<tr>
+<td>Skills</td>
+<td>Chip multi-select from canvas skills</td>
+</tr>
+<tr>
+<td>Vision</td>
+<td>Enable image input support</td>
+</tr>
+<tr>
+<td>Model Config</td>
+<td>Temperature, max tokens, top P, penalties</td>
+</tr>
+<tr>
+<td>Agent Settings</td>
+<td>Max iterations, timeout, reflection, ground check</td>
+</tr>
+</tbody>
+</table>
+<h3 id="combobox-dropdowns">ComboBox Dropdowns</h3>
+<p>All dropdowns use a custom <strong>ComboBox</strong> component:</p>
+<ul>
+<li>Click to open dropdown with all options</li>
+<li>Type to filter (incremental subsequence matching)</li>
+<li>Toggle <strong>A/F</strong> button to switch between &quot;show All&quot; and &quot;Filter&quot; mode</li>
+<li>Custom values accepted (type and press Enter)</li>
+</ul>
+<hr>
+<h2 id="debugger">Debugger</h2>
+<h3 id="modes">Modes</h3>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Run</strong></td>
+<td>Execute agent, stream events (no debug overhead)</td>
+</tr>
+<tr>
+<td><strong>Debug</strong></td>
+<td>Attach debugger with breakpoints, pause/resume, param override</td>
+</tr>
+</tbody>
+</table>
+<h3 id="session-panel-right-side">Session Panel (right side)</h3>
+<ul>
+<li><strong>Live</strong> tab — active and recent runs</li>
+<li><strong>History</strong> tab — past sessions from the JSONL session store</li>
+<li><strong>Search</strong> — incremental chip-based filter (name, query, agent, status, config path)</li>
+<li><strong>Delete</strong> — single or bulk delete with confirmation</li>
+<li><strong>Resizable</strong> — drag left edge to resize</li>
+</ul>
+<h3 id="visualization-styles">Visualization Styles</h3>
+<p>Switch using the <strong>Tree</strong> and <strong>Block</strong> buttons or open the other graph styles:</p>
+<table>
+<thead>
+<tr>
+<th>Style</th>
+<th>Best For</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Tree</strong></td>
+<td>Hierarchical view, compact, most detail</td>
+</tr>
+<tr>
+<td><strong>Block</strong></td>
+<td>Execution cards and the visual path through the run</td>
+</tr>
+<tr>
+<td><strong>Timeline</strong></td>
+<td>Time-based horizontal view</td>
+</tr>
+<tr>
+<td><strong>Mind Map</strong></td>
+<td>Organic radial layout</td>
+</tr>
+</tbody>
+</table>
+<h3 id="breakpoints">Breakpoints</h3>
+<p>Set breakpoints to pause execution at specific points:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>How</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Breakpoint bar</td>
+<td>Select event type + agent name in the toolbar</td>
+</tr>
+<tr>
+<td>Tree context menu</td>
+<td>Right-click a node → &quot;Set Breakpoint&quot;</td>
+</tr>
+<tr>
+<td>Inline buttons</td>
+<td>Select a tree node → click <strong>BP</strong> button</td>
+</tr>
+<tr>
+<td>Builder context menu</td>
+<td>Right-click agent node → &quot;Break before thought/tool/agent&quot;</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Supported checkpoints:</strong>
+<code>AGENT_START</code>, <code>THOUGHT_START</code>, <code>THOUGHT_END</code>, <code>TOOL_CALL_START</code>, <code>REFLECTION_START</code>, <code>GROUND_CHECK_START</code>, <code>PIPELINE_STEP_START</code></p>
+<h3 id="while-paused">While Paused</h3>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Resume</strong></td>
+<td>Continue execution normally</td>
+</tr>
+<tr>
+<td><strong>Step</strong></td>
+<td>Advance to next checkpoint</td>
+</tr>
+<tr>
+<td><strong>Step In</strong></td>
+<td>Enter the next sub-agent</td>
+</tr>
+<tr>
+<td><strong>Step Out</strong></td>
+<td>Resume until leaving current agent</td>
+</tr>
+<tr>
+<td><strong>Run to Here</strong></td>
+<td>Resume until reaching a specific node</td>
+</tr>
+<tr>
+<td><strong>Stop</strong></td>
+<td>Cancel execution</td>
+</tr>
+</tbody>
+</table>
+<h3 id="paused-node-indicators">Paused Node Indicators</h3>
+<table>
+<thead>
+<tr>
+<th>Visual</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Orange pulsing background</td>
+<td>Node is paused</td>
+</tr>
+<tr>
+<td>⏸ icon + &quot;PAUSED&quot; badge</td>
+<td>Paused at this node</td>
+</tr>
+<tr>
+<td>Red dot in gutter</td>
+<td>Breakpoint set on this agent</td>
+</tr>
+<tr>
+<td>Green background + spinner</td>
+<td>Currently executing</td>
+</tr>
+<tr>
+<td>Live status line</td>
+<td>Shows what agent is doing (streaming text, tool call, etc.)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="debug-experimentation">Debug Experimentation</h3>
+<p>While paused, override parameters in the Detail Panel:</p>
+<ul>
+<li><strong>System Prompt</strong> — modify the agent's instructions</li>
+<li><strong>Max Iterations</strong> — change iteration limit</li>
+<li><strong>Tools</strong> — enable/disable specific tools</li>
+<li><strong>Sticky</strong> toggle — override persists across resumes or applies once</li>
+</ul>
+<h3 id="debug-from-history">Debug from History</h3>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Where</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Run to Here</strong></td>
+<td>Tree node (live debug)</td>
+<td>Resumes until reaching that node</td>
+</tr>
+<tr>
+<td><strong>Debug from Here</strong></td>
+<td>Tree node (history)</td>
+<td>Re-runs session in debug mode, pauses at that node</td>
+</tr>
+<tr>
+<td><strong>Rerun</strong></td>
+<td>Session panel</td>
+<td>Re-launches a past session</td>
+</tr>
+<tr>
+<td><strong>Inspect in Builder</strong></td>
+<td>Session panel</td>
+<td>Loads session config into the visual builder</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="import--export">Import / Export</h2>
+<h3 id="import">Import</h3>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>How</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Single YAML</td>
+<td><strong>Import → Import YAML</strong></td>
+</tr>
+<tr>
+<td>Modular directory</td>
+<td><strong>Import → Import Directory</strong></td>
+</tr>
+<tr>
+<td>Scaffold template</td>
+<td><strong>Scaffold</strong>, then choose a preset</td>
+</tr>
+</tbody>
+</table>
+<h3 id="export">Export</h3>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>How</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Single YAML</td>
+<td><strong>Export → Export YAML</strong></td>
+</tr>
+<tr>
+<td>Modular ZIP</td>
+<td><strong>Export → Export Modular (ZIP)</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Internal fields (<code>_id</code>, <code>_providerId</code>, <code>_inherited</code>) are automatically stripped on export.</p>
+<h3 id="pipeline-import">Pipeline Import</h3>
+<p>When importing a config with <code>orchestrator.strategy: Pipeline</code>:</p>
+<ul>
+<li>Pipeline steps become <strong>Pipeline group</strong> blocks</li>
+<li>Parallel steps become nested <strong>Parallel group</strong> blocks</li>
+<li>Agents are placed inside their respective groups</li>
+</ul>
+<hr>
+<h2 id="environment-variables">Environment Variables</h2>
+<p>Set env vars for agent execution in the Run dialog:</p>
+<ul>
+<li>Add key-value pairs in the <strong>Environment</strong> section</li>
+<li>Variables are scoped to the execution only (not set on the server process)</li>
+<li>Use <code>${VAR_NAME}</code> syntax in YAML configs to reference them</li>
+</ul>
+<hr>
+<h2 id="keyboard-shortcuts">Keyboard Shortcuts</h2>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Delete</strong> / <strong>Backspace</strong></td>
+<td>Delete selected nodes</td>
+</tr>
+<tr>
+<td><strong>Escape</strong></td>
+<td>Exit group scope / deselect all</td>
+</tr>
+<tr>
+<td><strong>Shift + drag</strong></td>
+<td>Box select multiple nodes</td>
+</tr>
+<tr>
+<td><strong>Cmd + click</strong></td>
+<td>Toggle node in multi-selection</td>
+</tr>
+<tr>
+<td><strong>Double-click group</strong></td>
+<td>Enter group scope</td>
+</tr>
+<tr>
+<td><strong>Cmd + Enter</strong></td>
+<td>Run (in run dialog)</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="workspace-directory">Workspace Directory</h2>
+<p>Set the working directory for tool execution:</p>
+<ul>
+<li><strong>Builder run dialog</strong> — workspace field with orange warning if empty</li>
+<li><strong>RunLauncher</strong> (session panel) — same field</li>
+<li>Tools execute relative to this directory</li>
+<li>Persists across runs in the session</li>
+</ul>
+<hr>
+<h2 id="tips">Tips</h2>
+<ul>
+<li>Use <strong>scaffold templates</strong> to get started quickly</li>
+<li>Define <strong>providers in Settings first</strong>, then agents will auto-populate model lists</li>
+<li>Set <strong>default_model on each provider</strong> — new agents inherit it automatically</li>
+<li>Use <strong>Pipeline/Parallel groups</strong> to visualize execution order</li>
+<li><strong>Double-click groups</strong> to edit children inside</li>
+<li>The <strong>inherit system</strong> keeps settings in sync — use &quot;reset&quot; to go back to defaults</li>
+<li><strong>Right-click</strong> any node for quick actions (breakpoints, duplicate, delete, group)</li>
+</ul>
+
+</main></div></body></html>

@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en" data-preview="v0.4.0" class="preview-manual">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rakitsu v0.4.0-alpha.1 · README</title>
+<link rel="stylesheet" href="../assets/app.css">
+<link rel="stylesheet" href="v0.4.0-indigo.css">
+</head>
+<body><div class="wrap"><main>
+<nav class="preview-doc-nav" aria-label="Documentation">
+  <a href="./#en.ref-web-ui-story">Reference</a>
+  <a href="README.ja.html" hreflang="ja" lang="ja">日本語</a>
+</nav>
+<p align="center">
+  <img src="docs/assets/brand/rakitsu-logo.svg" width="240" alt="Rakitsu logo">
+</p>
+<h1 align="center">Rakitsu</h1>
+<p><a href="README.ja.html">日本語</a></p>
+<p><a href="https://github.com/SK-ENT/rakitsu/actions/workflows/ci.yml"><img src="https://github.com/SK-ENT/rakitsu/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+<a href="https://github.com/SK-ENT/rakitsu/releases"><img src="https://img.shields.io/github/v/release/SK-ENT/rakitsu?include_prereleases" alt="Release"></a>
+<a href="#disclaimer"><img src="https://img.shields.io/badge/status-preview-orange.svg" alt="Status: Preview"></a>
+<a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/LICENSE"><img src="https://img.shields.io/badge/License-BSL%201.1-blue.svg" alt="License: BSL 1.1"></a>
+<a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.26-00ADD8.svg" alt="Go 1.26"></a></p>
+<p><strong>The Agent IDE</strong> — Build, debug, and ship AI agents visually.</p>
+<blockquote>
+<p><em>rakit</em> (Indonesian: craft) + <em>jiritsu</em> (Japanese: autonomous) — &quot;autonomous assembly&quot;</p>
+</blockquote>
+<p>Design multi-agent systems on a drag-and-drop canvas, debug with breakpoints and time-travel, deploy as a single zero-dependency binary. YAML-configured, multi-provider, open source.</p>
+<blockquote>
+<p><strong>0.4.0 development preview.</strong> The demos below were captured on the v0.4.0
+milestone. The Quick Start installs the latest published release. To try the
+preview from this checkout, run <code>make build-embedded VERSION=v0.4.0-dev</code>
+and then <code>./bin/rakitsu serve</code>.</p>
+</blockquote>
+<p align="center">
+  <img src="docs/assets/diagrams/workflow-overview.svg" width="640" alt="Teaching example of a Python clamp review, from wiring Reviewer and Test Writer to a live breakpoint and recorded replay">
+</p>
+<p>A Reviewer spots reversed <code>min</code> and <code>max</code> calls in a Python clamp. A Test
+Writer suggests checking that <code>clamp(12, 0, 10)</code> returns <code>10</code>. Follow the
+example through a live breakpoint and the finished recording.
+<a href="docs/WEBUI.html#build-debug-and-replay-a-code-review">Follow the example workflow in the Web UI manual</a>.</p>
+<h2 id="quick-start">Quick Start</h2>
+<ol>
+<li>
+<p>Install Rakitsu. On macOS or Linux, paste this into your terminal. On Windows, download the executable from the <a href="https://github.com/SK-ENT/rakitsu/releases/latest">release page</a>.</p>
+<pre><code class="language-bash">curl -fsSL https://raw.githubusercontent.com/SK-ENT/rakitsu/main/install.sh | sh
+</code></pre>
+</li>
+<li>
+<p>Run <code>rakitsu quickstart</code>. On Windows, open PowerShell in the download folder and run <code>.\rakitsu-windows-amd64.exe quickstart</code>. Choose <strong>Chat Bot</strong> and a provider you already use. Enter its API key if prompted, then follow the prompts to create your project.</p>
+</li>
+<li>
+<p>Choose <strong>Yes</strong> when asked to start the web UI. Open <strong><a href="http://localhost:9100">http://localhost:9100</a></strong> if it doesn't open automatically, then start a chat.</p>
+</li>
+</ol>
+<p>The wizard creates the config for you. To use Rakitsu in an editor, see the <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/reference/acp.md#quick-start-in-zed">Zed quick start</a>.</p>
+<p><code>rakitsu serve</code> runs in the foreground and keeps that terminal busy — that's
+expected, it's the server. Leave it running and open a <strong>new terminal tab</strong>
+for anything else (editing files, running <code>rakitsu run</code>, etc). Ctrl+C stops it.</p>
+<p>There are two ways to run an agent once <code>serve</code> is up:</p>
+<ul>
+<li><strong>Click Run in the browser</strong> — the whole run happens inside the <code>serve</code>
+process itself. No other terminal needed.</li>
+<li><strong><code>rakitsu run config.yaml &quot;query&quot;</code></strong> from a second terminal — runs as its
+own CLI process and, if <code>serve</code> is already running, shows up live as a
+card at <a href="http://localhost:9100">http://localhost:9100</a> so you can watch it in the debugger.</li>
+</ul>
+<p>Rakitsu doesn't run inference itself — you need access to a model, either
+your own <a href="https://ollama.com">Ollama</a> running locally or an API key for
+OpenAI, Anthropic, Gemini, or a LiteLLM proxy.</p>
+<p>No API key? Click <strong>Run the Demo</strong> on the welcome screen and pick Ollama —
+still needs a local Ollama install with a model pulled (<code>ollama pull llama3.2</code>), just no cloud key. It's a pre-wired run with breakpoints
+already set, so you can see the visual builder and live debugger in action
+before writing a config.</p>
+<blockquote>
+<p><strong>macOS:</strong> release binaries aren't notarized yet, so Gatekeeper can silently
+kill a freshly downloaded <code>rakitsu</code> on first run (no dialog, just &quot;killed&quot;).
+If that happens: <code>xattr -cr $(command -v rakitsu)</code>, and if it's still
+killed, <code>sudo spctl --add $(command -v rakitsu)</code> or System Settings →
+Privacy &amp; Security → <strong>Open Anyway</strong>.</p>
+</blockquote>
+<h3 id="other-ways-to-install">Other ways to install</h3>
+<p>For v0.3.2, use <code>install.sh</code> or the <a href="https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.2">stable release downloads</a>. The Homebrew formula currently pins v0.3.0-alpha.14.</p>
+<pre><code class="language-bash"># Homebrew (macOS / Linux) — the formula lives in this repo
+brew tap sk-ent/rakitsu https://github.com/SK-ENT/rakitsu
+brew install sk-ent/rakitsu/rakitsu
+
+# Docker (linux/amd64, linux/arm64) — use the exact release tag
+docker run --rm ghcr.io/sk-ent/rakitsu:v0.3.2 version
+docker run --rm -it -e OPENAI_API_KEY -v &quot;$PWD:/workspace&quot; \
+  ghcr.io/sk-ent/rakitsu:v0.3.2 run config.yaml &quot;your query&quot;
+</code></pre>
+<p>To expose the API from Docker, <code>serve</code> must bind <code>0.0.0.0</code> inside the
+container, which it only allows with an API token set. Publish the port on
+localhost only:
+<code>docker run --rm -e RAKITSU_API_TOKEN=&lt;token&gt; -p 127.0.0.1:9100:9100 ghcr.io/sk-ent/rakitsu:v0.3.2 serve --host 0.0.0.0</code>.
+For local visual inspection, run <code>rakitsu serve</code> on loopback outside the container. See <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/reference/security.md">server authentication</a> for API access.
+Inside the container, a cli tool's <code>sandbox: docker</code> needs the host Docker
+socket mounted, which gives the container root on your machine. The default
+<code>local_restricted</code> sandbox works without it.</p>
+<h2 id="see-it-run">See it run</h2>
+<p><strong>Debug.</strong> A live code review pauses before an agent thought. Inspect the
+graph and Run Log, then use <strong>Resume</strong> to continue execution.</p>
+<p align="center">
+  <img src="docs/assets/showcase/debugger.gif" width="880" alt="Rakitsu 0.4.0 Debug layout with Builder, the execution graph, Run Log, and Run Timeline as a code review pauses at an agent breakpoint and resumes">
+</p>
+<p align="center"><sub>A local code review pauses at an agent breakpoint and resumes in the Debug layout.</sub></p>
+<p><strong>Builder.</strong> Open <strong>+ Add</strong> to create nodes, or use the <strong>Import</strong> icon to load a
+pipeline. The demo switches to the SVG workbench and folds a pipeline with
+local Retrieval and Decision steps. This separate pipeline runs without
+agents.</p>
+<p align="center">
+  <img src="docs/assets/showcase/builder.gif" width="880" alt="Rakitsu 0.4.0 Builder with Retrieval and Decision steps, showing group folding and the SVG workbench preview">
+</p>
+<p><strong>Chat.</strong> A local Ollama model explains a bug in a short Python function.</p>
+<p align="center">
+  <img src="docs/assets/showcase/chat.gif" width="880" alt="Rakitsu 0.4.0 Chat panel showing a Python function and a response from a local model">
+</p>
+<p>The full walkthrough covers Builder, a live breakpoint, and recorded playback.
+<a href="docs/assets/showcase/web-ui-workbench.mp4">Watch the MP4 walkthrough</a> or open the
+<a href="docs/WEBUI.html">Web UI manual</a>.</p>
+<h2 id="why-rakitsu">Why Rakitsu?</h2>
+<ul>
+<li><strong>Visual-first</strong>: Design agents on a drag-and-drop canvas, not in code</li>
+<li><strong>Debug like software</strong>: Breakpoints, pause, inspect reasoning mid-execution</li>
+<li><strong>Single binary</strong>: One file, zero dependencies — download and run</li>
+<li><strong>YAML-configured</strong>: Declarative configs, no framework code to write</li>
+<li><strong>Multi-provider</strong>: Mix OpenAI, Anthropic, Gemini, Ollama per-agent in one config</li>
+</ul>
+<h2 id="features">Features</h2>
+<p><strong>Visual Builder</strong></p>
+<ul>
+<li>Add nodes and groups with <strong>+ Add</strong>, then drag and wire them on the canvas</li>
+<li>Use compact icon controls in docked layouts. <strong>Run</strong> and <strong>Debug</strong> stay labeled</li>
+<li>Switch to <strong>SVG workbench preview</strong> for orthogonal wiring and an alternate canvas</li>
+<li>Add <strong>Decision</strong> for typed model answers or <strong>Retrieval</strong> for local document search</li>
+<li>Inherit/override: group defines defaults, agents override, with badges</li>
+<li>Canvas search, auto-arrange, hierarchy panel</li>
+</ul>
+<p><strong>Runtime Debugger</strong></p>
+<ul>
+<li>Set breakpoints on any agent or tool node</li>
+<li>Pause mid-execution, inspect reasoning, override parameters, resume</li>
+<li>4 visualization modes: Tree, Block Diagram, Timeline, Mind Map</li>
+<li>Dock Builder, Debugger, Run Log, and Run Timeline together with <strong>Layouts → Debug</strong></li>
+<li>Use <strong>Layouts → Replay</strong> to scrub recorded runs and follow the graph and log together</li>
+</ul>
+<p><strong>Agent Engine</strong></p>
+<ul>
+<li>ReAct loop with reflection and ground-checking</li>
+<li>Orchestration strategies: ReAct, Pipeline (with Sequential/Parallel/DAG step shapes); Hierarchical and Plan-and-Execute currently route through ReAct, not distinct implementations</li>
+<li>Pipeline checkpoint and resume</li>
+<li>Token budget enforcement, cost tracking, context auto-compression</li>
+</ul>
+<p><strong>Providers</strong></p>
+<ul>
+<li>OpenAI, Anthropic Claude, Google Gemini, Ollama, LiteLLM</li>
+<li>Mix providers per-agent in a single config</li>
+<li>Auto-discover models from any OpenAI-compatible endpoint</li>
+</ul>
+<p><strong>Runtime portability (optional)</strong></p>
+<ul>
+<li>Primary runtime is the Rakitsu binary; for teams shipping to alternative runtimes, configs export via the <code>RuntimeTarget</code> interface</li>
+<li>Built-in formats: NemoClaw, OpenClaw — see <a href="#export-verification">Export Verification</a></li>
+</ul>
+<p><strong>Operations</strong></p>
+<ul>
+<li>Session history with replay and rerun</li>
+<li>CLI and web UI modes</li>
+<li>Secure tools: CLI whitelist/blocklist, file path restrictions, Docker sandbox</li>
+<li>Release binaries: Linux and macOS (amd64 + arm64), Windows (amd64)</li>
+</ul>
+<p><strong>Protocol interop</strong></p>
+<ul>
+<li><code>rakitsu acp</code> — run as an ACP (Agent Client Protocol) server so editors like Zed can talk to rakitsu agents directly</li>
+<li><code>rakitsu acp</code> reads one JSON-RPC message per line, capped at 16 MiB per line</li>
+<li><code>rakitsu acp</code> keeps at most <code>--max-sessions</code> sessions (default 256) and drops one unused for <code>--session-idle-timeout</code> (default 24h); a session with a running prompt is never dropped</li>
+<li><code>rakitsu serve --config tools.yaml --mcp-port 9200</code> exposes an MCP server at <code>http://localhost:9200/mcp</code> on a separate listener (legacy era, ≤2025-11-25 revision) so external MCP clients can discover and call rakitsu's tools</li>
+<li><code>rakitsu serve --config team.yaml</code> reloads the A2A config and sibling skills for each new task. Other discovered configs are addressable at <code>/a2a/{config-id}</code> with cards at <code>/.well-known/agent-card.json/{config-id}</code>; an optional MCP listener refreshes its tool registry when tool definitions change. Adding or editing agent configs no longer requires restarting the service</li>
+<li>Tool types <code>mcp_server</code>, <code>a2a</code>, and <code>jev</code> let a rakitsu agent call <em>out</em> to other MCP servers, A2A agents, or TypeSafe AI's Jev model for typed yes/no, pick-one, or scored questions</li>
+</ul>
+<h2 id="long-running-monitors">Long-running monitors</h2>
+<p>Experimental. A chat session can wake itself on a timer (<code>settings.wake</code>), check something, and stay quiet unless it matters. <code>rakitsu serve --config monitor.yaml</code> can start such sessions itself from a <code>monitors:</code> block, so a supervisor (Docker, systemd, launchd) only has to restart one process.</p>
+<ul>
+<li><code>GET /healthz</code> returns 200 when every monitor is healthy, 503 otherwise. <code>rakitsu healthcheck</code> wraps it for Docker.</li>
+<li>Status and control: <code>GET /api/chat/{id}/wake/status</code>, <code>POST .../wake/stop</code>, <code>POST .../wake/resume</code>, the <code>/wake</code> slash command, and a status card in the web UI.</li>
+<li>Alerts go out through server-side sinks (webhook, ntfy) with a host allow-list; the agent only queues a message with the <code>send_alert</code> tool.</li>
+<li>Status: the timer logic is tested with a fake clock. A live multi-day run is in progress and not yet proven.</li>
+</ul>
+<p>Details: <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/wake-timer.md">docs/wake-timer.md</a>, <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/monitor-autostart.md">docs/monitor-autostart.md</a>, deployment files in <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/deploy/monitor/">deploy/monitor/</a>.</p>
+<h2 id="wallpapers">Wallpapers</h2>
+<p>Something to watch while an agent thinks. The Builder canvas can run an animated shader behind your agents: seven presets, off by default, picked in the Settings panel.</p>
+<p>One of the presets, Water Ripple, is a koi pond. Press <strong>F</strong> to drop food and the koi show up. Press <strong>Shift+F</strong> to fish them instead (they forgive you, they're pixels). <strong>R</strong> makes it rain. The clip below shows Water Ripple on the Builder canvas.</p>
+<p align="center">
+  <img src="docs/assets/showcase/wallpaper-koi-pond.gif" width="640" alt="Water Ripple wallpaper with koi and feeding pellets on the 0.4.0 Builder canvas">
+</p>
+<details>
+<summary>Why is there a koi pond in an agent IDE?</summary>
+<p>I was debugging something ugly at 11pm, doing the classic dev thing: staring at a spinner like it owes me money. My daughter walked by, looked at my screen, and said: <em>&quot;you're always stressed when you do this. Why don't you just... put koi on it? Something nice to look at while it thinks.&quot;</em></p>
+<p>A child roasted my life choices and fixed my UX in one sentence.</p>
+</details>
+<p>The other six:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:center"></th>
+<th style="text-align:center"></th>
+<th style="text-align:center"></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center"><img src="docs/assets/showcase/wallpaper-flow.jpg" width="260" alt="Circuit Flow wallpaper"><br>Circuit Flow</td>
+<td style="text-align:center"><img src="docs/assets/showcase/wallpaper-lattice.jpg" width="260" alt="Plasma Lattice wallpaper"><br>Plasma Lattice</td>
+<td style="text-align:center"><img src="docs/assets/showcase/wallpaper-fog.jpg" width="260" alt="Volumetric Fog wallpaper"><br>Volumetric Fog</td>
+</tr>
+<tr>
+<td style="text-align:center"><img src="docs/assets/showcase/wallpaper-cells.jpg" width="260" alt="Voronoi Cells wallpaper"><br>Voronoi Cells</td>
+<td style="text-align:center"><img src="docs/assets/showcase/wallpaper-aurora.jpg" width="260" alt="Aurora Waves wallpaper"><br>Aurora Waves</td>
+<td style="text-align:center"><img src="docs/assets/showcase/wallpaper-sumi.jpg" width="260" alt="Suminagashi wallpaper"><br>Suminagashi</td>
+</tr>
+</tbody>
+</table>
+<h2 id="cli">CLI</h2>
+<pre><code class="language-bash">rakitsu quickstart                    # Interactive project wizard
+rakitsu serve                         # Web UI + agent runner
+rakitsu serve --config tools.yaml --mcp-port 9200  # A2A on 9100; MCP at localhost:9200/mcp
+rakitsu run config.yaml &quot;query&quot;       # Run agents from CLI
+rakitsu acp                           # Run as an ACP server (editor integration, e.g. Zed)
+rakitsu scaffold code-review          # Generate config from template
+rakitsu sessions                      # Browse past runs
+rakitsu doctor config.yaml            # Diagnose config + provider health before running
+rakitsu healthcheck                   # Probe a running `serve` at /healthz (exit 0 = healthy)
+
+# Override provider/model at runtime (no config edits needed):
+rakitsu run config.yaml &quot;query&quot; --provider openai --model gpt-5.6-luna
+rakitsu run config.yaml &quot;query&quot; --provider ollama --model llama3
+</code></pre>
+<h2 id="example-config">Example Config</h2>
+<pre><code class="language-yaml">name: Code Reviewer
+settings:
+  default_provider: openai
+  providers:
+    openai:
+      type: openai
+      api_key: ${OPENAI_API_KEY}
+      reasoning_effort: none
+  defaults:
+    model: gpt-5.6-luna
+
+tools:
+  - name: read_file
+    type: fs
+    operation: read
+
+agents:
+  - name: Reviewer
+    role: worker
+    provider: openai
+    model: gpt-5.4
+    system_prompt: Review code for bugs, security issues, and best practices.
+    tools: [read_file]
+
+orchestrator:
+  name: Lead
+  strategy: Pipeline
+  agents: [Reviewer]
+  pipeline:
+    steps:
+      - name: review
+        agent: Reviewer
+        task: Review the supplied query.
+</code></pre>
+<p>Optional settings blocks:</p>
+<pre><code class="language-yaml">settings:
+  spawn:              # runtime subagent fan-out (spawn_agent tool)
+    enabled: true
+    max_concurrent: 3 # run-global cap on concurrent children (default 4)
+    max_depth: 1      # children cannot spawn further (default)
+    timeout_seconds: 300
+</code></pre>
+<p>With <code>settings.spawn.enabled</code>, every agent (and the interactive chat host) gets a <code>spawn_agent</code> tool: it can spawn parallel subagents at runtime — ad-hoc workers or clones of config-defined agents — each with its own timeout, streamed into the same trace/debugger with explicit parent links. See <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/examples/single/10-spawn-fanout/">examples/single/10-spawn-fanout/</a>.</p>
+<p>See <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/examples/">examples/</a> for chat bots, dev teams, pipelines, RAG assistants, and more.</p>
+<h2 id="export-verification">Export Verification</h2>
+<p>Rakitsu's <code>RuntimeTarget</code> exports are verified end-to-end against real infrastructure — not claims, real HTTP traces. The current implementations cover OpenClaw and NVIDIA NemoClaw; the table below shows what each was tested against.</p>
+<h3 id="whats-verified">What's Verified</h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Runtime Tested Against</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>openclaw.json</code></td>
+<td><code>ghcr.io/openclaw/openclaw:latest</code> (Docker)</td>
+<td>Gateway started with Rakitsu-generated config</td>
+</tr>
+<tr>
+<td><code>sandbox-policy.yaml</code></td>
+<td>NVIDIA OpenShell on DGX Spark (aarch64)</td>
+<td><code>Policy version 2 loaded (active)</code></td>
+</tr>
+<tr>
+<td>Full NemoClaw sandbox</td>
+<td>NemoClaw CLI in docker-in-docker, sandbox created with Landlock+seccomp+netns</td>
+<td><code>Policy version 6 loaded (active)</code></td>
+</tr>
+<tr>
+<td>End-to-end inference</td>
+<td>NemoClaw sandbox → egress proxy → DGX Spark Nemotron-30B</td>
+<td><strong>HTTP 200 chat completion</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="e2e-test-setup">E2E Test Setup</h3>
+<pre><code>docker:dind (local host)
+  └── NemoClaw CLI + OpenShell gateway (k3s-in-Docker)
+       └── Sandbox &quot;my-assistant&quot; (Landlock + seccomp + netns)
+            └── OpenClaw agent
+                 └── Rakitsu-exported openclaw.json  ←── our export
+                 └── Rakitsu-exported sandbox-policy  ←── our export
+                 └── HTTP request to DGX Spark (via egress proxy)
+                      └── LiteLLM → vLLM → Nemotron-30B
+                           └── HTTP 200 chat completion ✓
+</code></pre>
+<p>All files destroyed with <code>docker rm -f</code> after verification — no residual state. The heavy E2E test is <strong>manual only</strong>; unit regression tests guard the export schema (binary allowlist, port extraction, env var expansion) and run on every CI build.</p>
+<p>See <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/EXPORT-VERIFICATION.md">docs/EXPORT-VERIFICATION.md</a> for the full audit trail.</p>
+<h2 id="build-from-source">Build from Source</h2>
+<pre><code class="language-bash">git clone https://github.com/SK-ENT/rakitsu.git
+cd rakitsu
+make build-embedded    # frontend + Go binary → bin/rakitsu
+./bin/rakitsu serve
+</code></pre>
+<p>Requires: Go 1.26+, Node.js 20.19+ or 22.12+</p>
+<h2 id="project-structure">Project Structure</h2>
+<pre><code>cmd/rakitsu/        CLI entry points (Cobra)
+internal/agent/     ReAct loop, orchestrator, pipeline executor
+internal/llm/       LLM provider interface + implementations
+internal/tools/     Tool interface: cli/, fs/, mcp/, a2a/, memory/, alert/
+internal/wake/      Wake timer engine (checks, rules, tasks)
+internal/alert/     Alert sinks (webhook, ntfy) with redaction and rate cap
+internal/server/    SSE hub, agent runner, config store
+internal/debug/     Debug controller, replay, breakpoints
+internal/store/     Session persistence (JSONL, one file per session)
+web/src/            Vue 3 + Vue Flow frontend
+examples/           Ready-to-run YAML configs
+</code></pre>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<p><strong>&quot;openai API key not set&quot;</strong> — Export your key before running:</p>
+<pre><code class="language-bash">export OPENAI_API_KEY=sk-...
+</code></pre>
+<p><strong>&quot;cannot load config: no such file or directory&quot;</strong> — Check the config path. Try <code>ls examples/single/</code> to see available configs.</p>
+<p><strong>&quot;cannot create provider for agent …&quot;</strong> — An agent references a provider that isn't defined. Add it under <code>settings.providers</code> in your config, and make sure the agent's <code>provider:</code> field matches the provider name exactly.</p>
+<p><strong>&quot;is port 9100 already in use?&quot;</strong> — Another <code>rakitsu serve</code> may be running. Kill it or use a different port:</p>
+<pre><code class="language-bash">rakitsu serve --port 8080
+</code></pre>
+<p><strong>Running more than one instance</strong> — Give each instance its own session directory and memory directory, via <code>--sessions-dir PATH</code> (on <code>serve</code>, <code>run</code>, <code>sessions</code>) or <code>settings.sessions_dir</code>, plus <code>settings.memory.dir</code>. Never share one directory between running instances: the <code>sessions.json</code> index is not safe for several writers. Default is <code>~/.rakitsu/sessions</code>. <code>run --hub URL</code> selects only the live event destination; it does not inherit that server's history directory. Configure <code>run</code> and <code>serve</code> history explicitly; live visibility does not guarantee saved-history visibility. Details: <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/configuration.md#running-isolated-instances">docs/configuration.md</a>.</p>
+<p><strong>Agent runs but produces no output</strong> — Check <code>--trace</code> for execution details:</p>
+<pre><code class="language-bash">rakitsu run config.yaml &quot;query&quot; --trace --verbose
+</code></pre>
+<p><strong>Run stops too early, or runs too long</strong> — By default there is no time limit, and agents without <code>max_iterations</code> have no iteration cap: a run ends on its answer, a budget (<code>max_cost</code> / <code>max_total_tokens</code>), <code>--idle-timeout</code>, or Ctrl+C. Set a limit with <code>--timeout</code> (seconds; per turn in <code>--interactive</code>):</p>
+<pre><code class="language-bash">rakitsu run config.yaml &quot;query&quot; --timeout 600
+</code></pre>
+<p><strong>Output starts with <code>[REASONING-ONLY OUTPUT — …]</code></strong> — The model (typically nemotron, DeepSeek-R1, QwQ) consumed its <code>max_tokens</code> budget on chain-of-thought before emitting any user-facing answer. Three production-ready alternatives are documented in <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/providers/reasoning-models.md">docs/providers/reasoning-models.md</a>: keep the default and rely on extraction, swap synthesis to Gemini, or run hybrid (local workers + cloud synthesis).</p>
+<h2 id="origin">Origin</h2>
+<p>Rakitsu began in spring 2026 as a small project to support my son. It was
+supposed to stay small — it didn't. The problem turned out to be genuinely
+interesting, and it grew into serious, long-term work. It remains a family
+project at heart.</p>
+<p>Rakitsu is built openly with AI: it is co-developed by a human and AI coding
+assistants. Design decisions, code review, and final verification are human;
+a large share of the implementation is AI-assisted. See
+<a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/AI_USE_NOTICE.md"><code>AI_USE_NOTICE.md</code></a> for how AI tooling relates to the
+license.</p>
+<h2 id="disclaimer">Disclaimer</h2>
+<blockquote>
+<p><strong>Rakitsu is in preview.</strong> Individual releases may be labeled alpha, beta, or stable. Interfaces, APIs, and behavior may change without notice. Rakitsu executes LLM-generated tool calls (shell commands, file operations) which carry inherent risk. Use at your own risk. The authors assume no liability for any losses, damages, or consequences arising from use of this software. See <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/LICENSE">LICENSE</a> for full terms.</p>
+</blockquote>
+<h2 id="license">License</h2>
+<p>BSL 1.1 — See <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/LICENSE">LICENSE</a> for details. Converts to Apache 2.0 after 4 years.</p>
+<p><strong>AI tooling</strong>: see <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/AI_USE_NOTICE.md"><code>AI_USE_NOTICE.md</code></a>. Reading and personal study with AI tools is fine; AI-accelerated competitive reimplementation is subject to the BSL non-compete clause.</p>
+<h2 id="links">Links</h2>
+<ul>
+<li><a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/examples/">Examples</a></li>
+<li><a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/CONTRIBUTING.md">Contributing</a></li>
+<li><a href="https://sk-ent.github.io/rakitsu/latest/">Documentation</a></li>
+<li><a href="./#en.ref-hub">Reference</a></li>
+<li><a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/reference/acp.md">ACP and Zed setup</a></li>
+<li><a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/DEVELOPMENT.md">Development Guide</a></li>
+<li><a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/SYSTEM-SPEC.md">System Spec</a></li>
+<li><a href="https://github.com/SK-ENT/rakitsu/releases">Release history</a></li>
+<li><a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/ACKNOWLEDGMENTS.md">Acknowledgments</a></li>
+</ul>
+
+</main></div></body></html>

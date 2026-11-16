@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="ja" data-preview="v0.4.0" class="preview-manual">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rakitsu v0.4.0-alpha.1 · Web UI マニュアル</title>
+<link rel="stylesheet" href="../../assets/app.css">
+<link rel="stylesheet" href="../v0.4.0-indigo.css">
+</head>
+<body><div class="wrap"><main>
+<nav class="preview-doc-nav" aria-label="ドキュメント">
+  <a href=".././#ja.ref-web-ui-story">リファレンス</a>
+  <a href="WEBUI.html" hreflang="en" lang="en">English</a>
+</nav>
+<p><a href="WEBUI.html">English</a> | 日本語</p>
+<h1 id="rakitsu-web-uiマニュアル">Rakitsu Web UIマニュアル</h1>
+<h2 id="概要">概要</h2>
+<p>このマニュアルは 0.4.0 開発版のワークスペースを説明します。</p>
+<p>Rakitsu の Web UI は、<code>rakitsu serve</code> で起動する多機能なエージェントIDEです。ワークスペースには、ドッキング可能な7つのパネルがあります。</p>
+<ul>
+<li><strong>Builder</strong> — ドラッグ＆ドロップでエージェントを視覚的に設定</li>
+<li><strong>Debugger</strong> — ブレークポイントを使ったリアルタイムの実行監視</li>
+<li><strong>Inspector</strong> — イベントストリームの表示</li>
+<li><strong>Sessions</strong> — セッション履歴の表示と確認</li>
+<li><strong>Chat</strong> — エージェントとの対話</li>
+<li><strong>Run Log</strong> — 最新の実行、選択したセッション、または受信した全イベントの表示</li>
+<li><strong>Run Timeline</strong> — 記録した実行の再生とイベントの詳細表示</li>
+</ul>
+<p>UIを起動します。</p>
+<pre><code class="language-bash">rakitsu serve --port 9100
+# http://localhost:9100 を開く
+</code></pre>
+<p><strong>初回起動で設定一覧が空の場合：</strong> <code>serve</code> は、実行したディレクトリを基準に <code>.</code>、<code>./examples</code>、<code>./configs</code>（または <code>--config-dir</code>）で見つかった設定だけを表示します。まだプロジェクトがなければ、先に <code>rakitsu quickstart</code> を実行してください。自分で設定を書く前に <code>examples/</code> から1つ選んでUIを試すこともできます。</p>
+<hr>
+<h2 id="ワークスペースのレイアウト">ワークスペースのレイアウト</h2>
+<p><strong>Layouts → Debug</strong> を選ぶと、Builder の隣に Debugger の Block グラフ、その下に Run Log と Run Timeline が配置されます。ログは別のソースを選ぶまで、Web UIでの最新の実行に追従します。<strong>Layouts → Replay</strong> では実行グラフを広く表示できます。Run Timeline で記録を選び、<strong>Play</strong> またはスライダーを使うと、グラフと記録済みログの表示位置が連動して移動します。プリセットを切り替えても、選択中の記録と再生位置は保持されます。狭いウィンドウではパネルが縦に並びます。</p>
+<p>各パネルの <strong>⋯</strong> メニューで、フロート表示、ドッキング、最大化、別のタブグループへの移動ができます。タブまたはフロート表示のタイトルバーをドラッグすると、所定の位置にスナップします。
+Builder では入力欄の山形アイコンでプロンプトの操作領域を折りたたみ、キャンバスを広げられます。再び開くときもプロンプトと実行設定は保持されます。Builder のフッターには最近の実行が表示されます。</p>
+<p><a href="assets/showcase/web-ui-workbench.mp4">0.4.0 Web UIの操作動画を見る</a>。
+Builder のパイプライン、Debug レイアウトでのブレークポイント、Replay レイアウトでの記録の再生を紹介しています。</p>
+<p><a id="build-debug-and-replay-a-code-review"></a></p>
+<h2 id="python-コードレビューのワークフロー例">Python コードレビューのワークフロー例</h2>
+<p>以下の解説図は、2つのエージェントによるレビューの流れを示します。録画では実際のワークスペースの操作を紹介しており、エージェントなしで動く別の Retrieval → Decision パイプラインも登場します。</p>
+<ol>
+<li>
+<p><strong>2つのステップを作成する。</strong> <strong>Settings</strong> でプロバイダーとモデルを設定します。<strong>+ Add</strong> で Orchestrator、Pipeline グループ、Reviewer と Test Writer という名前の2つのエージェントを作成します。Orchestrator をグループに接続します。両エージェントをグループ内へドラッグし、<strong>Add to group</strong> で確定してください。Reviewer を Test Writer より上に置くと、Pipeline グループがその順に実行します。Reviewer にはバグと修正方法の説明、Test Writer にはレビューをもとにした回帰テストの提案を指示します。Builder の入力欄に次の Python コードを入力してください。</p>
+<pre><code class="language-python">def clamp(x, lo, hi):
+    return min(lo, max(x, hi))
+</code></pre>
+<p><code>min</code> と <code>max</code> の呼び出しが逆になっています。意図する修正は <code>max(lo, min(x, hi))</code>、テスト案は <code>clamp(12, 0, 10) == 10</code> です。エージェントは回答の中で修正とテストを提案します。</p>
+<p><img src="assets/diagrams/workflow-build-ja.svg" alt="誤った clamp の入力と、Pipeline グループ内で Reviewer、Test Writer の順に並ぶ構成の解説図"></p>
+</li>
+<li>
+<p><strong>実行中にデバッグする。</strong> Reviewer の Builder コンテキストメニューで <strong>Break before thought</strong> を選びます。ブレークポイントを設定すると、入力欄に <strong>Debug</strong> が表示されます。<strong>Layouts → Debug</strong> を選び、<strong>Debug</strong> で開始してください。ブレークポイントで停止したら、グラフ内の Reviewer と、それまでに <strong>Run Log</strong> が受信したイベントを確認します。この時点では Reviewer の思考処理はまだ始まっておらず、Test Writer も待機中です。<strong>Resume</strong> をクリックすると実行が再開します。記録を再生できるように、両ステップを最後まで実行してください。</p>
+<p><img src="assets/diagrams/workflow-debug-ja.svg" alt="Reviewer が思考処理の前で一時停止し、Test Writer が待機、ライブログもブレークポイントで止まっているデバッグの解説図"></p>
+</li>
+<li>
+<p><strong>完了した記録を再生する。</strong> <strong>Layouts → Replay</strong> を選び、<strong>Run Timeline</strong> で完了した実行を選択します。スライダーを Reviewer の回答完了位置まで動かしてください。グラフと記録済みの <strong>Run Log</strong> は同じイベントに追従します。その時点では Reviewer が修正方法を説明済みで、Test Writer はまだ待機中です。<strong>Play</strong> またはスライダーで先へ進むと、Test Writer が提案した <code>clamp(12, 0, 10) == 10</code> の確認を見られます。再生は、保存済みイベントの閲覧位置を移動する操作です。</p>
+<p><img src="assets/diagrams/workflow-replay-ja.svg" alt="完了した記録を選び、スライダーを Reviewer の回答位置に合わせて、グラフと記録済みログを連動表示する再生の解説図"></p>
+</li>
+</ol>
+<h2 id="visual-builder">Visual Builder</h2>
+<p><strong>+ Add</strong> からノードやグループを作成します。アイコンにカーソルを合わせると操作名が表示されます。<strong>Tab</strong> で <strong>+ Add</strong> 内の選択肢に移動でき、<strong>Esc</strong> で閉じるとボタンにフォーカスが戻ります。入力欄には <strong>Run</strong>、ブレークポイントがある場合は <strong>Debug</strong> が表示されます。</p>
+<p>ツールバーの <strong>SVG workbench preview</strong> でキャンバスを切り替えます。<strong>Classic canvas</strong> で既定の表示に戻ります。<strong>Arrange</strong> は SVG プレビューを左から右へ整列します。グループの折りたたみボタン、またはツールバーの <strong>Fold all</strong> / <strong>Unfold all</strong> を使えます。</p>
+<p>実行を開始すると Builder は <strong>Execution Path</strong> を開きます。実行中に設定済みのグラフを見るには <strong>Show Workflow</strong> を使います。実行後は <strong>Back to Canvas</strong> で編集に戻り、<strong>Show Results</strong> で実行グラフを再表示できます。</p>
+<h3 id="キャンバスの基本操作">キャンバスの基本操作</h3>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>方法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>キャンバスを移動</td>
+<td>空白部分をクリックしてドラッグ</td>
+</tr>
+<tr>
+<td>ズーム</td>
+<td>マウスホイールまたはピンチ操作</td>
+</tr>
+<tr>
+<td>全体を表示</td>
+<td>左下の操作ボタンにある fit-view をクリック</td>
+</tr>
+<tr>
+<td>ノードを追加</td>
+<td><strong>+ Add</strong> を開き、Agent、Tool、Skill、Orchestrator を選択</td>
+</tr>
+<tr>
+<td>ノードを移動</td>
+<td>ノードをクリックしてドラッグ</td>
+</tr>
+<tr>
+<td>ノードを接続</td>
+<td>接続元のハンドルから接続先のハンドルへドラッグ</td>
+</tr>
+<tr>
+<td>ノードを編集</td>
+<td>ノードをクリックしてサイドパネルのエディターを開く</td>
+</tr>
+<tr>
+<td>ノードを削除</td>
+<td>ノードを選択し、Delete または Backspace</td>
+</tr>
+<tr>
+<td>右クリックメニュー</td>
+<td>ノードを右クリックしてコンテキスト操作を表示</td>
+</tr>
+</tbody>
+</table>
+<h3 id="ノードの種類">ノードの種類</h3>
+<table>
+<thead>
+<tr>
+<th>種類</th>
+<th>用途</th>
+<th>接続ハンドル</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Agent</strong></td>
+<td>LLMを使うワーカーまたは監督役</td>
+<td>入力（上）、ツール・スキルへの出力（下）</td>
+</tr>
+<tr>
+<td><strong>Tool</strong></td>
+<td>CLIコマンド、ファイル操作、MCPサーバー呼び出し、A2A委任</td>
+<td>入力（上）</td>
+</tr>
+<tr>
+<td><strong>Skill</strong></td>
+<td>再利用できるツールとプロンプトの組み合わせ</td>
+<td>入力（上）</td>
+</tr>
+<tr>
+<td><strong>Orchestrator</strong></td>
+<td>エージェントの連携戦略を管理</td>
+<td>入力（上）、エージェントへの出力（下）</td>
+</tr>
+<tr>
+<td><strong>Group</strong></td>
+<td>ノードをまとめるコンテナー</td>
+<td>入力（上）、出力（下）</td>
+</tr>
+<tr>
+<td><strong>Decision</strong></td>
+<td>型付きの質問を行い、エージェントのステップへ振り分け可能</td>
+<td>分岐の接続線は Decision の設定から生成</td>
+</tr>
+<tr>
+<td><strong>Retrieval</strong></td>
+<td>ローカルの文書群を検索し、出典付きの抜粋を返す</td>
+<td>検索結果を使う設定の Decision に根拠の接続線でつなぐ</td>
+</tr>
+</tbody>
+</table>
+<p>Pipeline グループを選択すると、<strong>+ Add</strong> で <strong>Decision</strong> と <strong>Retrieval</strong> が選べます。
+Decision エディターではバックエンド、質問、振り分け先を設定します。
+Retrieval エディターでは文書群のディレクトリを設定し、<code>RAKITSU_RETRIEVAL_ROOT</code> を承認済みの文書群に向けて <code>rakitsu serve</code> を起動してください。根拠の入力ルールは<a href="../#ja.ref-decision-retrieval">パイプラインのリファレンス</a>を参照してください。</p>
+<h3 id="接続ルール">接続ルール</h3>
+<table>
+<thead>
+<tr>
+<th>接続元</th>
+<th>接続できる対象</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Orchestrator</td>
+<td>Agent、Orchestrator、Group</td>
+</tr>
+<tr>
+<td>Agent</td>
+<td>Tool、Skill、Agent、Orchestrator、Group</td>
+</tr>
+<tr>
+<td>Group</td>
+<td>Agent、Tool、Skill、Orchestrator、Group</td>
+</tr>
+<tr>
+<td>Tool</td>
+<td>末端ノード。出力接続なし</td>
+</tr>
+<tr>
+<td>Skill</td>
+<td>末端ノード。出力接続なし</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="複数選択">複数選択</h2>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>方法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>範囲選択</td>
+<td>キャンバスの空白部分で <strong>Shift + drag</strong></td>
+</tr>
+<tr>
+<td>ノードの選択を切り替え</td>
+<td><strong>Cmd + click</strong>（Mac）/ <strong>Ctrl + click</strong>（Win）</td>
+</tr>
+<tr>
+<td>同じ階層をすべて選択</td>
+<td>Shift+drag で現在のスコープ内の全ノードを囲む</td>
+</tr>
+<tr>
+<td>選択をすべて解除</td>
+<td>キャンバスの空白部分をクリック、または <strong>Escape</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="一括操作">一括操作</h3>
+<p>複数のノードを選択すると <strong>Bulk Edit</strong> パネルが表示されます。</p>
+<ul>
+<li>選択したノードの数と種類を表示</li>
+<li>すべて同じ種類（すべて Agent など）なら、共通フィールド（プロバイダー、モデル）を編集可能</li>
+<li><strong>Duplicate</strong> — 選択した全ノードと、その間の接続線を複製</li>
+<li><strong>Delete</strong> — 確認後、選択した全ノードを削除</li>
+</ul>
+<hr>
+<h2 id="ブロックプログラミンググループ">ブロックプログラミング（グループ）</h2>
+<h3 id="グループの作成">グループの作成</h3>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>操作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>空のグループ</td>
+<td><strong>+ Add</strong> を開き、<strong>Pipeline</strong>、<strong>Parallel</strong>、<strong>Team</strong>、<strong>Loop</strong>、<strong>Group</strong> を選択</td>
+</tr>
+<tr>
+<td>選択したノードをグループ化</td>
+<td>2つ以上のノードを選び、<strong>Group selection</strong> アイコンを使用</td>
+</tr>
+<tr>
+<td>右クリックメニュー</td>
+<td>複数選択 → 右クリック → &quot;Group as Pipeline/Parallel/Team&quot;</td>
+</tr>
+</tbody>
+</table>
+<h3 id="グループの種類">グループの種類</h3>
+<table>
+<thead>
+<tr>
+<th>種類</th>
+<th>色</th>
+<th>実行上の意味</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Pipeline</strong></td>
+<td>青</td>
+<td>子ノードを上から下へ順に実行</td>
+</tr>
+<tr>
+<td><strong>Parallel</strong></td>
+<td>緑</td>
+<td>子ノードを並列に実行</td>
+</tr>
+<tr>
+<td><strong>Team</strong></td>
+<td>ピンク</td>
+<td>オーケストレーターが子ノードを階層的に管理</td>
+</tr>
+<tr>
+<td><strong>Generic</strong></td>
+<td>グレー</td>
+<td>見た目上のグループ化のみ。実行動作への影響なし</td>
+</tr>
+</tbody>
+</table>
+<h3 id="グループへノードを追加">グループへノードを追加</h3>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>操作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ドラッグ＆ドロップ</td>
+<td>ノードをグループに重ねて離し、重ねて表示されるメニューで &quot;Add to group&quot;</td>
+</tr>
+<tr>
+<td>入れ子のグループ</td>
+<td>ノードを入れ子のグループに重ねると、該当する最も深いグループが対象</td>
+</tr>
+<tr>
+<td>親グループを変更</td>
+<td>ノードを別のグループへドラッグして移動</td>
+</tr>
+</tbody>
+</table>
+<p>ドラッグ中、対象のグループは<strong>青く光って強調表示</strong>され、配置先を示します。</p>
+<h3 id="グループからノードを取り出す">グループからノードを取り出す</h3>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>操作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>グループを解除</td>
+<td>グループを選択 → <strong>Ungroup</strong> をクリック、または右クリック → Ungroup</td>
+</tr>
+<tr>
+<td>外へドラッグ</td>
+<td>先にグループのスコープに入り、ノードを外へドラッグ</td>
+</tr>
+</tbody>
+</table>
+<h3 id="グループの特性">グループの特性</h3>
+<ul>
+<li><strong>サイズ変更可能</strong> — グループを選択し、角や辺のハンドルをドラッグ</li>
+<li><strong>最小サイズ</strong> — 250 × 120 ピクセル</li>
+<li><strong>接続可能</strong> — 接続線用の入出力ハンドルを持つ</li>
+</ul>
+<hr>
+<h2 id="スコープに基づく選択">スコープに基づく選択</h2>
+<p>選択操作は、Maya や Figma のように<strong>階層ごとのスコープ</strong>に従います。</p>
+<h3 id="スコープ間の移動">スコープ間の移動</h3>
+<p>キャンバス上部中央に<strong>スコープウィジェット</strong>が表示されます。</p>
+<pre><code>[ Canvas ] | Enter: [ Pipeline ] [ Team ]     ← 最上位
+[ Canvas ] / [ Pipeline ] [ ↑ Up ]            ← Pipeline の内部
+[ Canvas ] / [ Pipeline ] / [ Parallel ] [ ↑ Up ]  ← 入れ子
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>方法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>グループに入る</td>
+<td>グループを<strong>ダブルクリック</strong>、またはスコープウィジェット内の名前をクリック</td>
+</tr>
+<tr>
+<td>グループから出る</td>
+<td><strong>Escape</strong>、<strong>↑ Up</strong>、またはスコープのパス内の親をクリック</td>
+</tr>
+<tr>
+<td>最上位へ移動</td>
+<td>スコープウィジェットの <strong>Canvas</strong> をクリック</td>
+</tr>
+</tbody>
+</table>
+<h3 id="選択ルール">選択ルール</h3>
+<ol>
+<li><strong>同じ階層だけ</strong> — 現在のスコープと同じ階層のノードだけを選択できます</li>
+<li><strong>親の選択を優先</strong> — グループを選択している間、そのメンバーは個別に選択できません</li>
+<li><strong>グループを選ぶと子孫の選択を解除</strong> — 矛盾する選択を解消します</li>
+<li><strong>グループも選択可能</strong> — 現在の階層のグループを複数選択に含められます</li>
+<li><strong>種類の混在が可能</strong> — 同じ階層ならグループと通常のノードを一緒に選べます</li>
+</ol>
+<hr>
+<h2 id="settings-パネル">Settings パネル</h2>
+<p>ツールバーの<strong>歯車アイコン</strong>で開きます。</p>
+<h3 id="サービスプロバイダー">サービスプロバイダー</h3>
+<p>エージェントの設定前に、LLMプロバイダーを定義してください。</p>
+<ol>
+<li><strong>+ Add Service Provider</strong> をクリック</li>
+<li><strong>Name</strong> を設定（例：&quot;my-openai&quot;、&quot;litellm-proxy&quot;）</li>
+<li><strong>Type</strong> を設定（openai、anthropic、gemini、ollama、litellm）</li>
+<li><strong>Default Model</strong> を設定。base_url が設定済みならプロキシから自動検出</li>
+<li>必要に応じて <strong>API Key</strong> と <strong>Base URL</strong> を設定</li>
+</ol>
+<h3 id="既定値">既定値</h3>
+<ul>
+<li><strong>Default Provider</strong> — 定義済みのプロバイダーだけを選択肢に表示</li>
+<li><strong>Default Model</strong> — 既定のプロバイダーから自動検出</li>
+<li><strong>Temperature</strong>、<strong>Max Tokens</strong> — 継承と上書きの仕組みを通じてエージェントに適用</li>
+</ul>
+<h3 id="継承と上書き">継承と上書き</h3>
+<p>自動入力される値はすべて、<strong>継承と上書き</strong>の仕組みに従います。</p>
+<table>
+<thead>
+<tr>
+<th>バッジ</th>
+<th>意味</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>inherited</strong>（青）</td>
+<td>値が継承元（プロバイダーの既定モデルなど）と同期</td>
+</tr>
+<tr>
+<td><strong>reset</strong> ボタン</td>
+<td>手動の上書きを取り消し、継承した値に戻す</td>
+</tr>
+</tbody>
+</table>
+<p><strong>継承できるフィールド：</strong></p>
+<ul>
+<li><code>model</code> ← プロバイダーの default_model</li>
+<li><code>temperature</code> ← settings.defaults.temperature</li>
+<li><code>max_tokens</code> ← settings.defaults.max_tokens</li>
+<li><code>max_iterations</code> ← settings.execution.max_iterations</li>
+<li><code>timeout</code> ← settings.execution.timeout_seconds</li>
+</ul>
+<p>継承元（プロバイダーの既定モデルなど）を変更すると、継承中の全エージェントが自動更新されます。手動で上書きした値は変更されません。</p>
+<hr>
+<h2 id="参照の整合性">参照の整合性</h2>
+<p>すべての要素は<strong>内部用の安定したID</strong>（<code>_id</code>）を持ちます。名前を変更しても参照は保たれます。</p>
+<table>
+<thead>
+<tr>
+<th>名前の変更対象</th>
+<th>自動更新される参照</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>プロバイダー</td>
+<td>全エージェントとオーケストレーターの <code>provider</code></td>
+</tr>
+<tr>
+<td>ツール</td>
+<td>全エージェントと全スキルの <code>tools[]</code></td>
+</tr>
+<tr>
+<td>スキル</td>
+<td>全エージェントの <code>skills[]</code></td>
+</tr>
+<tr>
+<td>エージェント</td>
+<td>オーケストレーターの <code>agents[]</code>、パイプラインステップの <code>agent</code></td>
+</tr>
+</tbody>
+</table>
+<p>YAMLのエクスポート時にIDを除去するため、内部メタデータのない設定を出力できます。</p>
+<hr>
+<h2 id="ノードエディター">ノードエディター</h2>
+<p>ノードをクリックすると、サイドパネルにエディターが開きます。</p>
+<h3 id="agent-のフィールド">Agent のフィールド</h3>
+<table>
+<thead>
+<tr>
+<th>フィールド</th>
+<th>説明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Name</td>
+<td>エージェントの識別名（YAMLと参照で使用）</td>
+</tr>
+<tr>
+<td>Role</td>
+<td><code>worker</code> または <code>supervisor</code></td>
+</tr>
+<tr>
+<td>Provider</td>
+<td>定義済みのプロバイダーから選択</td>
+</tr>
+<tr>
+<td>Model</td>
+<td>プロバイダーから自動検出、または任意の値を入力</td>
+</tr>
+<tr>
+<td>System Prompt</td>
+<td>エージェントへの指示（複数行テキスト）</td>
+</tr>
+<tr>
+<td>Tools</td>
+<td>キャンバス上のツールをチップで複数選択、または任意の値を入力</td>
+</tr>
+<tr>
+<td>Skills</td>
+<td>キャンバス上のスキルをチップで複数選択</td>
+</tr>
+<tr>
+<td>Vision</td>
+<td>画像入力への対応を有効化</td>
+</tr>
+<tr>
+<td>Model Config</td>
+<td>Temperature、max tokens、top P、ペナルティ</td>
+</tr>
+<tr>
+<td>Agent Settings</td>
+<td>最大反復回数、タイムアウト、振り返り、根拠確認</td>
+</tr>
+</tbody>
+</table>
+<h3 id="combobox-のドロップダウン">ComboBox のドロップダウン</h3>
+<p>すべてのドロップダウンは独自の <strong>ComboBox</strong> コンポーネントを使います。</p>
+<ul>
+<li>クリックすると全選択肢を表示</li>
+<li>入力すると絞り込み（入力文字が順番どおりに含まれる候補に逐次一致）</li>
+<li><strong>A/F</strong> ボタンで全表示（All）と絞り込み（Filter）を切り替え</li>
+<li>任意の値も入力可能（入力して Enter）</li>
+</ul>
+<hr>
+<h2 id="debugger">Debugger</h2>
+<h3 id="モード">モード</h3>
+<table>
+<thead>
+<tr>
+<th>モード</th>
+<th>説明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Run</strong></td>
+<td>エージェントを実行し、イベントを配信（デバッグの追加負荷なし）</td>
+</tr>
+<tr>
+<td><strong>Debug</strong></td>
+<td>デバッガーを接続。ブレークポイント、一時停止・再開、パラメーターの上書きが可能</td>
+</tr>
+</tbody>
+</table>
+<h3 id="セッションパネル右側">セッションパネル（右側）</h3>
+<ul>
+<li><strong>Live</strong> タブ — 実行中と最近の実行</li>
+<li><strong>History</strong> タブ — JSONLのセッションストアに保存された過去のセッション</li>
+<li><strong>Search</strong> — チップ形式で逐次絞り込み（名前、クエリ、エージェント、状態、設定パス）</li>
+<li><strong>Delete</strong> — 確認付きの個別削除・一括削除</li>
+<li><strong>サイズ変更可能</strong> — 左端をドラッグして幅を調整</li>
+</ul>
+<h3 id="グラフの表示形式">グラフの表示形式</h3>
+<p><strong>Tree</strong>、<strong>Block</strong> ボタンで切り替えるか、ほかのグラフ形式を開きます。</p>
+<table>
+<thead>
+<tr>
+<th>形式</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Tree</strong></td>
+<td>コンパクトな階層表示。最も詳細な情報</td>
+</tr>
+<tr>
+<td><strong>Block</strong></td>
+<td>実行カードと、実行の流れを視覚的に表示</td>
+</tr>
+<tr>
+<td><strong>Timeline</strong></td>
+<td>時間軸に沿った横方向の表示</td>
+</tr>
+<tr>
+<td><strong>Mind Map</strong></td>
+<td>放射状のレイアウト</td>
+</tr>
+</tbody>
+</table>
+<h3 id="ブレークポイント">ブレークポイント</h3>
+<p>特定の位置で実行を停止するために設定します。</p>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>操作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ブレークポイントバー</td>
+<td>ツールバーでイベントの種類とエージェント名を選択</td>
+</tr>
+<tr>
+<td>ツリーのコンテキストメニュー</td>
+<td>ノードを右クリック → &quot;Set Breakpoint&quot;</td>
+</tr>
+<tr>
+<td>インラインボタン</td>
+<td>ツリーのノードを選択 → <strong>BP</strong></td>
+</tr>
+<tr>
+<td>Builder のコンテキストメニュー</td>
+<td>エージェントを右クリック → &quot;Break before thought/tool/agent&quot;</td>
+</tr>
+</tbody>
+</table>
+<p><strong>対応するチェックポイント：</strong>
+<code>AGENT_START</code>、<code>THOUGHT_START</code>、<code>THOUGHT_END</code>、<code>TOOL_CALL_START</code>、<code>REFLECTION_START</code>、<code>GROUND_CHECK_START</code>、<code>PIPELINE_STEP_START</code></p>
+<h3 id="一時停止中の操作">一時停止中の操作</h3>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>説明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Resume</strong></td>
+<td>通常どおり実行を再開</td>
+</tr>
+<tr>
+<td><strong>Step</strong></td>
+<td>次のチェックポイントまで進む</td>
+</tr>
+<tr>
+<td><strong>Step In</strong></td>
+<td>次のサブエージェントに入る</td>
+</tr>
+<tr>
+<td><strong>Step Out</strong></td>
+<td>現在のエージェントを抜けるまで再開</td>
+</tr>
+<tr>
+<td><strong>Run to Here</strong></td>
+<td>指定したノードまで再開</td>
+</tr>
+<tr>
+<td><strong>Stop</strong></td>
+<td>実行をキャンセル</td>
+</tr>
+</tbody>
+</table>
+<h3 id="ノードの状態表示">ノードの状態表示</h3>
+<table>
+<thead>
+<tr>
+<th>表示</th>
+<th>意味</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>オレンジ色に脈動する背景</td>
+<td>一時停止中</td>
+</tr>
+<tr>
+<td>⏸ アイコンと &quot;PAUSED&quot; バッジ</td>
+<td>このノードで停止中</td>
+</tr>
+<tr>
+<td>余白の赤い点</td>
+<td>このエージェントにブレークポイントを設定済み</td>
+</tr>
+<tr>
+<td>緑の背景とスピナー</td>
+<td>実行中</td>
+</tr>
+<tr>
+<td>ライブの状態行</td>
+<td>エージェントの現在の処理（テキスト配信、ツール呼び出しなど）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="デバッグ中に設定を試す">デバッグ中に設定を試す</h3>
+<p>一時停止中に Detail Panel でパラメーターを上書きできます。</p>
+<ul>
+<li><strong>System Prompt</strong> — エージェントの指示を変更</li>
+<li><strong>Max Iterations</strong> — 反復回数の上限を変更</li>
+<li><strong>Tools</strong> — 個別のツールを有効化・無効化</li>
+<li><strong>Sticky</strong> — 上書きを再開後も保持するか、1回だけ適用するかを切り替え</li>
+</ul>
+<h3 id="履歴からのデバッグ">履歴からのデバッグ</h3>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>場所</th>
+<th>動作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Run to Here</strong></td>
+<td>ツリーノード（実行中のデバッグ）</td>
+<td>そのノードに到達するまで再開</td>
+</tr>
+<tr>
+<td><strong>Debug from Here</strong></td>
+<td>ツリーノード（履歴）</td>
+<td>デバッグモードでセッションを再実行し、そのノードで停止</td>
+</tr>
+<tr>
+<td><strong>Rerun</strong></td>
+<td>セッションパネル</td>
+<td>過去のセッションを再実行</td>
+</tr>
+<tr>
+<td><strong>Inspect in Builder</strong></td>
+<td>セッションパネル</td>
+<td>セッションの設定をビジュアルビルダーに読み込み</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="インポートとエクスポート">インポートとエクスポート</h2>
+<h3 id="インポート">インポート</h3>
+<table>
+<thead>
+<tr>
+<th>形式</th>
+<th>操作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>単一のYAML</td>
+<td><strong>Import → Import YAML</strong></td>
+</tr>
+<tr>
+<td>モジュール構成のディレクトリ</td>
+<td><strong>Import → Import Directory</strong></td>
+</tr>
+<tr>
+<td>ひな形テンプレート</td>
+<td><strong>Scaffold</strong> からプリセットを選択</td>
+</tr>
+</tbody>
+</table>
+<h3 id="エクスポート">エクスポート</h3>
+<table>
+<thead>
+<tr>
+<th>形式</th>
+<th>操作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>単一のYAML</td>
+<td><strong>Export → Export YAML</strong></td>
+</tr>
+<tr>
+<td>モジュール構成のZIP</td>
+<td><strong>Export → Export Modular (ZIP)</strong></td>
+</tr>
+</tbody>
+</table>
+<p>内部フィールド（<code>_id</code>、<code>_providerId</code>、<code>_inherited</code>）はエクスポート時に自動で除去します。</p>
+<h3 id="パイプラインのインポート">パイプラインのインポート</h3>
+<p><code>orchestrator.strategy: Pipeline</code> の設定をインポートすると、次のように変換されます。</p>
+<ul>
+<li>パイプラインのステップは <strong>Pipeline グループ</strong>のブロックに変換</li>
+<li>並列ステップは入れ子の <strong>Parallel グループ</strong>のブロックに変換</li>
+<li>エージェントは対応するグループの内部に配置</li>
+</ul>
+<hr>
+<h2 id="環境変数">環境変数</h2>
+<p>Run ダイアログで、エージェント実行用の環境変数を設定できます。</p>
+<ul>
+<li><strong>Environment</strong> セクションにキーと値の組を追加</li>
+<li>変数はその実行だけに適用（サーバープロセスには設定されません）</li>
+<li>YAML設定では <code>${VAR_NAME}</code> で参照</li>
+</ul>
+<hr>
+<h2 id="キーボードショートカット">キーボードショートカット</h2>
+<table>
+<thead>
+<tr>
+<th>キー</th>
+<th>操作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Delete</strong> / <strong>Backspace</strong></td>
+<td>選択したノードを削除</td>
+</tr>
+<tr>
+<td><strong>Escape</strong></td>
+<td>グループのスコープから出る / 選択をすべて解除</td>
+</tr>
+<tr>
+<td><strong>Shift + drag</strong></td>
+<td>複数ノードを範囲選択</td>
+</tr>
+<tr>
+<td><strong>Cmd + click</strong></td>
+<td>複数選択でノードの選択状態を切り替え</td>
+</tr>
+<tr>
+<td><strong>グループをダブルクリック</strong></td>
+<td>グループのスコープに入る</td>
+</tr>
+<tr>
+<td><strong>Cmd + Enter</strong></td>
+<td>実行（Run ダイアログ内）</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="ワークスペースのディレクトリ">ワークスペースのディレクトリ</h2>
+<p>ツールを実行する作業ディレクトリを設定します。</p>
+<ul>
+<li><strong>Builder の Run ダイアログ</strong> — workspace フィールド。空の場合はオレンジ色の警告</li>
+<li><strong>RunLauncher</strong>（セッションパネル）— 同じフィールド</li>
+<li>ツールはこのディレクトリを基準に実行</li>
+<li>セッション内では次の実行にも引き継ぎ</li>
+</ul>
+<hr>
+<h2 id="使い方のヒント">使い方のヒント</h2>
+<ul>
+<li><strong>Scaffold のテンプレート</strong>からすぐに開始できます</li>
+<li><strong>Settings で先にプロバイダーを定義</strong>すると、エージェントのモデル一覧が自動入力されます</li>
+<li><strong>各プロバイダーの default_model</strong> を設定すると、新しいエージェントが自動で継承します</li>
+<li><strong>Pipeline / Parallel グループ</strong>で実行順を視覚的に表せます</li>
+<li><strong>グループをダブルクリック</strong>して内部の子ノードを編集できます</li>
+<li><strong>継承</strong>で設定を同期できます。既定値へ戻すには &quot;reset&quot; を使います</li>
+<li>ノードを<strong>右クリック</strong>すると、ブレークポイント、複製、削除、グループ化などの操作をすぐに選べます</li>
+</ul>
+
+</main></div></body></html>

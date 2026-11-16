@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="ja" data-preview="v0.4.0" class="preview-manual">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rakitsu v0.4.0-alpha.1 · README</title>
+<link rel="stylesheet" href="../assets/app.css">
+<link rel="stylesheet" href="v0.4.0-indigo.css">
+</head>
+<body><div class="wrap"><main>
+<nav class="preview-doc-nav" aria-label="ドキュメント">
+  <a href="./#ja.ref-web-ui-story">リファレンス</a>
+  <a href="README.html" hreflang="en" lang="en">English</a>
+</nav>
+<p><a href="README.html">English</a> | 日本語</p>
+<p align="center">
+  <img src="docs/assets/brand/rakitsu-logo.svg" width="240" alt="Rakitsu ロゴ">
+</p>
+<h1 align="center">Rakitsu</h1>
+<p><a href="https://github.com/SK-ENT/rakitsu/actions/workflows/ci.yml"><img src="https://github.com/SK-ENT/rakitsu/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+<a href="https://github.com/SK-ENT/rakitsu/releases"><img src="https://img.shields.io/github/v/release/SK-ENT/rakitsu?include_prereleases" alt="Release"></a>
+<a href="#disclaimer"><img src="https://img.shields.io/badge/status-preview-orange.svg" alt="Status: Preview"></a>
+<a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/LICENSE"><img src="https://img.shields.io/badge/License-BSL%201.1-blue.svg" alt="License: BSL 1.1"></a>
+<a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.26-00ADD8.svg" alt="Go 1.26"></a></p>
+<p><strong>エージェントのためのIDE</strong> — AIエージェントを視覚的に構築、デバッグ、リリース。</p>
+<blockquote>
+<p><em>rakit</em>（インドネシア語：組み立てる）+ <em>jiritsu</em>（日本語：自律）—「自律的な組み立て」</p>
+</blockquote>
+<p>ドラッグ＆ドロップのキャンバスでマルチエージェントシステムを設計し、ブレークポイントや過去の実行への移動でデバッグ。依存関係のない単一バイナリでデプロイできます。YAMLで設定でき、複数のプロバイダーに対応するオープンソースです。</p>
+<blockquote>
+<p><strong>0.4.0 開発プレビュー。</strong> 以下のデモは v0.4.0 マイルストーンで収録しています。クイックスタートでは最新の公開リリースをインストールします。このチェックアウトでプレビューを試すには、<code>make build-embedded VERSION=v0.4.0-dev</code> を実行してから <code>./bin/rakitsu serve</code> を起動してください。</p>
+</blockquote>
+<p align="center">
+  <img src="docs/assets/diagrams/workflow-overview-ja.svg" width="640" alt="Python の clamp を題材に、Reviewer と Test Writer の構成、実行中のブレークポイント、記録の再生をたどる解説図">
+</p>
+<p>Reviewer が Python の clamp にある <code>min</code> と <code>max</code> の取り違えを見つけ、Test Writer が <code>clamp(12, 0, 10)</code> の戻り値が <code>10</code> になることを確認するテストを提案します。実行中のブレークポイントから完了した実行の記録まで、一連の流れを見てみましょう。
+<a href="docs/WEBUI.ja.html#build-debug-and-replay-a-code-review">Web UI マニュアルのワークフロー例を読む</a>。</p>
+<h2 id="クイックスタート">クイックスタート</h2>
+<ol>
+<li>
+<p>Rakitsu をインストールします。macOS または Linux では、次をターミナルに貼り付けてください。Windows では<a href="https://github.com/SK-ENT/rakitsu/releases/latest">リリースページ</a>から実行ファイルをダウンロードします。</p>
+<pre><code class="language-bash">curl -fsSL https://raw.githubusercontent.com/SK-ENT/rakitsu/main/install.sh | sh
+</code></pre>
+</li>
+<li>
+<p><code>rakitsu quickstart</code> を実行します。Windows ではダウンロード先のフォルダーで PowerShell を開き、<code>.\rakitsu-windows-amd64.exe quickstart</code> を実行します。<strong>Chat Bot</strong> と、普段使っているプロバイダーを選択してください。求められたらAPIキーを入力し、案内に従ってプロジェクトを作成します。</p>
+</li>
+<li>
+<p>Web UIを起動するか聞かれたら <strong>Yes</strong> を選択します。自動で開かない場合は <strong><a href="http://localhost:9100">http://localhost:9100</a></strong> を開き、チャットを始めてください。</p>
+</li>
+</ol>
+<p>ウィザードが設定ファイルを作成します。エディターで使う場合は <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/reference/acp.md#quick-start-in-zed">Zed クイックスタート</a>を参照してください。</p>
+<p><code>rakitsu serve</code> はフォアグラウンドで動作し、そのターミナルを使い続けます。サーバーとして正常な動作です。起動したままにして、ファイル編集や <code>rakitsu run</code> などの操作には<strong>新しいターミナルタブ</strong>を開いてください。Ctrl+C で停止します。</p>
+<p><code>serve</code> の起動後、エージェントを実行する方法は2つあります。</p>
+<ul>
+<li><strong>ブラウザーで Run をクリック</strong> — 実行はすべて <code>serve</code> プロセス内で完結します。別のターミナルは不要です。</li>
+<li><strong>別のターミナルで <code>rakitsu run config.yaml &quot;query&quot;</code></strong> — 独立したCLIプロセスとして実行します。<code>serve</code> が起動済みなら <a href="http://localhost:9100">http://localhost:9100</a> にカードがリアルタイムで表示され、デバッガーで確認できます。</li>
+</ul>
+<p>Rakitsu 自体は推論を行いません。ローカルで動かす <a href="https://ollama.com">Ollama</a>、または OpenAI、Anthropic、Gemini、LiteLLM プロキシのAPIキーなど、モデルにアクセスする手段が必要です。</p>
+<p>APIキーがない場合は、ウェルカム画面で <strong>Run the Demo</strong> をクリックして Ollama を選んでください。ローカルに Ollama をインストールし、モデルを取得する必要はあります（<code>ollama pull llama3.2</code>）が、クラウドのキーは不要です。構成とブレークポイントが設定済みなので、自分で設定を書く前にビジュアルビルダーと実行中のデバッグを試せます。</p>
+<blockquote>
+<p><strong>macOS:</strong> リリースバイナリはまだ公証されていないため、初回起動時に Gatekeeper がダイアログなしで <code>rakitsu</code> を終了させる場合があります（「killed」とだけ表示）。その場合は <code>xattr -cr $(command -v rakitsu)</code> を実行してください。それでも終了する場合は <code>sudo spctl --add $(command -v rakitsu)</code>、またはシステム設定 → プライバシーとセキュリティ → <strong>このまま開く</strong>を使います。</p>
+</blockquote>
+<h3 id="その他のインストール方法">その他のインストール方法</h3>
+<p>v0.3.2 には <code>install.sh</code> または<a href="https://github.com/SK-ENT/rakitsu/releases/tag/v0.3.2">安定版のダウンロード</a>を使ってください。Homebrew の formula は現在 v0.3.0-alpha.14 に固定されています。</p>
+<pre><code class="language-bash"># Homebrew (macOS / Linux) — formula はこのリポジトリ内
+brew tap sk-ent/rakitsu https://github.com/SK-ENT/rakitsu
+brew install sk-ent/rakitsu/rakitsu
+
+# Docker (linux/amd64, linux/arm64) — 正確なリリースタグを指定
+docker run --rm ghcr.io/sk-ent/rakitsu:v0.3.2 version
+docker run --rm -it -e OPENAI_API_KEY -v &quot;$PWD:/workspace&quot; \
+  ghcr.io/sk-ent/rakitsu:v0.3.2 run config.yaml &quot;your query&quot;
+</code></pre>
+<p>Docker からAPIを公開するには、コンテナー内で <code>serve</code> を <code>0.0.0.0</code> にバインドする必要があります。これはAPIトークンが設定されている場合にのみ許可されます。ポートは localhost にだけ公開してください。
+<code>docker run --rm -e RAKITSU_API_TOKEN=&lt;token&gt; -p 127.0.0.1:9100:9100 ghcr.io/sk-ent/rakitsu:v0.3.2 serve --host 0.0.0.0</code>。
+ローカルで画面を確認する場合は、コンテナーの外で <code>rakitsu serve</code> をループバックにバインドして起動します。APIアクセスについては<a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/reference/security.md">サーバー認証</a>を参照してください。
+コンテナー内で cli ツールの <code>sandbox: docker</code> を使うにはホストの Docker ソケットをマウントする必要があり、コンテナーにホストの root 権限を与えることになります。既定の <code>local_restricted</code> サンドボックスには不要です。</p>
+<h2 id="動作を見る">動作を見る</h2>
+<p><strong>Debug。</strong> 実行中のコードレビューが、エージェントの思考処理の直前で停止します。グラフと Run Log を確認し、<strong>Resume</strong> で実行を再開します。</p>
+<p align="center">
+  <img src="docs/assets/showcase/debugger.gif" width="880" alt="Rakitsu 0.4.0 の Debug レイアウト。Builder、実行グラフ、Run Log、Run Timeline を表示し、コードレビューをエージェントのブレークポイントで停止・再開">
+</p>
+<p align="center"><sub>ローカルのコードレビューを Debug レイアウトでブレークポイント停止・再開します。</sub></p>
+<p><strong>Builder。</strong> <strong>+ Add</strong> からノードを作成し、<strong>Import</strong> アイコンからパイプラインを読み込めます。デモでは SVG workbench に切り替え、ローカルの Retrieval と Decision ステップを含むパイプラインを折りたたみます。これはレビューの例とは別の、エージェントなしで動作するパイプラインです。</p>
+<p align="center">
+  <img src="docs/assets/showcase/builder.gif" width="880" alt="Rakitsu 0.4.0 の Builder。Retrieval と Decision ステップ、グループの折りたたみ、SVG workbench preview">
+</p>
+<p><strong>Chat。</strong> ローカルの Ollama モデルが、短い Python 関数のバグを説明します。</p>
+<p align="center">
+  <img src="docs/assets/showcase/chat.gif" width="880" alt="Rakitsu 0.4.0 の Chat パネル。Python 関数とローカルモデルからの回答">
+</p>
+<p>通しの動画では Builder、実行中のブレークポイント、記録の再生を紹介します。
+<a href="docs/assets/showcase/web-ui-workbench.mp4">MP4の操作動画を見る</a>、または <a href="docs/WEBUI.ja.html">Web UIマニュアル</a>を開いてください。</p>
+<h2 id="rakitsu-を使う理由">Rakitsu を使う理由</h2>
+<ul>
+<li><strong>視覚的に設計</strong>：コードではなく、ドラッグ＆ドロップのキャンバスでエージェントを設計</li>
+<li><strong>ソフトウェアと同じようにデバッグ</strong>：ブレークポイント、一時停止、実行途中の推論の確認</li>
+<li><strong>単一バイナリ</strong>：依存関係なしの1ファイル。ダウンロードして実行</li>
+<li><strong>YAMLで設定</strong>：宣言的な設定。フレームワークのコードを書く必要なし</li>
+<li><strong>複数のプロバイダー</strong>：1つの設定で、エージェントごとに OpenAI、Anthropic、Gemini、Ollama を組み合わせ可能</li>
+</ul>
+<h2 id="機能">機能</h2>
+<p><strong>Visual Builder</strong></p>
+<ul>
+<li><strong>+ Add</strong> でノードやグループを追加し、キャンバス上で配置・接続</li>
+<li>ドッキングしたレイアウトではコンパクトなアイコン操作。<strong>Run</strong> と <strong>Debug</strong> はラベル付き</li>
+<li><strong>SVG workbench preview</strong> に切り替えると、直角の接続線を使う別のキャンバスを表示</li>
+<li>型付きのモデル回答には <strong>Decision</strong>、ローカル文書検索には <strong>Retrieval</strong> を追加</li>
+<li>設定の継承と上書き：グループで既定値を定義し、エージェントで上書き。状態はバッジで表示</li>
+<li>キャンバス検索、自動配置、階層パネル</li>
+</ul>
+<p><strong>Runtime Debugger</strong></p>
+<ul>
+<li>任意のエージェントやツールノードにブレークポイントを設定</li>
+<li>実行途中で停止し、推論を確認し、パラメーターを上書きして再開</li>
+<li>Tree、Block Diagram、Timeline、Mind Map の4つの表示モード</li>
+<li><strong>Layouts → Debug</strong> で Builder、Debugger、Run Log、Run Timeline をまとめてドッキング</li>
+<li><strong>Layouts → Replay</strong> で記録の再生位置を動かし、グラフとログを連動して確認</li>
+</ul>
+<p><strong>Agent Engine</strong></p>
+<ul>
+<li>振り返りと根拠確認を備えた ReAct ループ</li>
+<li>連携戦略：ReAct、Pipeline（Sequential / Parallel / DAG 形式のステップ）。Hierarchical と Plan-and-Execute は現在 ReAct 経由で動作し、独立した実装ではありません</li>
+<li>Pipeline のチェックポイントと再開</li>
+<li>トークン予算の制限、コスト追跡、コンテキストの自動圧縮</li>
+</ul>
+<p><strong>プロバイダー</strong></p>
+<ul>
+<li>OpenAI、Anthropic Claude、Google Gemini、Ollama、LiteLLM</li>
+<li>1つの設定内でエージェントごとにプロバイダーを組み合わせ可能</li>
+<li>任意の OpenAI 互換エンドポイントからモデルを自動検出</li>
+</ul>
+<p><strong>他のランタイムへの移植（任意）</strong></p>
+<ul>
+<li>主な実行環境は Rakitsu バイナリ。別のランタイムへ展開するチーム向けに、<code>RuntimeTarget</code> インターフェースを通じて設定をエクスポート可能</li>
+<li>組み込み形式：NemoClaw、OpenClaw。<a href="#export-verification">エクスポートの検証</a>を参照</li>
+</ul>
+<p><strong>運用</strong></p>
+<ul>
+<li>セッション履歴、記録の再生、再実行</li>
+<li>CLI と Web UI</li>
+<li>ツールの保護：CLIの許可・拒否リスト、ファイルパス制限、Docker サンドボックス</li>
+<li>リリースバイナリ：Linux / macOS（amd64 + arm64）、Windows（amd64）</li>
+</ul>
+<p><strong>プロトコル連携</strong></p>
+<ul>
+<li><code>rakitsu acp</code> — ACP（Agent Client Protocol）サーバーとして動作し、Zed などのエディターから Rakitsu エージェントへ直接接続</li>
+<li><code>rakitsu acp</code> は1行につき1つの JSON-RPC メッセージを読み込みます。1行の上限は16 MiB</li>
+<li><code>rakitsu acp</code> が保持するセッションは最大 <code>--max-sessions</code> 件（既定256）。<code>--session-idle-timeout</code>（既定24h）以上使われていないセッションを削除します。プロンプトの実行中は削除しません</li>
+<li><code>rakitsu serve --config tools.yaml --mcp-port 9200</code> は別リスナーの <code>http://localhost:9200/mcp</code> に MCP サーバーを公開します（旧仕様、リビジョン ≤2025-11-25）。外部の MCP クライアントから Rakitsu のツールを検出・呼び出し可能</li>
+<li><code>rakitsu serve --config team.yaml</code> は新しいタスクごとに A2A 設定と同階層のスキルを再読み込みします。ほかの検出済み設定は <code>/a2a/{config-id}</code>、そのカードは <code>/.well-known/agent-card.json/{config-id}</code> で利用できます。任意の MCP リスナーも、ツール定義の変更時に登録情報を更新します。エージェント設定の追加・編集でサービスの再起動は不要です</li>
+<li><code>mcp_server</code>、<code>a2a</code>、<code>jev</code> ツールで、エージェントから外部の MCP サーバー、A2A エージェント、TypeSafe AI の Jev モデルを呼び出せます。Jev は yes/no、択一、スコア付きの型付き質問に対応</li>
+</ul>
+<h2 id="長時間動作するモニター">長時間動作するモニター</h2>
+<p>実験的な機能です。チャットセッションはタイマー（<code>settings.wake</code>）で自分自身を起動し、確認を行い、重要なことがある場合だけ通知できます。<code>rakitsu serve --config monitor.yaml</code> は <code>monitors:</code> ブロックからセッションを自動起動できるため、監視プロセス（Docker、systemd、launchd）が再起動するのは1つのプロセスだけです。</p>
+<ul>
+<li><code>GET /healthz</code> は全モニターが正常なら200、それ以外は503を返します。<code>rakitsu healthcheck</code> は Docker 向けのラッパーです</li>
+<li>状態確認と制御：<code>GET /api/chat/{id}/wake/status</code>、<code>POST .../wake/stop</code>、<code>POST .../wake/resume</code>、<code>/wake</code> スラッシュコマンド、Web UIの状態カード</li>
+<li>通知はホストの許可リストを持つサーバー側の送信先（webhook、ntfy）から送ります。エージェントは <code>send_alert</code> ツールでメッセージをキューに入れるだけです</li>
+<li>検証状況：タイマーのロジックは模擬時計でテスト済み。実環境で数日間続ける試験は進行中で、まだ実証できていません</li>
+</ul>
+<p>詳細：<a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/wake-timer.md">docs/wake-timer.md</a>、<a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/monitor-autostart.md">docs/monitor-autostart.md</a>。デプロイ用ファイルは <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/deploy/monitor/">deploy/monitor/</a> にあります。</p>
+<h2 id="壁紙">壁紙</h2>
+<p>エージェントが考えている間に眺めるものを。Builder のキャンバスには、エージェントの背後で動くシェーダーを表示できます。プリセットは7種類。既定ではオフで、Settings パネルから選択します。</p>
+<p>Water Ripple は鯉の池です。<strong>F</strong> で餌を落とすと鯉が現れます。<strong>Shift+F</strong> では釣り上げられます（ピクセルなので許してくれます）。<strong>R</strong> で雨が降ります。以下は Builder キャンバスの Water Ripple です。</p>
+<p align="center">
+  <img src="docs/assets/showcase/wallpaper-koi-pond.gif" width="640" alt="0.4.0 の Builder キャンバスで、鯉と餌が見える Water Ripple 壁紙">
+</p>
+<details>
+<summary>エージェントIDEに、なぜ鯉の池？</summary>
+<p>夜11時、厄介な不具合をデバッグしながら、私はいつものように読み込み中のスピナーをにらんでいました。通りかかった娘が画面を見て、こう言ったのです。「これをやってるとき、いつもイライラしてるね。鯉でも置けば？ 考えてる間に、きれいなものを見られるように」</p>
+<p>子どもの一言で、私の生活への指摘とUXの改善が同時に済みました。</p>
+</details>
+<p>残りの6種類：</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:center"></th>
+<th style="text-align:center"></th>
+<th style="text-align:center"></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center"><img src="docs/assets/showcase/wallpaper-flow.jpg" width="260" alt="Circuit Flow の壁紙"><br>Circuit Flow</td>
+<td style="text-align:center"><img src="docs/assets/showcase/wallpaper-lattice.jpg" width="260" alt="Plasma Lattice の壁紙"><br>Plasma Lattice</td>
+<td style="text-align:center"><img src="docs/assets/showcase/wallpaper-fog.jpg" width="260" alt="Volumetric Fog の壁紙"><br>Volumetric Fog</td>
+</tr>
+<tr>
+<td style="text-align:center"><img src="docs/assets/showcase/wallpaper-cells.jpg" width="260" alt="Voronoi Cells の壁紙"><br>Voronoi Cells</td>
+<td style="text-align:center"><img src="docs/assets/showcase/wallpaper-aurora.jpg" width="260" alt="Aurora Waves の壁紙"><br>Aurora Waves</td>
+<td style="text-align:center"><img src="docs/assets/showcase/wallpaper-sumi.jpg" width="260" alt="Suminagashi の壁紙"><br>Suminagashi</td>
+</tr>
+</tbody>
+</table>
+<h2 id="cli">CLI</h2>
+<pre><code class="language-bash">rakitsu quickstart                    # 対話式プロジェクト作成ウィザード
+rakitsu serve                         # Web UI + エージェント実行
+rakitsu serve --config tools.yaml --mcp-port 9200  # A2A: 9100、MCP: localhost:9200/mcp
+rakitsu run config.yaml &quot;query&quot;       # CLIからエージェントを実行
+rakitsu acp                           # ACPサーバーとして実行（Zedなどのエディター連携）
+rakitsu scaffold code-review          # テンプレートから設定を生成
+rakitsu sessions                      # 過去の実行を閲覧
+rakitsu doctor config.yaml            # 実行前に設定とプロバイダーの状態を診断
+rakitsu healthcheck                   # 起動中の serve の /healthz を確認（終了コード0 = 正常）
+
+# 実行時にプロバイダーとモデルを上書き（設定の編集は不要）:
+rakitsu run config.yaml &quot;query&quot; --provider openai --model gpt-5.6-luna
+rakitsu run config.yaml &quot;query&quot; --provider ollama --model llama3
+</code></pre>
+<h2 id="設定例">設定例</h2>
+<pre><code class="language-yaml">name: Code Reviewer
+settings:
+  default_provider: openai
+  providers:
+    openai:
+      type: openai
+      api_key: ${OPENAI_API_KEY}
+      reasoning_effort: none
+  defaults:
+    model: gpt-5.6-luna
+
+tools:
+  - name: read_file
+    type: fs
+    operation: read
+
+agents:
+  - name: Reviewer
+    role: worker
+    provider: openai
+    model: gpt-5.4
+    system_prompt: Review code for bugs, security issues, and best practices.
+    tools: [read_file]
+
+orchestrator:
+  name: Lead
+  strategy: Pipeline
+  agents: [Reviewer]
+  pipeline:
+    steps:
+      - name: review
+        agent: Reviewer
+        task: Review the supplied query.
+</code></pre>
+<p>任意の設定ブロック：</p>
+<pre><code class="language-yaml">settings:
+  spawn:              # runtime subagent fan-out (spawn_agent tool)
+    enabled: true
+    max_concurrent: 3 # run-global cap on concurrent children (default 4)
+    max_depth: 1      # children cannot spawn further (default)
+    timeout_seconds: 300
+</code></pre>
+<p><code>settings.spawn.enabled</code> を有効にすると、すべてのエージェント（対話型チャットのホストを含む）が <code>spawn_agent</code> ツールを使えます。実行時に、その場限りのワーカーや設定済みエージェントの複製を並列起動できます。子エージェントにはそれぞれタイムアウトがあり、親との関係を明示して同じトレースとデバッガーへストリーム表示されます。<a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/examples/single/10-spawn-fanout/">examples/single/10-spawn-fanout/</a> を参照してください。</p>
+<p>チャットボット、開発チーム、パイプライン、RAGアシスタントなどは <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/examples/">examples/</a> にあります。</p>
+<p><a id="export-verification"></a></p>
+<h2 id="エクスポートの検証">エクスポートの検証</h2>
+<p>Rakitsu の <code>RuntimeTarget</code> エクスポートは、実際のインフラとHTTPトレースでエンドツーエンド検証しています。現在の実装は OpenClaw と NVIDIA NemoClaw に対応しています。各検証環境は以下のとおりです。</p>
+<h3 id="検証済みの項目">検証済みの項目</h3>
+<table>
+<thead>
+<tr>
+<th>対象</th>
+<th>検証したランタイム</th>
+<th>結果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>openclaw.json</code></td>
+<td><code>ghcr.io/openclaw/openclaw:latest</code>（Docker）</td>
+<td>Rakitsu が生成した設定でゲートウェイが起動</td>
+</tr>
+<tr>
+<td><code>sandbox-policy.yaml</code></td>
+<td>DGX Spark（aarch64）上の NVIDIA OpenShell</td>
+<td><code>Policy version 2 loaded (active)</code></td>
+</tr>
+<tr>
+<td>NemoClaw サンドボックス全体</td>
+<td>docker-in-docker 内の NemoClaw CLI。Landlock+seccomp+netns でサンドボックスを作成</td>
+<td><code>Policy version 6 loaded (active)</code></td>
+</tr>
+<tr>
+<td>エンドツーエンドの推論</td>
+<td>NemoClaw サンドボックス → egress proxy → DGX Spark Nemotron-30B</td>
+<td><strong>HTTP 200 の chat completion</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="e2eテストの構成">E2Eテストの構成</h3>
+<pre><code>docker:dind (local host)
+  └── NemoClaw CLI + OpenShell gateway (k3s-in-Docker)
+       └── Sandbox &quot;my-assistant&quot; (Landlock + seccomp + netns)
+            └── OpenClaw agent
+                 └── Rakitsu-exported openclaw.json  ←── our export
+                 └── Rakitsu-exported sandbox-policy  ←── our export
+                 └── HTTP request to DGX Spark (via egress proxy)
+                      └── LiteLLM → vLLM → Nemotron-30B
+                           └── HTTP 200 chat completion ✓
+</code></pre>
+<p>検証後は <code>docker rm -f</code> ですべてのファイルを破棄し、状態を残していません。負荷の大きいE2Eテストは<strong>手動実行のみ</strong>です。エクスポートのスキーマ（バイナリ許可リスト、ポート抽出、環境変数展開）はユニット回帰テストで保護し、CIの各ビルドで実行します。</p>
+<p>検証記録の全体は <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/EXPORT-VERIFICATION.md">docs/EXPORT-VERIFICATION.md</a> を参照してください。</p>
+<h2 id="ソースからビルド">ソースからビルド</h2>
+<pre><code class="language-bash">git clone https://github.com/SK-ENT/rakitsu.git
+cd rakitsu
+make build-embedded    # フロントエンド + Go バイナリ → bin/rakitsu
+./bin/rakitsu serve
+</code></pre>
+<p>必要環境：Go 1.26+、Node.js 20.19+ または 22.12+</p>
+<h2 id="プロジェクト構成">プロジェクト構成</h2>
+<pre><code>cmd/rakitsu/        CLIのエントリーポイント（Cobra）
+internal/agent/     ReActループ、オーケストレーター、パイプライン実行
+internal/llm/       LLMプロバイダーのインターフェースと実装
+internal/tools/     ツールのインターフェース：cli/, fs/, mcp/, a2a/, memory/, alert/
+internal/wake/      起動タイマーエンジン（確認、ルール、タスク）
+internal/alert/     通知先（webhook、ntfy）、機密情報の除去、送信頻度の制限
+internal/server/    SSEハブ、エージェント実行、設定ストア
+internal/debug/     デバッグ制御、再生、ブレークポイント
+internal/store/     セッション永続化（JSONL、セッションごとに1ファイル）
+web/src/            Vue 3 + Vue Flow フロントエンド
+examples/           そのまま実行できるYAML設定
+</code></pre>
+<h2 id="トラブルシューティング">トラブルシューティング</h2>
+<p><strong>&quot;openai API key not set&quot;</strong> — 実行前にキーをエクスポートしてください。</p>
+<pre><code class="language-bash">export OPENAI_API_KEY=sk-...
+</code></pre>
+<p><strong>&quot;cannot load config: no such file or directory&quot;</strong> — 設定ファイルのパスを確認してください。<code>ls examples/single/</code> で利用できる設定を確認できます。</p>
+<p><strong>&quot;cannot create provider for agent …&quot;</strong> — エージェントが未定義のプロバイダーを参照しています。設定の <code>settings.providers</code> に追加し、エージェントの <code>provider:</code> がその名前と完全一致することを確認してください。</p>
+<p><strong>&quot;is port 9100 already in use?&quot;</strong> — 別の <code>rakitsu serve</code> が動いている可能性があります。停止するか、別のポートを使ってください。</p>
+<pre><code class="language-bash">rakitsu serve --port 8080
+</code></pre>
+<p><strong>複数インスタンスの実行</strong> — 各インスタンスに専用のセッションディレクトリとメモリーディレクトリを指定してください。<code>--sessions-dir PATH</code>（<code>serve</code>、<code>run</code>、<code>sessions</code>）、または <code>settings.sessions_dir</code> と、<code>settings.memory.dir</code> を使います。実行中のインスタンス間で同じディレクトリを共有しないでください。<code>sessions.json</code> のインデックスは複数の書き込み元に対応していません。既定は <code>~/.rakitsu/sessions</code> です。<code>run --hub URL</code> が選ぶのはライブイベントの送信先だけで、そのサーバーの履歴ディレクトリは引き継ぎません。<code>run</code> と <code>serve</code> の履歴は明示的に設定してください。ライブで表示されても、保存済み履歴が見えるとは限りません。詳細：<a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/configuration.md#running-isolated-instances">docs/configuration.md</a>。</p>
+<p><strong>エージェントは動くが出力がない</strong> — <code>--trace</code> で実行の詳細を確認します。</p>
+<pre><code class="language-bash">rakitsu run config.yaml &quot;query&quot; --trace --verbose
+</code></pre>
+<p><strong>実行が早く止まりすぎる、または長すぎる</strong> — 既定では時間制限はなく、<code>max_iterations</code> 未指定のエージェントには反復回数の上限もありません。回答、予算（<code>max_cost</code> / <code>max_total_tokens</code>）、<code>--idle-timeout</code>、Ctrl+C のいずれかで終了します。<code>--timeout</code> で制限を指定できます（秒単位。<code>--interactive</code> ではターンごと）。</p>
+<pre><code class="language-bash">rakitsu run config.yaml &quot;query&quot; --timeout 600
+</code></pre>
+<p><strong>出力が <code>[REASONING-ONLY OUTPUT — …]</code> で始まる</strong> — モデル（主に nemotron、DeepSeek-R1、QwQ）が、利用者向けの回答を出す前に思考過程だけで <code>max_tokens</code> を使い切っています。<a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/providers/reasoning-models.md">docs/providers/reasoning-models.md</a> では実運用向けの3つの選択肢を紹介しています。既定のまま回答抽出に任せる、回答の統合を Gemini に切り替える、またはハイブリッド構成（ローカルのワーカー + クラウドでの統合）を使う方法です。</p>
+<h2 id="開発のきっかけ">開発のきっかけ</h2>
+<p>Rakitsu は2026年春、息子を支えるための小さなプロジェクトとして始まりました。小さく収まるはずでしたが、そうはなりませんでした。取り組む課題そのものが面白く、本格的な長期プロジェクトへと育ちました。根底にあるのは今も家族のためのプロジェクトです。</p>
+<p>Rakitsu はAIの利用を公開し、人間とAIコーディングアシスタントが共同開発しています。設計判断、コードレビュー、最終検証は人間が行い、実装の多くはAIの支援を受けています。AIツールとライセンスの関係は <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/AI_USE_NOTICE.md"><code>AI_USE_NOTICE.md</code></a> を参照してください。</p>
+<p><a id="disclaimer"></a></p>
+<h2 id="免責事項">免責事項</h2>
+<blockquote>
+<p><strong>Rakitsu はプレビュー段階です。</strong> 個別のリリースには alpha、beta、stable の表示が付く場合があります。インターフェース、API、動作は予告なく変更される可能性があります。Rakitsu はLLMが生成したツール呼び出し（シェルコマンドやファイル操作）を実行するため、本質的なリスクを伴います。利用者の責任でお使いください。本ソフトウェアの利用により生じたいかなる損失、損害、結果についても、作者は責任を負いません。条項の全文は <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/LICENSE">LICENSE</a> を参照してください。</p>
+</blockquote>
+<h2 id="ライセンス">ライセンス</h2>
+<p>BSL 1.1。詳細は <a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/LICENSE">LICENSE</a> を参照してください。4年後に Apache 2.0 へ移行します。</p>
+<p><strong>AIツールの利用</strong>：<a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/AI_USE_NOTICE.md"><code>AI_USE_NOTICE.md</code></a> を参照してください。AIツールを使った読解や個人的な学習は問題ありません。AIで加速した競合製品の再実装には BSL の競業禁止条項が適用されます。</p>
+<h2 id="リンク">リンク</h2>
+<ul>
+<li><a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/examples/">使用例</a></li>
+<li><a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/CONTRIBUTING.md">コントリビューション</a></li>
+<li><a href="https://sk-ent.github.io/rakitsu/latest/">ドキュメント</a></li>
+<li><a href="./#ja.ref-hub">リファレンス</a></li>
+<li><a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/reference/acp.md">ACP と Zed の設定</a></li>
+<li><a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/DEVELOPMENT.md">開発ガイド</a></li>
+<li><a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/SYSTEM-SPEC.md">システム仕様</a></li>
+<li><a href="https://github.com/SK-ENT/rakitsu/releases">リリース履歴</a></li>
+<li><a href="https://github.com/SK-ENT/rakitsu/blob/v0.4.0-alpha.1/docs/ACKNOWLEDGMENTS.md">謝辞</a></li>
+</ul>
+
+</main></div></body></html>

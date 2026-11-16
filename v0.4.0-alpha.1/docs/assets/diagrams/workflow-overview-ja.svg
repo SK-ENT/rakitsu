@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="686" viewBox="0 0 720 686" role="img" aria-labelledby="overview-title overview-desc">
+  <title id="overview-title">Rakitsu で Python の clamp をレビュー</title>
+  <desc id="overview-desc">Pipeline グループで Reviewer、Test Writer の順に実行する構成を作ります。Reviewer のブレークポイントで停止し、ライブのグラフとログを確認して再開します。Replay では再生位置を動かし、修正案とテスト案を確認します。</desc>
+  <rect width="720" height="686" rx="20" fill="#121521"/>
+  <g font-family="system-ui, sans-serif">
+    <text x="32" y="60" fill="#f1f3ff" font-size="37" font-weight="700">Python の clamp をレビュー</text>
+    <text x="32" y="103" fill="#b8c1db" font-size="26">min と max の呼び出し順が逆の関数。</text>
+
+    <rect x="32" y="132" width="656" height="132" rx="16" fill="#1d2235" stroke="#3d4669" stroke-width="2"/>
+    <text x="56" y="172" fill="#a9b4ff" font-size="25" font-weight="700">01 / 構築</text>
+    <text x="56" y="223" fill="#f1f3ff" font-size="32" font-weight="700">Reviewer → Test Writer</text>
+    <path d="M360 273v22m-7-7 7 7 7-7" fill="none" stroke="#64749a" stroke-width="3"/>
+
+    <rect x="32" y="304" width="656" height="132" rx="16" fill="#1d2235" stroke="#ffd18a" stroke-width="2"/>
+    <text x="56" y="344" fill="#ffd18a" font-size="25" font-weight="700">02 / 実行中にデバッグ</text>
+    <text x="56" y="395" fill="#f1f3ff" font-size="28">Reviewer で停止。確認して再開。</text>
+    <path d="M360 445v22m-7-7 7 7 7-7" fill="none" stroke="#64749a" stroke-width="3"/>
+
+    <rect x="32" y="476" width="656" height="154" rx="16" fill="#1d2235" stroke="#9ce4cb" stroke-width="2"/>
+    <text x="56" y="516" fill="#9ce4cb" font-size="25" font-weight="700">03 / 記録を再生</text>
+    <text x="56" y="556" fill="#f1f3ff" font-size="25" font-family="monospace">Reviewer → max(lo, min(x, hi))</text>
+    <text x="56" y="597" fill="#f1f3ff" font-size="25" font-family="monospace">Test Writer → clamp(12, 0, 10) == 10</text>
+    <text x="32" y="661" fill="#b8c1db" font-size="23">解説図</text>
+  </g>
+</svg>
