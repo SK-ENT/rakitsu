@@ -1,6 +1,9 @@
 # Rakitsu System Specification
 
-**Reference baseline**: v0.3.1. Release builds report their Git tag; local builds derive their version from the Makefile. See the [versioned reference](https://sk-ent.github.io/rakitsu/latest/) for release-specific behavior.
+This source specification includes the 0.4.x development workspace. Release
+builds report their Git tag. Local builds derive the version from the
+Makefile unless `VERSION` is set. See the
+[versioned reference](https://sk-ent.github.io/rakitsu/latest/) for published releases.
 **Stack**: Go 1.26 minimum + Vue 3 / Vite 7 / TypeScript 5.9
 **Release toolchain**: Go 1.27.3.
 **Module**: `github.com/SK-ENT/rakitsu`
@@ -31,7 +34,7 @@
 
 ## 1. System Overview
 
-Rakitsu is a YAML-configured multi-agent AI orchestration system. Users define agents, tools, and orchestration strategy in YAML and run them via CLI. Agents use a ReAct loop (Reason + Act) to call LLMs and execute tools. The web UI provides a visual builder, real-time inspector, and debugger.
+Rakitsu is a YAML-configured multi-agent AI orchestration system. Users define agents, tools, and orchestration strategy in YAML and run them via CLI. Agents use a ReAct loop (Reason + Act) to call LLMs and execute tools. The web UI provides a visual builder with a compact toolbar, a real-time inspector, and a debugger.
 
 ### Tech Stack
 
@@ -192,7 +195,11 @@ graph TD
     end
 
     subgraph Frontend["Frontend — web/src/ (Vue 3 + Vite + TS)"]
+        dock["WorkspaceDock"]
         builder["VisualBuilder"]
+        log["Run Log"]
+        timeline["Run Timeline"]
+        dock --> builder & debugger & log & timeline
         inspector["RunInspector"]
         debugger["DebugView"]
         sessions["SessionHistory"]
@@ -448,6 +455,10 @@ agents:
 ```
 
 ### Pipeline Configuration
+
+Pipelines can also run [Decision and Retrieval steps](reference/agents-orchestrators.md#decision-and-retrieval-steps).
+Decision returns typed answers and can route to agent steps. Retrieval searches
+a local corpus and can supply cited passages to a local Laya Decision.
 
 ```yaml
 orchestrator:

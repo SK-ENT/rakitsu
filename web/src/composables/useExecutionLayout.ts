@@ -57,7 +57,7 @@ export function useExecutionLayout() {
    * Uses actual rendered node dimensions when available (from VueFlow's
    * node.dimensions) so the layout adapts to content-driven node sizes.
    */
-  async function computeLayout(nodes: Node[], edges: Edge[]): Promise<LayoutResult> {
+  async function computeLayout(nodes: Node[], edges: Edge[], direction: 'DOWN' | 'RIGHT' = 'DOWN'): Promise<LayoutResult> {
     const emptyResult: LayoutResult = { positions: new Map(), edgeRoutes: new Map() };
     const topLevel = nodes.filter(n => !n.parentNode);
     const topLevelIds = new Set(topLevel.map(n => n.id));
@@ -81,7 +81,7 @@ export function useExecutionLayout() {
       id: 'root',
       layoutOptions: {
         'elk.algorithm': 'layered',
-        'elk.direction': 'DOWN',
+        'elk.direction': direction,
         'elk.spacing.nodeNode': '60',
         'elk.layered.spacing.nodeNodeBetweenLayers': '100',
         'elk.padding': '[top=60,left=60,bottom=60,right=60]',

@@ -11,12 +11,14 @@ import (
 	"time"
 
 	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/decision"
 	"github.com/SK-ENT/rakitsu/internal/llm"
 	"github.com/SK-ENT/rakitsu/internal/telemetry"
 )
 
 // StepResult holds the output of a completed pipeline step.
 type StepResult struct {
+	Decision *decision.Result
 	Name     string
 	Output   string
 	Duration time.Duration
@@ -72,6 +74,7 @@ func (pc *PipelineContext) clearFrom(levels [][]config.PipelineStep) {
 // Steps at the same level have no dependencies between each other and can run concurrently.
 // Returns an error if a dependency names an unknown step or a cycle is detected.
 func buildLevels(steps []config.PipelineStep) ([][]config.PipelineStep, error) {
+	steps = append([]config.PipelineStep(nil), steps...)
 	// Inject implicit sequential dependency: steps without explicit depends_on
 	// implicitly depend on the previous step so that YAML order = execution order.
 	// Users can override with explicit depends_on for DAG parallelism —
@@ -94,6 +97,37 @@ func buildLevels(steps []config.PipelineStep) ([][]config.PipelineStep, error) {
 	for _, s := range steps {
 		byName[s.Name] = s
 		inDegree[s.Name] = 0
+	}
+
+	for _, step := range steps {
+		if step.Decision == nil || (step.Decision.Input.From != "step" && step.Decision.Input.From != "retrieval") {
+			continue
+		}
+		seen := map[string]bool{step.Name: true}
+		var dependsOn func(config.PipelineStep) bool
+		dependsOn = func(current config.PipelineStep) bool {
+			for _, name := range current.DependsOn {
+				if seen[name] {
+					continue
+				}
+				seen[name] = true
+				predecessor, ok := byName[name]
+				if ok && (name == step.Decision.Input.Step || dependsOn(predecessor)) {
+					return true
+				}
+			}
+			return false
+		}
+		source, ok := byName[step.Decision.Input.Step]
+		if !ok {
+			return nil, fmt.Errorf("decision %q references unknown input step %q", step.Name, step.Decision.Input.Step)
+		}
+		if step.Decision.Input.From == "retrieval" && source.Type != "retrieval" {
+			return nil, fmt.Errorf("decision %q evidence must reference a retrieval step", step.Name)
+		}
+		if !dependsOn(step) {
+			return nil, fmt.Errorf("decision %q input must reference an upstream dependency", step.Name)
+		}
 	}
 
 	// Validate deps and compute in-degrees
@@ -254,6 +288,7 @@ func (o *Orchestrator) runPipeline(ctx context.Context, query string) (string, e
 						Name:     saved.Name,
 						Output:   saved.Output,
 						Duration: saved.Duration,
+						Decision: saved.Decision,
 					})
 					lastOutput = saved.Output
 					continue
@@ -389,6 +424,11 @@ func (o *Orchestrator) synthesize(ctx context.Context, pctx *PipelineContext) (s
 	for _, r := range pctx.Results {
 		if r.Error == nil && r.Output != "" {
 			sb.WriteString(fmt.Sprintf("### %s\n%s\n\n", r.Name, r.Output))
+			if r.Decision != nil && r.Decision.Route != "" {
+				if data, err := json.Marshal(r.Decision); err == nil {
+					sb.WriteString(fmt.Sprintf("Decision result: %s\n\n", data))
+				}
+			}
 		}
 	}
 	pctx.mu.RUnlock()
@@ -471,6 +511,8 @@ func (o *Orchestrator) executeStep(ctx context.Context, step config.PipelineStep
 
 	start := time.Now()
 	var output string
+	var result *decision.Result
+	var retrievalCount *int
 	var err error
 
 	switch stepType {
@@ -480,6 +522,18 @@ func (o *Orchestrator) executeStep(ctx context.Context, step config.PipelineStep
 		output, err = o.executeParallelStep(ctx, step, pctx)
 	case "loop":
 		output, err = o.executeLoopStep(ctx, step, pctx)
+	case "decision":
+		output, result, err = o.executeDecisionStep(ctx, step, pctx)
+	case "retrieval":
+		var retrieved retrievalResult
+		retrieved, err = executeRetrievalStep(ctx, step, pctx.Query)
+		if err == nil {
+			count := len(retrieved.Passages)
+			retrievalCount = &count
+			var encoded []byte
+			encoded, err = json.Marshal(retrieved)
+			output = string(encoded)
+		}
 	default:
 		err = fmt.Errorf("unknown step type: %q", stepType)
 	}
@@ -497,17 +551,29 @@ func (o *Orchestrator) executeStep(ctx context.Context, step config.PipelineStep
 	}
 	pctx.addResult(&StepResult{
 		Name:     step.Name,
+		Decision: result,
 		Output:   output,
 		Duration: duration,
 		Error:    err,
 	})
 
-	o.eventBus.EmitWithDuration(o.name, telemetry.EventPipelineStepEnd, telemetry.PipelineStepEndPayload{
+	payload := telemetry.PipelineStepEndPayload{
 		StepName: step.Name,
 		StepType: stepType,
 		Status:   status,
 		Output:   truncateStr(output, 500),
-	}, duration.Milliseconds())
+	}
+	if step.Type == "retrieval" || (step.Decision != nil && step.Decision.Input.From == "retrieval") {
+		payload.Output = ""
+		payload.RetrievalCount = retrievalCount
+	}
+	if step.Decision != nil {
+		payload.DecisionBackend = step.Decision.Backend
+	}
+	if result != nil {
+		payload.DecisionRoute = result.Route
+	}
+	o.eventBus.EmitWithDuration(o.name, telemetry.EventPipelineStepEnd, payload, duration.Milliseconds())
 
 	return output, err
 }
@@ -956,6 +1022,11 @@ func (o *Orchestrator) buildTaskWithContext(task string, pctx *PipelineContext) 
 		for _, r := range pctx.Results {
 			if r.Error == nil && r.Output != "" {
 				sb.WriteString(fmt.Sprintf("### %s\n%s\n\n", r.Name, r.Output))
+				if r.Decision != nil && r.Decision.Route != "" {
+					if data, err := json.Marshal(r.Decision); err == nil {
+						sb.WriteString(fmt.Sprintf("Decision result: %s\n\n", data))
+					}
+				}
 			}
 		}
 	}
@@ -972,6 +1043,17 @@ func (o *Orchestrator) stepAgents(step config.PipelineStep) []string {
 		return []string{step.Agent}
 	}
 	var agents []string
+	if step.Decision != nil {
+		seen := make(map[string]bool)
+		for _, branch := range step.Decision.Branches() {
+			for _, child := range branch {
+				if !seen[child.Agent] {
+					seen[child.Agent] = true
+					agents = append(agents, child.Agent)
+				}
+			}
+		}
+	}
 	for _, sub := range step.Steps {
 		agents = append(agents, o.stepAgents(sub)...)
 	}

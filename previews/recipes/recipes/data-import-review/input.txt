@@ -1,0 +1,1 @@
+Import rules: IDs must be unique; status must be active or paused; country is required. Row 1: ID 15, active, JP. Row 2: ID 16, archived, US. Row 3: ID 15, paused, JP. Row 4: ID 17, active, blank country. Keep the first occurrence of an ID. /no_think

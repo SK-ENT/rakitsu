@@ -6,6 +6,14 @@ Use the reference below when you want to customize a project, choose a model, or
 
 If you are learning the execution model, start with [ReAct delegation](agents-orchestrators.md#react-supervisor-with-workers). If you need a predictable workflow, jump to [how to create a Pipeline](agents-orchestrators.md#pipelines).
 
+## 0.4.0 development preview
+
+- [Web workspace](serve-web-ui.md#what-the-ui-shows) and the illustrated [Build, Debug, and Replay walkthrough](../WEBUI.md#build-debug-and-replay-a-code-review).
+- [Decision and Retrieval steps](agents-orchestrators.md#decision-and-retrieval-steps) for typed answers and local evidence.
+- [Plan focus](configuration.md#settingsfocus-and-settingspermissions) for read-only filesystem tools.
+
+The start instructions below install the latest published release.
+
 ## Start without editing a config
 
 1. Install Rakitsu using the [README instructions](../../README.md#quick-start).

@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { nextTick, ref, onMounted, watch } from 'vue';
 import { RunInspector } from './components/inspector';
 import { VisualBuilder } from './components/builder';
 import { DebugView } from './components/debugger';
 import ChatView from './components/chat/ChatView.vue';
 import SessionsView from './components/sessions/SessionsView.vue';
+import WorkspaceDock from './components/workspace/WorkspaceDock.vue';
+import RunLogPanel from './components/workspace/RunLogPanel.vue';
+import RunTimelinePanel from './components/workspace/RunTimelinePanel.vue';
+import type { WorkspacePreset, WorkspaceView } from './components/workspace/workspaceViews';
 import WelcomeScreen from './components/WelcomeScreen.vue';
 import LicenseAcceptance from './components/LicenseAcceptance.vue';
 import type { DebugTreeNode } from './types';
@@ -17,12 +21,25 @@ type BuilderExposed = {
   getCurrentCanvasYaml: () => string | null;
 };
 
-type View = 'builder' | 'inspector' | 'debugger' | 'sessions' | 'chat';
-
 // Shared workspace state — config / workdir / env vars visible to all tabs.
 const workspace = useWorkspace();
 
-const currentView = ref<View>('builder');
+const currentView = ref<WorkspaceView>('builder');
+const dock = ref<InstanceType<typeof WorkspaceDock> | null>(null);
+const layoutRevision = ref(0);
+const layoutPreset = ref<WorkspacePreset | null>(null);
+function resetLayout() {
+  layoutPreset.value = null;
+  dock.value?.reset();
+}
+function chooseLayout(event: Event) {
+  const select = event.target as HTMLSelectElement;
+  const layout = select.value as WorkspacePreset;
+  layoutPreset.value = layout;
+  dock.value?.applyPreset(layout);
+  layoutRevision.value++;
+  select.value = '';
+}
 const serverVersion = ref('');
 const showLicense = ref(false);
 const showWelcome = ref(false);
@@ -56,6 +73,7 @@ async function handleRunDemo(provider: string, model: string, envVars: Record<st
     showWelcome.value = false;
     localStorage.setItem('rakitsu-welcome-dismissed', '1');
     currentView.value = 'debugger';
+    await nextTick();
     pendingDemo.value = {
       configId: data.config_id,
       query: data.query,
@@ -147,10 +165,11 @@ function handleInspectInBuilder(data: InspectData) {
 const drillDownAgent = ref<string | null>(null);
 const drillDownTreeRoots = ref<DebugTreeNode[] | null>(null);
 
-function handleDrillDown(agentName: string, treeRoots?: DebugTreeNode[]) {
-  drillDownAgent.value = agentName;
-  drillDownTreeRoots.value = treeRoots ?? null;
+async function handleDrillDown(agentName: string, treeRoots?: DebugTreeNode[]) {
   currentView.value = 'debugger';
+  await nextTick();
+  drillDownTreeRoots.value = treeRoots ?? null;
+  drillDownAgent.value = agentName;
 }
 
 function handleFocusConsumed() {
@@ -196,45 +215,13 @@ function handleSessionsDebug(sessionId: string) {
         <span v-if="serverVersion" class="brand-version">{{ serverVersion }}</span>
       </div>
 
-      <div class="nav-tabs">
-        <button
-          class="nav-tab"
-          :class="{ active: currentView === 'builder' }"
-          @click="currentView = 'builder'"
-        >
-          Builder
-        </button>
-        <button
-          class="nav-tab"
-          :class="{ active: currentView === 'inspector' }"
-          @click="currentView = 'inspector'"
-        >
-          Inspector
-        </button>
-        <button
-          class="nav-tab"
-          :class="{ active: currentView === 'debugger' }"
-          @click="currentView = 'debugger'"
-        >
-          Debugger
-        </button>
-        <button
-          class="nav-tab"
-          :class="{ active: currentView === 'sessions' }"
-          @click="currentView = 'sessions'"
-        >
-          Sessions
-        </button>
-        <button
-          class="nav-tab"
-          :class="{ active: currentView === 'chat' }"
-          @click="currentView = 'chat'"
-        >
-          Chat
-        </button>
-      </div>
-
       <div class="nav-status">
+        <select class="reset-layout" aria-label="Workspace layout" @change="chooseLayout">
+          <option value="" disabled selected>Layouts</option>
+          <option value="debug">Debug</option>
+          <option value="replay">Replay</option>
+        </select>
+        <button class="reset-layout" type="button" @click="resetLayout">Reset layout</button>
         <span class="status-item">
           <span class="status-led"></span>
           Ready
@@ -254,54 +241,76 @@ function handleSessionsDebug(sessionId: string) {
     />
 
     <main class="app-main">
-      <keep-alive :exclude="['RunInspector']">
-        <VisualBuilder
-          v-if="currentView === 'builder'"
-          ref="builderRef"
-          key="builder"
-          class="app-tab"
-          :pending-inspect="pendingInspect"
-          @run-started="handleBuilderRun"
-          @inspect-consumed="pendingInspect = null"
-          @drill-down="handleDrillDown"
-        />
-        <RunInspector
-          v-else-if="currentView === 'inspector'"
-          key="inspector"
-          class="app-tab"
-        />
-        <DebugView
-          v-else-if="currentView === 'debugger'"
-          key="debugger"
-          class="app-tab"
-          :pending-run="pendingRun"
-          :pending-demo="pendingDemo"
-          :pending-history-session="pendingHistorySession"
-          :focus-agent="drillDownAgent"
-          :focus-tree-roots="drillDownTreeRoots"
-          @run-consumed="handleRunConsumed"
-          @demo-consumed="handleDemoConsumed"
-          @history-consumed="pendingHistorySession = null"
-          @inspect-in-builder="handleInspectInBuilder"
-          @focus-consumed="handleFocusConsumed"
-          @open-builder="currentView = 'builder'"
-        />
-        <SessionsView
-          v-else-if="currentView === 'sessions'"
-          key="sessions"
-          class="app-tab"
-          @resume="handleSessionsResume"
-          @clone="handleSessionsClone"
-          @rerun="handleSessionsRerun"
-          @fork="handleSessionsResume"
-          @debug="handleSessionsDebug"
-        />
-        <ChatView
-          v-else-if="currentView === 'chat'"
-          key="chat"
-          class="app-tab"
-        />
-      </keep-alive>
+      <WorkspaceDock ref="dock" v-model="currentView">
+        <template #builder="{ visible }">
+          <KeepAlive>
+            <VisualBuilder
+              v-if="visible"
+              ref="builderRef"
+              class="app-tab"
+              :pending-inspect="pendingInspect"
+              :keyboard-active="currentView === 'builder'"
+              @run-started="handleBuilderRun"
+              @inspect-consumed="pendingInspect = null"
+              @drill-down="handleDrillDown"
+            />
+          </KeepAlive>
+        </template>
+        <template #inspector="{ visible }">
+          <KeepAlive>
+            <RunInspector v-if="visible" class="app-tab" />
+          </KeepAlive>
+        </template>
+        <template #debugger="{ visible }">
+          <KeepAlive>
+            <DebugView
+              v-if="visible"
+              class="app-tab"
+              :layout-revision="layoutRevision"
+              :follow-timeline="layoutPreset !== null"
+              :pending-run="pendingRun"
+              :pending-demo="pendingDemo"
+              :pending-history-session="pendingHistorySession"
+              :focus-agent="drillDownAgent"
+              :focus-tree-roots="drillDownTreeRoots"
+              @run-consumed="handleRunConsumed"
+              @demo-consumed="handleDemoConsumed"
+              @history-consumed="pendingHistorySession = null"
+              @inspect-in-builder="handleInspectInBuilder"
+              @focus-consumed="handleFocusConsumed"
+              @open-builder="currentView = 'builder'"
+            />
+          </KeepAlive>
+        </template>
+        <template #sessions="{ visible }">
+          <KeepAlive>
+            <SessionsView
+              v-if="visible"
+              class="app-tab"
+              @resume="handleSessionsResume"
+              @clone="handleSessionsClone"
+              @rerun="handleSessionsRerun"
+              @fork="handleSessionsResume"
+              @debug="handleSessionsDebug"
+            />
+          </KeepAlive>
+        </template>
+        <template #chat="{ visible }">
+          <KeepAlive>
+            <ChatView v-if="visible" class="app-tab" />
+          </KeepAlive>
+        </template>
+        <template #run-log="{ visible }">
+          <KeepAlive>
+            <RunLogPanel v-if="visible" class="app-tab" :replay="layoutPreset === 'replay'" :follow-run="layoutPreset === 'debug'" />
+          </KeepAlive>
+        </template>
+        <template #run-timeline="{ visible }">
+          <KeepAlive>
+            <RunTimelinePanel v-if="visible" class="app-tab" />
+          </KeepAlive>
+        </template>
+      </WorkspaceDock>
     </main>
   </div>
 </template>
@@ -378,39 +387,26 @@ body {
   border-radius: 2px;
 }
 
-.nav-tabs {
-  display: flex;
-  gap: 2px;
-}
-
-.nav-tab {
-  padding: 6px 14px;
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  border-radius: var(--node-radius);
-  transition: all 0.15s;
-  letter-spacing: 0.01em;
-}
-
-.nav-tab:hover {
-  background: var(--surface-3);
-  color: var(--text-primary);
-}
-
-.nav-tab.active {
-  background: var(--surface-4);
-  color: var(--text-primary);
-}
-
 .nav-status {
   display: flex;
   align-items: center;
+  gap: 16px;
 }
+
+.reset-layout {
+  padding: 5px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--node-radius);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+select.reset-layout option { background: var(--surface-2); }
+.reset-layout:hover { background: var(--surface-3); }
+.reset-layout:focus-visible { outline: 2px solid var(--accent-agent); }
 
 .status-item {
   display: flex;
@@ -439,8 +435,7 @@ body {
   flex-direction: column;
 }
 
-/* Only the active tab is mounted (via <keep-alive> with v-if chain).
-   Each tab fills the available main area. */
+/* Each visible view fills its pane. */
 .app-tab {
   flex: 1;
   min-height: 0;

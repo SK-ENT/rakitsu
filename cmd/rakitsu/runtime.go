@@ -131,6 +131,9 @@ func BuildRunner(
 	eventBus *telemetry.EventBus,
 	opts BuildOptions,
 ) (*BuildResult, error) {
+	if err := cfg.ValidatePlan(); err != nil {
+		return nil, err
+	}
 	b := &runtimeBuilder{
 		ctx:      ctx,
 		cfg:      cfg,
@@ -188,7 +191,7 @@ func BuildRunner(
 	}
 
 	// Single-agent config short-circuit
-	if cfg.Orchestrator == nil || cfg.Orchestrator.Name == "" {
+	if cfg.Orchestrator == nil || (cfg.Orchestrator.Name == "" && !cfg.Orchestrator.RunsWithoutChatProvider()) {
 		ag, err := b.selectSingleAgent()
 		if err != nil {
 			b.cleanupAll()
@@ -317,7 +320,7 @@ func (b *runtimeBuilder) buildAgentToolRegistry(def *config.AgentDefinition) *to
 }
 
 func (b *runtimeBuilder) buildAgentToolRegistryDepth(def *config.AgentDefinition, depth int) *tools.ToolRegistry {
-	reg := tools.NewToolRegistry()
+	reg := newRuntimeToolRegistry(b.cfg)
 
 	// Global tools by name
 	globalReg := b.getGlobalToolRegistry()
@@ -704,7 +707,7 @@ func (b *runtimeBuilder) buildMainOrchestrator() (*agent.Orchestrator, error) {
 	if modelConfig == nil {
 		modelConfig = &config.ModelConfig{Temperature: 0.3}
 	}
-	provider, err := createLLMProvider(b.ctx, b.cfg, orchCfg.Provider, orchCfg.Model, modelConfig)
+	provider, err := createOrchestratorProvider(b.ctx, b.cfg, orchCfg, modelConfig)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create orchestrator provider %q: %w", orchCfg.Provider, err)
 	}
@@ -713,7 +716,7 @@ func (b *runtimeBuilder) buildMainOrchestrator() (*agent.Orchestrator, error) {
 	if b.opts.DebugCtrl != nil {
 		orch.SetDebugController(b.opts.DebugCtrl)
 	}
-	if b.rootGuard != nil {
+	if b.rootGuard != nil && provider != nil {
 		orchPricing, orchPricingKnown := agent.ResolvePricing(provider.GetModel(), b.cfg.Settings.Pricing)
 		orch.SetRootGuard(b.rootGuard, orchPricing, orchPricingKnown)
 	}
@@ -738,4 +741,11 @@ func (b *runtimeBuilder) getGlobalToolRegistry() *tools.ToolRegistry {
 		b.globalToolReg = createToolRegistry(b.ctx, b.cfg)
 	})
 	return b.globalToolReg
+}
+
+func createOrchestratorProvider(ctx context.Context, cfg *config.Config, orch *config.OrchestratorConfig, model *config.ModelConfig) (llm.LLMProvider, error) {
+	if orch.RunsWithoutChatProvider() {
+		return nil, nil
+	}
+	return createLLMProvider(ctx, cfg, orch.Provider, orch.Model, model)
 }

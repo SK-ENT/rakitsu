@@ -372,7 +372,9 @@ npm install
 ### 主要な技術スタック
 
 - **Vue 3** — `<script setup lang="ts">` と Composition API
-- **Vue Flow** — ビジュアルグラフビルダー（ノード、エッジ、ハンドル）
+- **Vue Flow** — Builder の標準キャンバス。`BuilderSvgCanvas.vue` は切り替え可能な SVG プレビューを描画します。
+- **WorkspaceDock** — パネルのドッキングと Debug・Replay レイアウトを管理します。
+- **VisualBuilder** — **+ Add** メニューからノードとグループを追加します。**RunBar** は **Run** と **Debug** のラベルを表示し、入力内容を保持したまま折りたためます。[Web UI マニュアル](WEBUI.md#workspace-layouts)を参照してください。
 - **Vite 7** — バンドリングと開発サーバー
 - **TypeScript 5.9** — strict モード有効
 

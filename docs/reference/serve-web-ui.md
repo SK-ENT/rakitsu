@@ -37,14 +37,19 @@ The UI and `/api/configs` list configs found in `.`, `./examples`, `./configs` (
 
 | Area | Use it to |
 |---|---|
-| Visual Builder | Drag agents, tools, skills and orchestrators; export to YAML. |
-| Agent Runner | Start a run of a listed config from the browser. |
-| Run Inspector | Watch the execution tree, graph and token use live. |
-| Debugger | Attach to a live run: breakpoints, pause and resume, parameter overrides. Detach to return to normal speed. |
-| Session History | Browse and replay finished runs. |
+| Builder | Create nodes and groups with **+ Add**, edit the workflow, import or export YAML, and start runs with **Run** or **Debug**. |
+| Inspector | Browse the event stream and inspect event details. |
+| Debugger | Inspect the execution tree and graph, set breakpoints, pause, override parameters, and resume. |
+| Sessions | Browse saved sessions and open their details. |
 | Chat | Open a chat session with an interactive config. |
+| Run Log | Follow live events for a run, or read events at the current playback position. |
+| Run Timeline | Select a recorded run and play or scrub its events. |
 
-The full manual is [docs/WEBUI.md](../WEBUI.md).
+Choose **Layouts → Debug** for Builder, the execution graph, Run Log, and
+Run Timeline. **Layouts → Replay** gives the execution graph more room.
+The Builder uses a compact icon toolbar in both layouts. Use the composer
+chevron to expand or collapse the prompt and settings. Use the pane’s
+**⋯** menu to float, dock, or maximize it. Follow the [illustrated code-review walkthrough](../WEBUI.md#build-debug-and-replay-a-code-review) in the Web UI manual, or watch the [0.4.0 workspace recording](../assets/showcase/web-ui-workbench.mp4).
 
 ## Runs report to the hub
 

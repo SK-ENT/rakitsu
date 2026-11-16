@@ -27,6 +27,9 @@ To run rakitsu as an agent inside an editor (Zed or another ACP client) instead 
 
 Other example categories: `eval/` (evaluation harness configs), `jev/` (TypeSafe Jev verification patterns) — see each directory's own README(s).
 
+- [Decision-only pipeline](jev/10-pipeline-decision/) returns typed judgments with Jev, OpenAI Decisions, Gemini Decisions, or local Laya.
+- [Local Retrieval → Laya](jev/11-retrieval-laya/) returns ranked Markdown passages, source locations, and a Laya judgment without a chat model.
+
 ## Examples
 
 | # | Name | Strategy | Description |

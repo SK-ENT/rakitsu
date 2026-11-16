@@ -16,6 +16,7 @@ import (
 
 	"github.com/SK-ENT/rakitsu/internal/config"
 	"github.com/SK-ENT/rakitsu/internal/llm"
+	"github.com/SK-ENT/rakitsu/internal/permission"
 )
 
 // DefaultMaxReadBytes caps how much of a file readFile loads into memory
@@ -73,6 +74,9 @@ func (t *Tool) maxReadBytes() int {
 	}
 	return t.sandbox.ResourceLimits.MaxOutputBytes
 }
+
+// PlanReadOnly reports whether this tool has a fixed read-only operation.
+func (t *Tool) PlanReadOnly() bool { return config.PlanFileOperation(t.operation) }
 
 // GetName returns the tool's name
 func (t *Tool) GetName() string {
@@ -134,6 +138,10 @@ func (t *Tool) ExecuteContent(ctx context.Context, args map[string]interface{}) 
 	if err != nil {
 		return "", nil, err
 	}
+	path, err = t.authorizePath(ctx, path)
+	if err != nil {
+		return "", nil, err
+	}
 	switch t.operation {
 	case "read_image":
 		return loadMediaBlock(path, llm.LoadImageAttachment, "image")
@@ -151,6 +159,61 @@ func (t *Tool) ExecuteContent(ctx context.Context, args map[string]interface{}) 
 	}
 	text, err := t.execute(ctx, path, args)
 	return text, nil, err
+}
+
+// authorizePath binds secure calls to the canonical path used by the operation.
+func (t *Tool) authorizePath(ctx context.Context, path string) (string, error) {
+	policy, ok := permission.PolicyFrom(ctx)
+	if ok && policy.Selection().Mode == permission.ModeLegacy && policy.ReadOnly() && !t.PlanReadOnly() {
+		return "", fmt.Errorf("plan focus only permits read-only filesystem operations")
+	}
+	if !ok || policy.Selection().Mode == permission.ModeLegacy {
+		return path, nil
+	}
+	kind, risk := permission.KindFSRead, permission.RiskNone
+	switch t.operation {
+	case "write":
+		kind, risk = permission.KindFSWrite, permission.RiskDestructive
+	case "read", "read_image", "read_audio", "read_media", "list", "search":
+	default:
+		return path, nil
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	path = resolvePathWithSymlinks(absPath)
+	if !t.isPathAllowed(path) {
+		return "", &PathNotAllowedError{Path: path, Allowed: t.allowedPaths}
+	}
+	cwd := t.workingDir
+	if cwd == "" {
+		cwd, err = os.Getwd()
+		if err != nil {
+			return "", err
+		}
+	}
+	cwd, err = filepath.Abs(cwd)
+	if err != nil {
+		return "", err
+	}
+	cwd = resolvePathWithSymlinks(cwd)
+	call := permission.CallFrom(ctx)
+	verdict := permission.AuthorizeAction(ctx, policy, permission.PolicyAction{
+		Request: permission.Request{
+			Kind: kind, Tool: t.name, Paths: []string{path}, Cwd: cwd,
+			Boundary: permission.Boundary{Type: "host", Label: "fs:" + t.name},
+			Risk:     risk, Agent: call.Agent, ToolCallID: call.ToolCallID,
+			ParentChain: call.ParentChain, Rationale: call.Rationale,
+		},
+		Network:     permission.EffectScope{Level: permission.EffectNone},
+		Credentials: permission.EffectScope{Level: permission.EffectNone},
+		Delegate:    false,
+	})
+	if verdict.Decision != permission.Allow {
+		return "", fmt.Errorf("%s", verdict.Message)
+	}
+	return path, nil
 }
 
 // loadMediaBlock runs a media loader (LoadImageAttachment/LoadAudioAttachment)

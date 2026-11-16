@@ -498,6 +498,21 @@ func TestGetSessionEvents_ExcludesSessionEnd(t *testing.T) {
 	}
 }
 
+func TestGetSessionEventsReturnsValidPrefix(t *testing.T) {
+	s := newTestStore(t)
+	id := startTestSession(t, s)
+	defer s.EndSession(SessionSuccess)
+	s.WriteEvent(telemetry.AgentEvent{ID: "complete", EventType: telemetry.EventAgentStart})
+	if _, err := s.file.WriteString("{invalid"); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := s.GetSessionEvents(id)
+	if err != nil || len(events) != 1 || events[0].ID != "complete" {
+		t.Fatalf("GetSessionEvents = %v, %v; want the complete event only", events, err)
+	}
+}
+
 // --- Stress tests ---
 
 // TestCheckpoint_ConcurrentWrites verifies that concurrent WriteCheckpoint calls

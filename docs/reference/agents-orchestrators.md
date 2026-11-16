@@ -145,8 +145,9 @@ rakitsu run react-team.yaml "Explain DNS caching"
 ## Pipelines
 
 Declare the workers under `agents:`, set `orchestrator.strategy: Pipeline`,
-and define `orchestrator.pipeline.steps`. Each leaf step names a worker or
-sub-orchestrator and may give it a task. A step prompt can include the original
+and define `orchestrator.pipeline.steps`. An agent step names a worker or
+sub-orchestrator and may give it a task. Decision and Retrieval steps can
+run without a chat agent. A step prompt can include the original
 query, successful previous results, and the current task.
 
 ### Pipeline fields
@@ -162,7 +163,7 @@ Fields of a step:
 | Field | Meaning |
 |---|---|
 | `name` | Step name. Needed by `depends_on`. |
-| `type` | `sequential` (default), `parallel` or `loop`. |
+| `type` | `sequential` (default), `parallel`, `loop`, `decision`, or `retrieval`. |
 | `agent` | Sequential: the agent (or sub-orchestrator) to run. |
 | `task` | The task text. |
 | `steps` | Parallel and loop: the sub-steps. |
@@ -173,6 +174,29 @@ Fields of a step:
 | `require_tool_call` | A mechanical check. The step fails if its agent never called the named tool, whatever the agent says. Keys: `tool`, `command_contains`, `arg_key`, `output_json_path`, `min_value`, `max_value`. |
 
 Validation refuses a step that names an unknown agent, a `require_tool_call` without `tool`, and impossible `min_value`/`max_value` combinations.
+
+### Decision and Retrieval steps
+
+A `type: decision` step takes the run query or a named step’s output and
+returns named answers. Use `predicate` for a probability, `choice` for a
+named option, and `score` for a position on an ordered rubric. The
+`decision.backend` can be `jev`, `laya`, `openai`, or `gemini` (Developer API).
+Optional `routes` run the first matching branch of ordered agent steps.
+When routes are present, supply `otherwise` for valid answers that match
+none of them. See the [Decision example](../../examples/jev/10-pipeline-decision/README.md)
+for credentials and route syntax.
+
+A `type: retrieval` step uses local BM25 search to rank Markdown and text
+passages. Set `RAKITSU_RETRIEVAL_ROOT` when starting Rakitsu, then give
+`retrieval.directory` as a relative path under that root. `top_k` defaults to
+3 and accepts 1–8. Results include file paths and line ranges.
+
+To judge evidence, use a local Laya Decision without branches. Set
+`decision.input: { from: retrieval, step: search }` and make `search` an
+upstream dependency. An empty search skips the model call. See the
+[local evidence example](../../examples/jev/11-retrieval-laya/README.md).
+This pipeline step has its own corpus and settings. The agent
+`settings.context.retrieval` option separately retrieves conversation context.
 
 ### Create a sequential pipeline
 

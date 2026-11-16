@@ -1,0 +1,1 @@
+Keyboard Tab skips the Place Order button. A mouse can still click it.

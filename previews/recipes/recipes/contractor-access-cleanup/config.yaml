@@ -1,0 +1,38 @@
+# Rakitsu tested build: v0.3.2 (09c37a8e)
+name: Contractor access review queue
+version: "1.0"
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://127.0.0.1:11434/v1
+      default_model: qwen3:4b-q4_K_M
+  defaults:
+    temperature: 0
+    max_tokens: 1800
+tools:
+  - name: check_access
+    type: cli
+    description: Run the fixed local checker and write output/access-review.csv. Takes no arguments.
+    command: "python3 -I check_access.py"
+    sandbox:
+      type: local_restricted
+      resource_limits:
+        timeout_sec: 10
+agents:
+  - name: Runner
+    role: worker
+    tools: [check_access]
+    system_prompt: Call check_access with empty arguments. After success, report the output path. Never infer decisions.
+    settings: {max_iterations: 3}
+orchestrator:
+  name: Access review
+  strategy: Pipeline
+  agents: [Runner]
+  pipeline:
+    steps:
+      - name: apply_policy
+        agent: Runner
+        task: "Call check_access with {}. Report the tool result. /no_think"
+        require_tool_call: {tool: check_access}

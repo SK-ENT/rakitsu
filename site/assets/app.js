@@ -1,6 +1,7 @@
 (function(){
 var VERSIONS=[],DEFAULT_VER="",DATA={},COVERS={},TAGS=[];
 var REPO="https://github.com/SK-ENT/rakitsu";
+var PREVIEW=window.RK_PREVIEW,BASE=PREVIEW?"../../":window.RK_TAG?"../":"";
 var UI={
  en:{ref:"Spec Reference",version:"Version",view:"View",simple:"Simple",detail:"Detail",searchLabel:"Search documentation",searchPlaceholder:"Search docs: ReAct, Pipeline, memory...",searchEmpty:"No matching sections.",searchHint:"Search this release in the selected language.",
   h1:"How Rakitsu works, and what it does today",
@@ -40,7 +41,7 @@ function needOf(raw){var id=Object.prototype.hasOwnProperty.call(ALIAS,raw)?ALIA
  if(id==="card-long-running-monitor"||id==="rough-wake-monitors")return "wake";
  var m=/^(?:ref-)?(wake|monitors)(?:-|$)/.exec(id);return m?m[1]:null;}
 function codeCell(s){return el("code",null,s);}
-function sampleLink(path){var a=el("a","sample-link",T("Open runnable sample","実行可能なサンプルを開く"));a.href=REPO+"/tree/"+encodeURIComponent(st.ver)+"/"+path.split("/").map(encodeURIComponent).join("/");a.target="_blank";a.rel="noopener noreferrer";a.setAttribute("aria-label",T("Open sample in GitHub: "+path,"GitHub でサンプルを開く: "+path));return a;}
+function sampleLink(path){var a=el("a","sample-link",T("Open runnable sample","実行可能なサンプルを開く"));a.href=REPO+"/tree/"+encodeURIComponent(data(st.ver).baseline||st.ver)+"/"+path.split("/").map(encodeURIComponent).join("/");a.target="_blank";a.rel="noopener noreferrer";a.setAttribute("aria-label",T("Open sample in GitHub: "+path,"GitHub でサンプルを開く: "+path));return a;}
 function tog(g,c,on){g.classList.toggle(c,!!on);}
 
 /* ---------- static links ----------
@@ -487,7 +488,7 @@ var ROUGH=[
 function mediaBlock(m){
  if(!m)return null;var d=m.diagram,s=m.screenshot,v=m.video;if(!(d&&d.src)&&!(s&&s.src)&&!(v&&v.src))return null;
  var box=el("div","media");
- [d,s].forEach(function(x){if(x&&x.src){var i=document.createElement("img");i.src=x.src;i.alt=L(x.alt)||"";i.loading="lazy";box.appendChild(i);}});
+ [d,s].forEach(function(x){if(x&&x.src){var i=document.createElement("img");i.src=L(x.src);i.alt=L(x.alt)||"";i.loading="lazy";box.appendChild(i);}});
  if(v&&v.src){var vi=document.createElement("video");vi.src=v.src;if(v.poster)vi.poster=v.poster;vi.controls=true;vi.preload="none";box.appendChild(vi);}
  return box;}
 var ctx={feat:null,tbl:0,name:null};
@@ -496,6 +497,10 @@ var ROUGH_NEEDS={"wake-monitors":"wake"};
 var WORKS_IDS=["react-loop","pipeline","providers","web-ui","sessions","protocols"],ROUGH_IDS=["alpha","hierarchical","allowlist","wake-monitors","mcp-a2a-limits","model-dependent","docs-coverage"];
 function renderBlock(b){
  if(b.t==="p")return el("p",null,L(b));
+ if(b.t==="media")return mediaBlock(b);
+ if(b.t==="link"){
+  var wrap=el("p"),a=el("a",null,L(b.label));a.href=L(b.href);wrap.appendChild(a);return wrap;
+ }
  if(b.t==="h"){
   var heading=el(ctx.subsection?"h4":"h3",null,L(b));
   if(b.id&&ctx.feat){
@@ -520,14 +525,15 @@ function renderBlock(b){
   t.appendChild(tb);bx2.appendChild(t);return bx2;}
  return el("span");
 }
-function section(id,name,simple,media,domId,heading){var s=el("section","feat");var did=domId||id;var ok=regDom(did,"section",lab(name),s);var h=el(heading||"h2",null,L(name));h.appendChild(codeCell(id));if(ok)h.appendChild(linkBtn(did));s.appendChild(h);if(simple){var one=el("p","one",L(simple));if(regDom(did+"-summary","highlight",lab(name," (summary)"," (要約)"),one))one.appendChild(linkBtn(did+"-summary"));s.appendChild(one);}var m=mediaBlock(media);if(m)s.appendChild(m);return s;}
+function section(id,name,simple,media,domId,heading,showBadge){var s=el("section","feat");var did=domId||id;var ok=regDom(did,"section",lab(name),s);var h=el(heading||"h2",null,L(name));if(showBadge!==false)h.appendChild(codeCell(id));if(ok)h.appendChild(linkBtn(did));s.appendChild(h);if(simple){var one=el("p","one",L(simple));if(regDom(did+"-summary","highlight",lab(name," (summary)"," (要約)"),one))one.appendChild(linkBtn(did+"-summary"));s.appendChild(one);}var m=mediaBlock(media);if(m)s.appendChild(m);return s;}
 function footer(ver){
  var f=FOOT;f.textContent="";f.classList.remove("hl");
  var lh=el("h2",null,T("License","ライセンス"));lh.style.fontSize="16px";lh.style.margin="0 0 6px";if(regDom("license","section",{en:"License",ja:"ライセンス"},f))lh.appendChild(linkBtn("license"));f.appendChild(lh);
  var p1=el("div");p1.appendChild(document.createTextNode("(c) 2026 Sakaki Natan & Paulus Ery Wasito Adhi. All rights reserved."));f.appendChild(p1);
  f.appendChild(el("div",null,T("Use of the software is governed by the Business Source License 1.1.","本ソフトウェアの利用は Business Source License 1.1 に従います。")));
- var p3=el("div");p3.appendChild(document.createTextNode(T("Release ","リリース ")+ver+": "));
- ["LICENSE","NOTICE"].forEach(function(n,i){var a=el("a",null,n);a.href=REPO+"/blob/"+ver+"/"+n;a.target="_blank";a.rel="noopener";if(i)p3.appendChild(document.createTextNode(", "));p3.appendChild(a);});f.appendChild(p3);
+ var baseline=data(ver).baseline;
+ var p3=el("div");p3.appendChild(document.createTextNode((baseline?T("Reference baseline ","参照元リリース "):T("Release ","リリース "))+(baseline||ver)+": "));
+ ["LICENSE","NOTICE"].forEach(function(n,i){var a=el("a",null,n);a.href=REPO+"/blob/"+(baseline||ver)+"/"+n;a.target="_blank";a.rel="noopener";if(i)p3.appendChild(document.createTextNode(", "));p3.appendChild(a);});f.appendChild(p3);
  f.appendChild(el("div",null,T("Page assets: IBM Plex Sans and IBM Plex Mono under the SIL Open Font License 1.1, self-hosted (no third-party requests). Japanese text uses the fonts installed on your device. No JavaScript libraries; diagrams are inline SVG. Rakitsu's own third-party components and licenses are listed in the NOTICE file of the release.","ページの素材: IBM Plex Sans、IBM Plex Mono。いずれも SIL Open Font License 1.1 で、このサイトから配信します(外部への通信はありません)。日本語の表示には端末にインストールされているフォントを使います。JavaScript ライブラリは使っていません。図はインライン SVG です。Rakitsu 自体のサードパーティ部品とそのライセンスは、リリースの NOTICE ファイルに記載されています。")));
  f.appendChild(el("div",null,T("Rakitsu is pre-release software. Interfaces and behavior may change without notice.","Rakitsu はプレリリース版のソフトウェアです。インターフェースや動作は予告なく変わることがあります。")));
 }
@@ -561,9 +567,24 @@ function render(){
  $("verlabel").textContent=verText(st.ver);fillSel();
  var m=$("meta");m.textContent="";
  [verText(st.ver),(d.meta.license||""),(d.meta.go||""),L(d.meta.status)||""].forEach(function(x){if(x)m.appendChild(el("span",null,x));});
- var n=$("notice");var cov=Object.prototype.hasOwnProperty.call(COVERS,st.ver);n.hidden=!cov;n.textContent=cov?u.notice.replace("%DOC%",docOf(st.ver)):"";
+ var n=$("notice");var cov=Object.prototype.hasOwnProperty.call(COVERS,st.ver);n.hidden=!cov&&!d.previewNotice;
+ n.textContent=d.previewNotice?L(d.previewNotice):cov?u.notice.replace("%DOC%",docOf(st.ver)):"";
  var nav=$("nav");nav.textContent="";var g=$("guides");g.textContent="";var f=$("feats");f.textContent="";
  function link(id,txt,cls,parent){var a=el("a",cls||null,txt);a.href=mkLink(st.lang,id);a.addEventListener("click",function(e){e.preventDefault();goTo(id);});(parent||nav).appendChild(a);}
+ if(d.story){
+  var story=d.story;
+  var storyId="ref-"+story.id;
+  link(storyId,L(story.name),"toc-root");
+  var storyNav=el("ul","toc-tree");nav.appendChild(storyNav);
+  story.detail.filter(function(b){return b.t==="h";}).forEach(function(b){
+   var li=el("li");storyNav.appendChild(li);link(storyId+"-"+b.id,L(b),"toc-child",li);
+  });
+  var storySection=section(story.id,story.name,story.simple,null,storyId,"h2",false);
+  ctx.feat=story.id;ctx.name=story.name;ctx.tbl=0;
+  story.detail.forEach(function(b){storySection.appendChild(renderBlock(b));});
+  ctx.feat=null;
+  g.appendChild(storySection);
+ }
  var orchestrationModes={"react-delegation":"react","pipeline-config":"pipeline","pipeline-gate":"gate-demo","hierarchical-demo":"hier","pipeline-loop":"loop"};
  var orchestrationRefs=d.features.filter(function(ft){return Object.prototype.hasOwnProperty.call(orchestrationModes,ft.id);});
  if(orchestrationRefs.length){
@@ -608,7 +629,7 @@ function render(){
  var tw=el("div","two");var a1=el("div");a1.appendChild(el("h3","okh",T("Works today","今動くもの")));var l1=el("ul");WORKS.forEach(function(x,i){var li=el("li",null,L(x));var wid="works-"+WORKS_IDS[i];if(regDom(wid,"highlight",x,li))li.appendChild(linkBtn(wid));l1.appendChild(li);});a1.appendChild(l1);
  var a2=el("div");a2.appendChild(el("h3","badh",T("Still rough","まだ粗いもの")));var l2=el("ul");ROUGH.forEach(function(x,i){if(!has(ROUGH_NEEDS[ROUGH_IDS[i]]))return;var li=el("li",null,L(x));var rid2="rough-"+ROUGH_IDS[i];if(regDom(rid2,"highlight",x,li))li.appendChild(linkBtn(rid2));l2.appendChild(li);});a2.appendChild(l2);
  tw.appendChild(a1);tw.appendChild(a2);ws.appendChild(tw);g.appendChild(ws);
- $("refhead").textContent=u.refhead;
+ $("refhead").textContent=d.baseline?T("0.4.0 preview reference","0.4.0 プレビュー版リファレンス"):u.refhead;
  nav.appendChild(el("div","grp",T("Reference","リファレンス")));
  if(!d.features.length){f.appendChild(el("p","hint",u.noref));}
  var orchestrationSection=$("orchestration");
@@ -635,12 +656,12 @@ function render(){
  if(pendingScroll!=null){var praw=pendingScroll;pendingScroll=null;window.setTimeout(function(){var c=canon(praw);if(c)reveal(c);},0);}
 }
 var sel=$("verSel");
-function verText(v){if(!Object.prototype.hasOwnProperty.call(COVERS,v))return v;return v+" ("+T("docs from ","ドキュメント: ")+docOf(v)+")";}
+function verText(v){if(v===PREVIEW)return v+T(" (development preview)"," (開発プレビュー)");if(!Object.prototype.hasOwnProperty.call(COVERS,v))return v;return v+" ("+T("docs from ","ドキュメント: ")+docOf(v)+")";}
 function fillSel(){sel.textContent="";TAGS.forEach(function(v){var o=document.createElement("option");o.value=v;o.textContent=verText(v);sel.appendChild(o);});sel.value=st.ver;}
 sel.setAttribute("autocomplete","off");
 function syncSel(){if(st.ver&&sel.value!==st.ver)sel.value=st.ver;}
 window.addEventListener("pageshow",syncSel);
-sel.addEventListener("change",function(){if(window.RK_TAG){location.href="../"+encodeURIComponent(sel.value)+"/"+location.hash;return;}st.ver=sel.value;save();render();});
+sel.addEventListener("change",function(){if(window.RK_TAG){if(sel.value!==st.ver)location.href=BASE+encodeURIComponent(sel.value)+"/"+location.hash;return;}st.ver=sel.value;save();render();});
 $("viewSimple").addEventListener("click",function(){st.view="simple";save();render();});
 $("viewDetail").addEventListener("click",function(){st.view="detail";save();render();});
 $("langEn").addEventListener("click",function(){setLang("en");});
@@ -659,11 +680,12 @@ pendingScroll=p0.raw;
 var UIERR={en:"Could not load the spec data (data/versions.json). Browsers block fetch() on file:// pages. Start the local server with: python3 -m http.server 8765 -d site , then open http://127.0.0.1:8765/",
  ja:"仕様データ (data/versions.json) を読み込めませんでした。file:// で開くと、ブラウザが fetch() を止めます。次のコマンドでローカルサーバーを起動し、http://127.0.0.1:8765/ を開いてください: python3 -m http.server 8765 -d site"};
 function showLoadError(e){var n=$("loaderr");n.hidden=false;n.textContent=UIERR[st.lang]||UIERR.en;if(window.console)console.error(e);}
-var BASE=window.RK_TAG?"../":"";
 function getJSON(u){return fetch(u,{cache:"no-cache"}).then(function(r){if(!r.ok)throw new Error(u+" "+r.status);return r.json();});}
 getJSON(BASE+"data/versions.json").then(function(vj){
  VERSIONS=vj.versions.slice();DEFAULT_VER=vj.default;COVERS=vj.covers||{};TAGS=VERSIONS.concat(Object.keys(COVERS)).sort(tagCmp);
  return Promise.all(VERSIONS.map(function(v){return getJSON(BASE+"data/"+v+".json").then(function(d){DATA[v]=d;});}));
+}).then(function(){
+ if(PREVIEW)return getJSON("reference.json").then(function(d){DATA[PREVIEW]=d;TAGS.unshift(PREVIEW);});
 }).then(function(){
  st.ver=window.RK_TAG&&TAGS.indexOf(window.RK_TAG)>-1?window.RK_TAG:(saved0&&TAGS.indexOf(saved0)>-1?saved0:DEFAULT_VER);
  fillSel();

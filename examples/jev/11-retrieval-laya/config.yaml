@@ -1,0 +1,23 @@
+name: local-retrieval-laya
+version: "1.0"
+agents: []
+orchestrator:
+  name: evidence-check
+  strategy: Pipeline
+  pipeline:
+    steps:
+      - name: search
+        type: retrieval
+        retrieval:
+          directory: docs
+          top_k: 3
+      - name: judge
+        type: decision
+        depends_on: [search]
+        decision:
+          backend: laya
+          input: { from: retrieval, step: search }
+          questions:
+            supported:
+              type: predicate
+              instructions: Does a retrieved passage directly answer the original question?

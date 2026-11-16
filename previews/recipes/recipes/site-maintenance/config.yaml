@@ -1,0 +1,35 @@
+# Rakitsu tested build: v0.3.2 (09c37a8e)
+name: "Facilities dispatch plan"
+version: "1.0"
+description: "Apply the site\u2019s escalation rules and turn maintenance reports into a dispatch list."
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://127.0.0.1:11434/v1
+      default_model: qwen3:4b-q4_K_M
+  defaults:
+    temperature: 0
+    max_tokens: 1400
+agents:
+  - name: Analyst
+    role: worker
+    system_prompt: "Use the supplied fixture. Distinguish facts from assumptions."
+    settings: { max_iterations: 1 }
+  - name: Reviewer
+    role: worker
+    system_prompt: "Check the analysis against the fixture. Return only the requested deliverable."
+    settings: { max_iterations: 1 }
+orchestrator:
+  name: Recipe
+  strategy: Pipeline
+  agents: [Analyst, Reviewer]
+  pipeline:
+    steps:
+      - name: analyze
+        agent: Analyst
+        task: "Classify each report according to the provided site policy. Keep exact ticket IDs. /no_think"
+      - name: review
+        agent: Reviewer
+        task: "Return a three-row dispatch plan. Include F-21 and isolate the hallway, F-22 and AV next business day, F-23 and weekly. Preserve the policy timing for all three. /no_think"

@@ -797,7 +797,9 @@ orchestrator:
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | string | **Required.** Step name (used in events and logging) |
-| `type` | string | Step type: `sequential` (default), `parallel`, `loop` |
+| `type` | string | Step type: `sequential` (default), `parallel`, `loop`, `decision`, `retrieval` |
+| `decision` | object | Backend, input, typed questions and optional routes for a [Decision step](reference/agents-orchestrators.md#decision-and-retrieval-steps) |
+| `retrieval` | object | Relative `directory` under `RAKITSU_RETRIEVAL_ROOT` and optional `top_k` (default 3) |
 | `agent` | string | Agent to execute this step (for leaf steps) |
 | `task` | string | Optional task override (defaults to the CLI query + previous step output) |
 | `steps` | PipelineStep[] | Nested sub-steps (for `parallel` and `loop` types) |

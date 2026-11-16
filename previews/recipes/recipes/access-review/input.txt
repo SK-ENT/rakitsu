@@ -1,0 +1,1 @@
+Today is July 1. Policy: contractor access expires on contract end date; admin grants require approval ID; employee read-only grants need neither. G-31 contractor ended June 25 and grant active. G-32 employee admin and approval field empty. G-33 employee read-only. Prepare a human review shortlist and do not change any grants. /no_think

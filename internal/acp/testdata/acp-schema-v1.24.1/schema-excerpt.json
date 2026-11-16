@@ -1,0 +1,843 @@
+{
+  "sourceRelease": "schema-v1.24.1",
+  "protocolVersion": 1,
+  "agentMethods": {
+    "session_new": "session/new",
+    "session_set_config_option": "session/set_config_option"
+  },
+  "clientMethods": {
+    "session_update": "session/update"
+  },
+  "$defs": {
+    "ClientCapabilities": {
+      "description": "Capabilities supported by the client.\n\nAdvertised during initialization to inform the agent about\navailable features and methods.\n\nSee protocol docs: [Client Capabilities](https://agentclientprotocol.com/protocol/initialization#client-capabilities)",
+      "type": "object",
+      "properties": {
+        "fs": {
+          "description": "File system capabilities supported by the client.\nDetermines which file operations the agent can request.",
+          "x-deserialize-default-on-error": true,
+          "default": {
+            "readTextFile": false,
+            "writeTextFile": false
+          },
+          "allOf": [
+            {
+              "$ref": "#/$defs/FileSystemCapabilities"
+            }
+          ]
+        },
+        "terminal": {
+          "description": "Whether the Client support all `terminal/*` methods.",
+          "type": "boolean",
+          "default": false,
+          "x-deserialize-default-on-error": true
+        },
+        "session": {
+          "description": "Session-related capabilities supported by the client.\n\nOptional. Omitted or `null` both mean the client does not advertise any\nsession-related extensions.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClientSessionCapabilities"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-deserialize-default-on-error": true
+        },
+        "auth": {
+          "description": "Authentication capabilities supported by the client.\nDetermines which authentication method types the agent may include\nin its `InitializeResponse`.",
+          "x-deserialize-default-on-error": true,
+          "default": {
+            "terminal": false
+          },
+          "allOf": [
+            {
+              "$ref": "#/$defs/AuthCapabilities"
+            }
+          ]
+        },
+        "elicitation": {
+          "description": "Elicitation capabilities supported by the client.\nDetermines which elicitation modes the agent may use.\n\nOptional. Omitted or `null` both mean the client does not advertise\nelicitation support.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ElicitationCapabilities"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-deserialize-default-on-error": true
+        },
+        "_meta": {
+          "description": "The _meta property is reserved by ACP to allow clients and agents to attach additional\nmetadata to their interactions. Implementations MUST NOT make assumptions about values at\nthese keys.\n\nSee protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/extensibility)",
+          "type": [
+            "object",
+            "null"
+          ],
+          "x-deserialize-default-on-error": true,
+          "additionalProperties": true
+        }
+      }
+    },
+    "ClientSessionCapabilities": {
+      "description": "Session-related capabilities supported by the client.",
+      "type": "object",
+      "properties": {
+        "configOptions": {
+          "description": "Config option capabilities supported by the client.\n\nOmitted or `null` both mean the client does not advertise support for any\nconfig option extensions.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionConfigOptionsCapabilities"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-deserialize-default-on-error": true
+        },
+        "_meta": {
+          "description": "The _meta property is reserved by ACP to allow clients and agents to attach additional\nmetadata to their interactions. Implementations MUST NOT make assumptions about values at\nthese keys.\n\nSee protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/extensibility)",
+          "type": [
+            "object",
+            "null"
+          ],
+          "x-deserialize-default-on-error": true,
+          "additionalProperties": true
+        }
+      }
+    },
+    "ConfigOptionUpdate": {
+      "description": "Session configuration options have been updated.",
+      "type": "object",
+      "properties": {
+        "configOptions": {
+          "description": "The full set of configuration options and their current values.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SessionConfigOption"
+          },
+          "x-deserialize-default-on-error": true,
+          "x-deserialize-skip-invalid-items": true
+        },
+        "_meta": {
+          "description": "The _meta property is reserved by ACP to allow clients and agents to attach additional\nmetadata to their interactions. Implementations MUST NOT make assumptions about values at\nthese keys.\n\nSee protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/extensibility)",
+          "type": [
+            "object",
+            "null"
+          ],
+          "x-deserialize-default-on-error": true,
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "configOptions"
+      ]
+    },
+    "InitializeRequest": {
+      "description": "Request parameters for the initialize method.\n\nSent by the client to establish connection and negotiate capabilities.\n\nSee protocol docs: [Initialization](https://agentclientprotocol.com/protocol/initialization)",
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "description": "The latest protocol version supported by the client.",
+          "allOf": [
+            {
+              "$ref": "#/$defs/ProtocolVersion"
+            }
+          ]
+        },
+        "clientCapabilities": {
+          "description": "Capabilities supported by the client.",
+          "x-deserialize-default-on-error": true,
+          "default": {
+            "fs": {
+              "readTextFile": false,
+              "writeTextFile": false
+            },
+            "terminal": false,
+            "auth": {
+              "terminal": false
+            }
+          },
+          "allOf": [
+            {
+              "$ref": "#/$defs/ClientCapabilities"
+            }
+          ]
+        },
+        "clientInfo": {
+          "description": "Information about the Client name and version sent to the Agent.\n\nNote: in future versions of the protocol, this will be required.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Implementation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-deserialize-default-on-error": true
+        },
+        "_meta": {
+          "description": "The _meta property is reserved by ACP to allow clients and agents to attach additional\nmetadata to their interactions. Implementations MUST NOT make assumptions about values at\nthese keys.\n\nSee protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/extensibility)",
+          "type": [
+            "object",
+            "null"
+          ],
+          "x-deserialize-default-on-error": true,
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "protocolVersion"
+      ],
+      "x-side": "agent",
+      "x-method": "initialize"
+    },
+    "NewSessionResponse": {
+      "description": "Response from creating a new session.\n\nSee protocol docs: [Creating a Session](https://agentclientprotocol.com/protocol/session-setup#creating-a-session)",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "description": "Unique identifier for the created session.\n\nUsed in all subsequent requests for this conversation.",
+          "allOf": [
+            {
+              "$ref": "#/$defs/SessionId"
+            }
+          ]
+        },
+        "modes": {
+          "description": "Initial mode state if supported by the Agent\n\nSee protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/session-modes)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionModeState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-deserialize-default-on-error": true
+        },
+        "configOptions": {
+          "description": "Initial session configuration options if supported by the Agent.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/SessionConfigOption"
+          },
+          "x-deserialize-default-on-error": true,
+          "x-deserialize-skip-invalid-items": true
+        },
+        "_meta": {
+          "description": "The _meta property is reserved by ACP to allow clients and agents to attach additional\nmetadata to their interactions. Implementations MUST NOT make assumptions about values at\nthese keys.\n\nSee protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/extensibility)",
+          "type": [
+            "object",
+            "null"
+          ],
+          "x-deserialize-default-on-error": true,
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "x-side": "agent",
+      "x-method": "session/new"
+    },
+    "SessionConfigBoolean": {
+      "description": "A boolean on/off toggle session configuration option payload.",
+      "type": "object",
+      "properties": {
+        "currentValue": {
+          "description": "The current value of the boolean option.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "currentValue"
+      ]
+    },
+    "SessionConfigOption": {
+      "description": "A session configuration option selector and its current state.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Unique identifier for the configuration option.",
+          "allOf": [
+            {
+              "$ref": "#/$defs/SessionConfigId"
+            }
+          ]
+        },
+        "name": {
+          "description": "Human-readable label for the option.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Optional description for the Client to display to the user.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-deserialize-default-on-error": true
+        },
+        "category": {
+          "description": "Optional semantic category for this option (UX only).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionConfigOptionCategory"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-deserialize-default-on-error": true
+        },
+        "_meta": {
+          "description": "The _meta property is reserved by ACP to allow clients and agents to attach additional\nmetadata to their interactions. Implementations MUST NOT make assumptions about values at\nthese keys.\n\nSee protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/extensibility)",
+          "type": [
+            "object",
+            "null"
+          ],
+          "x-deserialize-default-on-error": true,
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "oneOf": [
+        {
+          "description": "Single-value selector (dropdown).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "select"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "allOf": [
+            {
+              "$ref": "#/$defs/SessionConfigSelect"
+            }
+          ]
+        },
+        {
+          "description": "Boolean on/off toggle.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "boolean"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "allOf": [
+            {
+              "$ref": "#/$defs/SessionConfigBoolean"
+            }
+          ]
+        }
+      ],
+      "discriminator": {
+        "propertyName": "type"
+      }
+    },
+    "SessionConfigOptionCategory": {
+      "description": "Semantic category for a session configuration option.\n\nThis is intended to help Clients distinguish broadly common selectors (e.g. model selector vs\nsession mode selector vs thought/reasoning level) for UX purposes (keyboard shortcuts, icons,\nplacement). It MUST NOT be required for correctness. Clients MUST handle missing or unknown\ncategories gracefully.\n\nCategory names beginning with `_` are free for custom use, like other ACP extension methods.\nCategory names that do not begin with `_` are reserved for the ACP spec.",
+      "anyOf": [
+        {
+          "description": "Session mode selector.",
+          "type": "string",
+          "const": "mode"
+        },
+        {
+          "description": "Model selector.",
+          "type": "string",
+          "const": "model"
+        },
+        {
+          "description": "Model-related configuration parameter.",
+          "type": "string",
+          "const": "model_config"
+        },
+        {
+          "description": "Thought/reasoning level selector.",
+          "type": "string",
+          "const": "thought_level"
+        },
+        {
+          "title": "other",
+          "description": "Unknown / uncategorized selector.",
+          "type": "string"
+        }
+      ]
+    },
+    "SessionConfigOptionsCapabilities": {
+      "description": "Session configuration option capabilities supported by the client.",
+      "type": "object",
+      "properties": {
+        "boolean": {
+          "description": "Whether the client supports boolean session configuration options.\n\nOptional. Omitted or `null` both mean the client does not advertise support.\nSupplying `{}` means agents may include `type: \"boolean\"` entries in\n`configOptions`, and the client may send `session/set_config_option`\nrequests with `type: \"boolean\"` and a boolean `value`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BooleanConfigOptionCapabilities"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-deserialize-default-on-error": true
+        },
+        "_meta": {
+          "description": "The _meta property is reserved by ACP to allow clients and agents to attach additional\nmetadata to their interactions. Implementations MUST NOT make assumptions about values at\nthese keys.\n\nSee protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/extensibility)",
+          "type": [
+            "object",
+            "null"
+          ],
+          "x-deserialize-default-on-error": true,
+          "additionalProperties": true
+        }
+      }
+    },
+    "SessionConfigSelect": {
+      "description": "A single-value selector (dropdown) session configuration option payload.",
+      "type": "object",
+      "properties": {
+        "currentValue": {
+          "description": "The currently selected value.",
+          "allOf": [
+            {
+              "$ref": "#/$defs/SessionConfigValueId"
+            }
+          ]
+        },
+        "options": {
+          "description": "The set of selectable options.",
+          "allOf": [
+            {
+              "$ref": "#/$defs/SessionConfigSelectOptions"
+            }
+          ]
+        }
+      },
+      "required": [
+        "currentValue",
+        "options"
+      ]
+    },
+    "SessionConfigSelectOption": {
+      "description": "A possible value for a session configuration option.",
+      "type": "object",
+      "properties": {
+        "value": {
+          "description": "Unique identifier for this option value.",
+          "allOf": [
+            {
+              "$ref": "#/$defs/SessionConfigValueId"
+            }
+          ]
+        },
+        "name": {
+          "description": "Human-readable label for this option value.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Optional description for this option value.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-deserialize-default-on-error": true
+        },
+        "_meta": {
+          "description": "The _meta property is reserved by ACP to allow clients and agents to attach additional\nmetadata to their interactions. Implementations MUST NOT make assumptions about values at\nthese keys.\n\nSee protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/extensibility)",
+          "type": [
+            "object",
+            "null"
+          ],
+          "x-deserialize-default-on-error": true,
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "value",
+        "name"
+      ]
+    },
+    "SessionConfigSelectOptions": {
+      "description": "Possible values for a session configuration option.",
+      "anyOf": [
+        {
+          "title": "Ungrouped",
+          "description": "A flat list of options with no grouping.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SessionConfigSelectOption"
+          }
+        },
+        {
+          "title": "Grouped",
+          "description": "A list of options grouped under headers.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SessionConfigSelectGroup"
+          }
+        }
+      ]
+    },
+    "SetSessionConfigOptionRequest": {
+      "description": "Request parameters for setting a session configuration option.",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "description": "The ID of the session to set the configuration option for.",
+          "allOf": [
+            {
+              "$ref": "#/$defs/SessionId"
+            }
+          ]
+        },
+        "configId": {
+          "description": "The ID of the configuration option to set.",
+          "allOf": [
+            {
+              "$ref": "#/$defs/SessionConfigId"
+            }
+          ]
+        },
+        "_meta": {
+          "description": "The _meta property is reserved by ACP to allow clients and agents to attach additional\nmetadata to their interactions. Implementations MUST NOT make assumptions about values at\nthese keys.\n\nSee protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/extensibility)",
+          "type": [
+            "object",
+            "null"
+          ],
+          "x-deserialize-default-on-error": true,
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "sessionId",
+        "configId"
+      ],
+      "anyOf": [
+        {
+          "description": "A boolean value (`type: \"boolean\"`).",
+          "type": "object",
+          "properties": {
+            "value": {
+              "description": "The boolean value.",
+              "type": "boolean"
+            },
+            "type": {
+              "type": "string",
+              "const": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "title": "value_id",
+          "description": "A [`SessionConfigValueId`] string value.\n\nThis is the default when `type` is absent on the wire. Unknown `type`\nvalues with string payloads also gracefully deserialize into this\nvariant.",
+          "type": "object",
+          "properties": {
+            "value": {
+              "description": "The value ID.",
+              "allOf": [
+                {
+                  "$ref": "#/$defs/SessionConfigValueId"
+                }
+              ]
+            }
+          },
+          "required": [
+            "value"
+          ]
+        }
+      ],
+      "x-side": "agent",
+      "x-method": "session/set_config_option"
+    },
+    "SetSessionConfigOptionResponse": {
+      "description": "Response to `session/set_config_option` method.",
+      "type": "object",
+      "properties": {
+        "configOptions": {
+          "description": "The full set of configuration options and their current values.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SessionConfigOption"
+          },
+          "x-deserialize-default-on-error": true,
+          "x-deserialize-skip-invalid-items": true
+        },
+        "_meta": {
+          "description": "The _meta property is reserved by ACP to allow clients and agents to attach additional\nmetadata to their interactions. Implementations MUST NOT make assumptions about values at\nthese keys.\n\nSee protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/extensibility)",
+          "type": [
+            "object",
+            "null"
+          ],
+          "x-deserialize-default-on-error": true,
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "configOptions"
+      ],
+      "x-side": "agent",
+      "x-method": "session/set_config_option"
+    },
+    "SessionNotification": {
+      "description": "Notification containing a session update from the agent.\n\nUsed to stream real-time progress and results during prompt processing.\n\nSee protocol docs: [Agent Reports Output](https://agentclientprotocol.com/protocol/prompt-turn#3-agent-reports-output)",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "description": "The ID of the session this update pertains to.",
+          "allOf": [
+            {
+              "$ref": "#/$defs/SessionId"
+            }
+          ]
+        },
+        "update": {
+          "description": "The actual update content.",
+          "allOf": [
+            {
+              "$ref": "#/$defs/SessionUpdate"
+            }
+          ]
+        },
+        "_meta": {
+          "description": "The _meta property is reserved by ACP to allow clients and agents to attach additional\nmetadata to their interactions. Implementations MUST NOT make assumptions about values at\nthese keys.\n\nSee protocol docs: [Extensibility](https://agentclientprotocol.com/protocol/extensibility)",
+          "type": [
+            "object",
+            "null"
+          ],
+          "x-deserialize-default-on-error": true,
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "sessionId",
+        "update"
+      ],
+      "x-side": "client",
+      "x-method": "session/update"
+    },
+    "SessionUpdate": {
+      "description": "Different types of updates that can be sent during session processing.\n\nThese updates provide real-time feedback about the agent's progress.\n\nSee protocol docs: [Agent Reports Output](https://agentclientprotocol.com/protocol/prompt-turn#3-agent-reports-output)",
+      "oneOf": [
+        {
+          "description": "A chunk of the user's message being streamed.",
+          "type": "object",
+          "properties": {
+            "sessionUpdate": {
+              "type": "string",
+              "const": "user_message_chunk"
+            }
+          },
+          "required": [
+            "sessionUpdate"
+          ],
+          "allOf": [
+            {
+              "$ref": "#/$defs/ContentChunk"
+            }
+          ]
+        },
+        {
+          "description": "A chunk of the agent's response being streamed.",
+          "type": "object",
+          "properties": {
+            "sessionUpdate": {
+              "type": "string",
+              "const": "agent_message_chunk"
+            }
+          },
+          "required": [
+            "sessionUpdate"
+          ],
+          "allOf": [
+            {
+              "$ref": "#/$defs/ContentChunk"
+            }
+          ]
+        },
+        {
+          "description": "A chunk of the agent's internal reasoning being streamed.",
+          "type": "object",
+          "properties": {
+            "sessionUpdate": {
+              "type": "string",
+              "const": "agent_thought_chunk"
+            }
+          },
+          "required": [
+            "sessionUpdate"
+          ],
+          "allOf": [
+            {
+              "$ref": "#/$defs/ContentChunk"
+            }
+          ]
+        },
+        {
+          "description": "Notification that a new tool call has been initiated.",
+          "type": "object",
+          "properties": {
+            "sessionUpdate": {
+              "type": "string",
+              "const": "tool_call"
+            }
+          },
+          "required": [
+            "sessionUpdate"
+          ],
+          "allOf": [
+            {
+              "$ref": "#/$defs/ToolCall"
+            }
+          ]
+        },
+        {
+          "description": "Update on the status or results of a tool call.",
+          "type": "object",
+          "properties": {
+            "sessionUpdate": {
+              "type": "string",
+              "const": "tool_call_update"
+            }
+          },
+          "required": [
+            "sessionUpdate"
+          ],
+          "allOf": [
+            {
+              "$ref": "#/$defs/ToolCallUpdate"
+            }
+          ]
+        },
+        {
+          "description": "The agent's execution plan for complex tasks.\nSee protocol docs: [Agent Plan](https://agentclientprotocol.com/protocol/agent-plan)",
+          "type": "object",
+          "properties": {
+            "sessionUpdate": {
+              "type": "string",
+              "const": "plan"
+            }
+          },
+          "required": [
+            "sessionUpdate"
+          ],
+          "allOf": [
+            {
+              "$ref": "#/$defs/Plan"
+            }
+          ]
+        },
+        {
+          "description": "Available commands are ready or have changed",
+          "type": "object",
+          "properties": {
+            "sessionUpdate": {
+              "type": "string",
+              "const": "available_commands_update"
+            }
+          },
+          "required": [
+            "sessionUpdate"
+          ],
+          "allOf": [
+            {
+              "$ref": "#/$defs/AvailableCommandsUpdate"
+            }
+          ]
+        },
+        {
+          "description": "The current mode of the session has changed\n\nSee protocol docs: [Session Modes](https://agentclientprotocol.com/protocol/session-modes)",
+          "type": "object",
+          "properties": {
+            "sessionUpdate": {
+              "type": "string",
+              "const": "current_mode_update"
+            }
+          },
+          "required": [
+            "sessionUpdate"
+          ],
+          "allOf": [
+            {
+              "$ref": "#/$defs/CurrentModeUpdate"
+            }
+          ]
+        },
+        {
+          "description": "Session configuration options have been updated.",
+          "type": "object",
+          "properties": {
+            "sessionUpdate": {
+              "type": "string",
+              "const": "config_option_update"
+            }
+          },
+          "required": [
+            "sessionUpdate"
+          ],
+          "allOf": [
+            {
+              "$ref": "#/$defs/ConfigOptionUpdate"
+            }
+          ]
+        },
+        {
+          "description": "Session metadata has been updated (title, timestamps, custom metadata)",
+          "type": "object",
+          "properties": {
+            "sessionUpdate": {
+              "type": "string",
+              "const": "session_info_update"
+            }
+          },
+          "required": [
+            "sessionUpdate"
+          ],
+          "allOf": [
+            {
+              "$ref": "#/$defs/SessionInfoUpdate"
+            }
+          ]
+        },
+        {
+          "description": "Context window and cost update for the session.",
+          "type": "object",
+          "properties": {
+            "sessionUpdate": {
+              "type": "string",
+              "const": "usage_update"
+            }
+          },
+          "required": [
+            "sessionUpdate"
+          ],
+          "allOf": [
+            {
+              "$ref": "#/$defs/UsageUpdate"
+            }
+          ]
+        }
+      ],
+      "discriminator": {
+        "propertyName": "sessionUpdate"
+      }
+    }
+  }
+}

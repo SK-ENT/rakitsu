@@ -52,12 +52,12 @@ const PIN_OFFSETS = ['25%', '50%', '75%'] as const;
   height: 5px !important;
   background: transparent !important;
   border: 1px solid transparent !important;
-  border-radius: 50% !important;
+  border-radius: 1px !important;
   opacity: 0 !important;
   transition: opacity 0.15s, background 0.15s, border-color 0.15s;
 }
 .vue-flow__node:hover .builder-side-handle {
-  opacity: 0.6 !important;
+  opacity: 0.9 !important;
   background: rgba(154, 171, 209, 0.35) !important;
   border-color: rgba(154, 171, 209, 0.6) !important;
 }

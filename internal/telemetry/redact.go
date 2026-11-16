@@ -368,6 +368,18 @@ func RedactEventPayload(eventType EventType, payload json.RawMessage) json.RawMe
 		}
 		return out
 
+	case EventPermissionRequested:
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(payload, &obj); err != nil {
+			return payload
+		}
+		redactArgvField(obj, "argv")
+		out, err := json.Marshal(obj)
+		if err != nil {
+			return payload
+		}
+		return out
+
 	case EventWakeTaskStart, EventWakeTaskEnd:
 		var obj map[string]json.RawMessage
 		if err := json.Unmarshal(payload, &obj); err != nil {
@@ -433,6 +445,42 @@ func redactFreeTextField(obj map[string]json.RawMessage, field string) {
 		return
 	}
 	obj[field] = out
+}
+
+// redactArgvField masks secrets in a JSON array of argv strings. Each element
+// goes through redactFreeText; an element that is a credential-shaped flag
+// (e.g. --token) also masks the element after it. Left untouched on any
+// decode doubt.
+func redactArgvField(obj map[string]json.RawMessage, field string) {
+	raw, ok := obj[field]
+	if !ok {
+		return
+	}
+	var argv []string
+	if err := json.Unmarshal(raw, &argv); err != nil {
+		return
+	}
+	key := currentSensitiveArgKey()
+	maskNext := false
+	for i, a := range argv {
+		if maskNext {
+			argv[i] = redactedMask
+			maskNext = false
+			continue
+		}
+		if strings.HasPrefix(a, "-") && !strings.Contains(a, "=") && key.MatchString(strings.TrimLeft(a, "-")) {
+			maskNext = true
+			continue
+		}
+		if k, _, found := strings.Cut(a, "="); found && strings.HasPrefix(a, "-") && key.MatchString(strings.TrimLeft(k, "-")) {
+			argv[i] = k + "=" + redactedMask
+			continue
+		}
+		argv[i] = redactFreeText(a)
+	}
+	if out, err := json.Marshal(argv); err == nil {
+		obj[field] = out
+	}
 }
 
 // redactJSONField decodes obj[field] (a JSON object), recursively masks

@@ -1,0 +1,1 @@
+INC-42. 09:10 UTC checkout errors reached 28%. 09:14 cache restart attempted, no improvement. 09:20 rolled back deploy R18. At 09:25 errors were 2%, baseline 0.5%. Priya owns the next metric check at 09:35. Root cause unconfirmed. /no_think

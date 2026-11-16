@@ -1,0 +1,24 @@
+name: Repair UI from certification evidence
+version: "1"
+settings:
+  default_provider: codex
+  providers:
+    codex:
+      type: codex
+agents:
+  - name: Repair
+    role: worker
+    max_iterations: 6
+    tools: [read_source]
+    system_prompt: |
+      Read both indicated source files first. Fix the given failed certification check
+      while preserving all passing behavior and the actual shared components.
+      Output just one fenced JavaScript snippet for insertion at end of the existing module script.
+tools:
+  - name: read_source
+    type: fs
+    operation: read
+    allowed_paths: [generated/recall, kit]
+    description: Read the generated page or component code.
+    parameters:
+      path: {type: string, required: true, description: Fixture path}

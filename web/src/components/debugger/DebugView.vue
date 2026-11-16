@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, onActivated, onDeactivated, nextTick, defineAsyncComponent } from 'vue';
 import { useEventStream, useSessionHistory, useDebugTree } from '../../composables';
+import { recordedReplayCursor } from '../../composables/recordedReplayCursor';
 import { useDebugControl } from '../../composables/useDebugControl';
 import { useAgentRun } from '../../composables/useAgentRun';
 import type { DebugTreeNode, AgentEvent, SessionMeta } from '../../types';
@@ -122,7 +123,11 @@ async function startDebuggerChat() {
 import { NODE_TYPE_TO_EVENT } from '../../types/checkpoints';
 import './visualizations'; // trigger registration
 
+import { builderReplayEvent } from '../../composables/builderRunFeed';
+
 const props = defineProps<{
+  layoutRevision?: number;
+  followTimeline?: boolean;
   pendingRun?: { yaml: string; query: string; timeout: number; workdir: string; debug: boolean; envVars?: Record<string, string> } | null;
   pendingDemo?: { configId: string; query: string; breakpoints: { event_type: string; agent_name: string }[]; envVars: Record<string, string> } | null;
   pendingHistorySession?: string | null;
@@ -145,7 +150,11 @@ const showDemoCta = ref(false);
 
 type DataMode = 'live' | 'history';
 
-const viewMode = ref<string>('tree');
+const viewMode = ref<string>(props.layoutRevision ? 'block-diagram' : 'tree');
+watch(() => props.layoutRevision, () => {
+  viewMode.value = 'block-diagram';
+  if (dataMode.value === 'live' && !isConnected.value) connectLive();
+});
 const dataMode = ref<DataMode>('live');
 const debugUrl = ref(typeof window !== 'undefined' ? window.location.host : 'localhost:8080');
 const isWebRun = ref(false);
@@ -307,10 +316,37 @@ const showPlayback = computed(() => {
 
 const isPlaying = ref(false);
 let playTimer: ReturnType<typeof setInterval> | null = null;
+const loadedReplayId = ref<string | null>(null);
+
+function pausePlayback() {
+  if (playTimer !== null) clearInterval(playTimer);
+  playTimer = null;
+  isPlaying.value = false;
+}
+
+function setPlaybackPosition(index: number) {
+  visibleUpTo.value = index;
+  const id = loadedReplayId.value;
+  const event = debugEvents.value[index];
+  if (dataMode.value === 'history' && id && event) recordedReplayCursor.set(id, event.id);
+}
+
+watch([dataMode, loadedReplayId, () => recordedReplayCursor.get(loadedReplayId.value ?? '')], () => {
+  const id = loadedReplayId.value;
+  if (dataMode.value !== 'history' || !id || !sessionEvents.value.length) return;
+  const eventId = recordedReplayCursor.get(id);
+  const index = sessionEvents.value.findIndex(event => event.id === eventId);
+  if (index < 0) {
+    recordedReplayCursor.set(id, sessionEvents.value[sessionEvents.value.length - 1]!.id);
+  } else if (index !== playbackIdx.value) {
+    pausePlayback();
+    visibleUpTo.value = index;
+  }
+});
 
 function playbackStepEvent(dir: number) {
   const max = (debugEvents.value ?? []).length - 1;
-  visibleUpTo.value = Math.max(0, Math.min(max, playbackIdx.value + dir));
+  setPlaybackPosition(Math.max(0, Math.min(max, playbackIdx.value + dir)));
 }
 
 function playbackStepNode(dir: number) {
@@ -328,24 +364,22 @@ function playbackStepNode(dir: number) {
       if (i === 0) idx = 0;
     }
   }
-  visibleUpTo.value = idx;
+  setPlaybackPosition(idx);
 }
 
 function togglePlay() {
   if (isPlaying.value) {
-    if (playTimer) { clearInterval(playTimer); playTimer = null; }
-    isPlaying.value = false;
+    pausePlayback();
   } else {
     isPlaying.value = true;
     playTimer = setInterval(() => {
       const max = (debugEvents.value ?? []).length - 1;
       const next = playbackIdx.value + 1;
       if (next > max) {
-        if (playTimer) clearInterval(playTimer);
-        isPlaying.value = false;
+        pausePlayback();
         return;
       }
-      visibleUpTo.value = next;
+      setPlaybackPosition(next);
     }, 150);
   }
 }
@@ -371,14 +405,25 @@ watch(debugUrl, (v) => { debugUrlRef.value = v; });
 // (liveEvents and debugEvents are different refs — mutating one's array via
 // the other's proxy doesn't trigger watchers on the second ref.)
 //
-// Phase 2.5: when a session is pinned in the SessionPicker, the debug pane
-// shows only events tagged with that session_id (chat-mode sessions tag every
-// event via ChatSession.forwardLoop). When no pin is set, all events flow
-// through as before.
+// An explicit session wins. Otherwise follow the latest web run to
+// arrive, without switching back if an older run sends a late event.
+function liveSessionScope(events: AgentEvent[]) {
+  if (pickedSessionId.value) return pickedSessionId.value;
+  const seen = new Set<string>();
+  let latest = '';
+  for (const event of events) {
+    const id = event.session_id;
+    if (id?.startsWith('web-') && !seen.has(id)) {
+      seen.add(id);
+      latest = id;
+    }
+  }
+  return latest;
+}
+
 function filterByPin(events: AgentEvent[]): AgentEvent[] {
-  const pin = pickedSessionId.value;
-  if (!pin) return events;
-  return events.filter((e) => e.session_id === pin);
+  const scope = liveSessionScope(events);
+  return scope ? events.filter(event => event.session_id === scope) : events;
 }
 
 // Re-materializes debugEvents from the live stream through filterByPin, as a
@@ -396,8 +441,14 @@ watch(() => liveEvents.value.length, (newLen, oldLen) => {
   if (dataMode.value === 'history' && newLen === 1 && (oldLen ?? 0) === 0) {
     dataMode.value = 'live';
   }
+  const scope = liveSessionScope(liveEvents.value);
   if (dataMode.value === 'live' && newLen > (oldLen ?? 0)) {
-    debugEvents.value = filterByPin(liveEvents.value);
+    const previousScope = debugEvents.value[0]?.session_id;
+    if (scope && previousScope !== scope) {
+      pausePlayback();
+      reset();
+    }
+    materializeLiveEvents();
   }
   for (let i = oldLen ?? 0; i < newLen; i++) {
     const ev = liveEvents.value[i];
@@ -405,9 +456,8 @@ watch(() => liveEvents.value.length, (newLen, oldLen) => {
       // Only forward debug-control events (pause/resume/user_input) and
       // PIPELINE_END matching the pin — cross-session DEBUG_PAUSED or
       // PIPELINE_END shouldn't move this pane's UI.
-      const pin = pickedSessionId.value;
-      const matchesPin = !pin || !ev.session_id || ev.session_id === pin;
-      if (matchesPin) {
+      const matchesPin = !scope || ev.session_id === scope;
+      if (matchesPin || !ev.session_id) {
         handleDebugEvent(ev);
       }
       // PIPELINE_END fires once when entire pipeline completes
@@ -431,6 +481,7 @@ watch(pickedSessionId, () => {
 
 // Sync session events when loaded
 watch(sessionEvents, (events) => {
+  loadedReplayId.value = selectedSession.value?.id ?? null;
   if (dataMode.value === 'history') {
     debugEvents.value = [...events];
   }
@@ -444,6 +495,7 @@ watch(sessionEvents, (events) => {
 const savedHistoryEvents = ref<AgentEvent[]>([]);
 
 watch(dataMode, (mode, oldMode) => {
+  pausePlayback();
   // Save current history-mode events before switching away from them
   if (oldMode !== 'live') {
     savedHistoryEvents.value = [...debugEvents.value];
@@ -529,6 +581,7 @@ onActivated(() => {
 });
 
 onDeactivated(() => {
+  pausePlayback();
   stopHubPolling();
 });
 
@@ -747,6 +800,8 @@ function handleStopWebRun() {
 }
 
 function selectSession(id: string) {
+  pausePlayback();
+  loadedReplayId.value = null;
   reset();
   loadSession(id);
 }
@@ -1118,6 +1173,13 @@ watch(() => props.pendingHistorySession, async (id) => {
   selectSession(id);
 }, { immediate: true });
 
+watch(() => props.followTimeline ? builderReplayEvent.value?.sessionId : undefined, async id => {
+  if (!id || loadedReplayId.value === id && dataMode.value === 'history') return;
+  dataMode.value = 'history';
+  await nextTick();
+  if (props.followTimeline && builderReplayEvent.value?.sessionId === id) selectSession(id);
+}, { immediate: true });
+
 // Handle demo run from welcome screen
 watch(() => props.pendingDemo, async (demo) => {
   if (!demo) return;
@@ -1154,6 +1216,10 @@ onMounted(async () => {
 
   if (dataMode.value === 'live' && !isConnected.value) {
     debugUrl.value = selfUrl.value;
+    if (props.followTimeline) {
+      connectLive();
+      return;
+    }
     await fetchHubSessions();
     if (hubSessions.value.length > 0) {
       isHubMode.value = true;
@@ -1163,6 +1229,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  pausePlayback();
   stopHubPolling();
   if (typeof window !== 'undefined') {
     window.removeEventListener('hashchange', onHashChange);
@@ -1373,7 +1440,7 @@ onUnmounted(() => {
               :visible="true"
               @select="handleNodeSelect"
               @node-click="handleGraphNodeClick"
-              @update:visible-up-to="visibleUpTo = $event"
+              @update:visible-up-to="setPlaybackPosition($event)"
               @set-breakpoint="handleTreeBreakpoint"
               @run-to-node="handleTreeRunToNode"
               @debug-from-here="handleTreeDebugFromHere"
@@ -1447,17 +1514,17 @@ onUnmounted(() => {
             :min="0"
             :max="(debugEvents ?? []).length - 1"
             :value="playbackIdx"
-            @input="visibleUpTo = Number(($event.target as HTMLInputElement).value)"
+            @input="setPlaybackPosition(Number(($event.target as HTMLInputElement).value))"
             class="pb-slider"
           />
           <div class="playback-bar">
-            <button class="pb-btn" title="Go to start" @click="visibleUpTo = 0">|&lt;</button>
+            <button class="pb-btn" title="Go to start" @click="setPlaybackPosition(0)">|&lt;</button>
             <button class="pb-btn" title="Step back (node)" @click="playbackStepNode(-1)">&lt;&lt;</button>
             <button class="pb-btn" title="Step back (event)" @click="playbackStepEvent(-1)">&lt;</button>
             <span class="pb-label">{{ playbackIdx + 1 }} / {{ (debugEvents ?? []).length }}</span>
             <button class="pb-btn" title="Step forward (event)" @click="playbackStepEvent(1)">&gt;</button>
             <button class="pb-btn" title="Step forward (node)" @click="playbackStepNode(1)">&gt;&gt;</button>
-            <button class="pb-btn" title="Go to end" @click="visibleUpTo = (debugEvents ?? []).length - 1">&gt;|</button>
+            <button class="pb-btn" title="Go to end" @click="setPlaybackPosition(debugEvents.length - 1)">&gt;|</button>
             <button class="pb-btn play-btn" :class="{ playing: isPlaying }" title="Play / Pause" @click="togglePlay">{{ isPlaying ? '||' : '>' }}</button>
           </div>
         </div>
@@ -1684,11 +1751,30 @@ onUnmounted(() => {
 .modal-btn.cancel { color: var(--text-muted); }
 
 .debug-view {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   height: 100%;
   background: var(--surface-0);
   color: var(--text-primary);
+}
+
+@container (max-width: 900px) {
+  .toolbar, .toolbar-left, .toolbar-center, .toolbar-right { flex-wrap: wrap; }
+  .toolbar-center { min-width: 0; }
+}
+
+@container (max-width: 600px) {
+  .content { position: relative; }
+  .debug-view :deep(.session-panel:not(.collapsed)) {
+    position: absolute;
+    right: 0;
+    z-index: 2;
+    height: 100%;
+    max-width: 100%;
+    min-width: 0 !important;
+  }
+  .debug-view :deep(.session-panel .panel-content) { max-width: 100%; }
 }
 
 .toolbar {

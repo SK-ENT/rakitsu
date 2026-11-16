@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, computed, ref } from 'vue';
+import { type ComputedRef, inject, computed, ref } from 'vue';
 import { Handle, Position } from '@vue-flow/core';
 import BuilderSideHandles from './BuilderSideHandles.vue';
 import type { AgentConfig } from '../../types';
@@ -32,11 +32,13 @@ function fmtTokens(n: number): string {
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
   return String(n);
 }
+const workflowFocus = inject<ComputedRef<{ agent: string; tool: string } | null>>('builderWorkflowFocus');
 </script>
 
 <template>
   <div
     class="agent-node"
+    :data-workflow-active="workflowFocus?.agent === data.name || undefined"
     :class="[{ selected }, data._runStatus && `status-${data._runStatus}`, isExecution && !data._runStatus && 'status-pending']"
   >
     <!-- Breakpoint dot — always visible for agent nodes -->
@@ -75,30 +77,11 @@ function fmtTokens(n: number): string {
 
     <!-- Design-mode content -->
     <div v-if="!isExecution" class="node-content">
-      <div class="node-field">
-        <label>ROLE</label>
-        <span class="badge" :class="data.role">{{ data.role }}</span>
-      </div>
-      <div class="node-field">
-        <label>PROVIDER</label>
-        <span class="badge provider">{{ data.provider || 'openai' }}</span>
-      </div>
-      <div class="node-field">
-        <label>MODEL</label>
-        <span class="field-value">{{ data.model }}</span>
-      </div>
-      <div class="node-field tools-list">
-        <label>TOOLS</label>
-        <span class="field-value">{{ data.tools?.length > 0 ? data.tools.join(', ') : 'none' }}</span>
-      </div>
-      <div v-if="data.settings?.reflection?.enabled" class="node-field">
-        <label>REFLECT</label>
-        <span class="badge reflection">{{ data.settings.reflection.mode }}</span>
-      </div>
-      <div v-if="data.settings?.ground_check?.enabled" class="node-field">
-        <label>GROUND</label>
-        <span class="badge ground-check">{{ data.settings.ground_check.confidence_threshold }}</span>
-      </div>
+      <div class="node-model" :title="data.model">{{ data.model || 'Default model' }}</div>
+      <span class="badge" :class="data.role">{{ data.role }}</span>
+      <span v-if="data.tools?.length" class="node-tool-count">
+        {{ data.tools.length }} {{ data.tools.length === 1 ? 'tool' : 'tools' }}
+      </span>
     </div>
 
     <!-- Results badge — shown in design mode after run completes -->
@@ -153,7 +136,7 @@ function fmtTokens(n: number): string {
 
 .node-title {
   font-weight: 600;
-  font-size: 13px;
+  font-size: 15px;
   font-family: var(--font-sans);
   color: var(--text-primary);
 }
@@ -175,25 +158,14 @@ function fmtTokens(n: number): string {
   padding: 6px 10px;
 }
 
-.node-field {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 3px;
+.node-model {
+  font: 12px var(--font-mono);
+  color: var(--text-secondary);
+  margin-bottom: 5px;
 }
 
-.node-field label {
-  font-size: 9px;
-  font-weight: 500;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  letter-spacing: 0.05em;
-  min-width: 48px;
-}
-
-.field-value {
-  font-family: var(--font-mono);
-  font-size: 11px;
+.node-tool-count {
+  margin-left: 6px;
   color: var(--text-secondary);
 }
 
@@ -207,17 +179,6 @@ function fmtTokens(n: number): string {
 
 .badge.supervisor { background: rgba(245, 158, 11, 0.15); color: var(--status-paused); }
 .badge.worker { background: rgba(34, 197, 94, 0.15); color: var(--status-success); }
-.badge.provider { background: rgba(91, 141, 239, 0.15); color: var(--accent-agent); }
-.badge.reflection { background: rgba(245, 158, 11, 0.15); color: var(--status-paused); }
-.badge.ground-check { background: rgba(45, 212, 160, 0.15); color: var(--accent-tool); }
-
-.tools-list {
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .output-handles {
   display: flex;
   justify-content: space-around;

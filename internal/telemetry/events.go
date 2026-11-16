@@ -144,6 +144,11 @@ const (
 	// attachments. Later phases (attach_media builtin tool, chat drag-drop)
 	// will emit the same event from their own ingress points.
 	EventMediaAttached EventType = "MEDIA_ATTACHED"
+	// EventPermissionRequested is emitted when the permission broker asks the
+	// client to approve an action. Argv is redacted before it is persisted.
+	EventPermissionRequested EventType = "PERMISSION_REQUESTED"
+	// EventPermissionDecided is emitted when a permission request is resolved.
+	EventPermissionDecided EventType = "PERMISSION_DECIDED"
 )
 
 // SessionEndStatus is the final-state value carried in SessionEndPayload.
@@ -188,6 +193,34 @@ type WakeEscalatePayload struct {
 	Level        string `json:"level"`                // L2
 	SummaryChars int    `json:"summary_chars"`
 	SummaryCap   int    `json:"summary_cap"`
+}
+
+// PermissionRequestedPayload is the payload of EventPermissionRequested.
+// The model's own rationale is never included.
+type PermissionRequestedPayload struct {
+	RequestID        string   `json:"request_id"` // broker-internal ID, never the model's tool-call ID
+	SessionID        string   `json:"session_id,omitempty"`
+	Tool             string   `json:"tool"`
+	Kind             string   `json:"kind"`    // cli_exec | fs_write | fs_read
+	Reasons          []string `json:"reasons"` // not_allowlisted | path_outside_allowed | risky_class | persistence_point
+	Risk             string   `json:"risk,omitempty"`
+	Binary           string   `json:"binary,omitempty"`
+	Argv             []string `json:"argv,omitempty"` // redacted by RedactEventPayload
+	Paths            []string `json:"paths,omitempty"`
+	PersistencePoint bool     `json:"persistence_point,omitempty"`
+	Boundary         string   `json:"boundary"`
+	ParentChain      []string `json:"parent_chain,omitempty"`
+	Options          []string `json:"options"` // once | session | deny
+}
+
+// PermissionDecidedPayload is the payload of EventPermissionDecided. Source
+// "client_selected" means the client reported a selection; it does not prove a
+// person clicked (editors can auto-approve).
+type PermissionDecidedPayload struct {
+	RequestID string `json:"request_id"`
+	Decision  string `json:"decision"` // allow | deny
+	Scope     string `json:"scope"`    // once | session | none
+	Source    string `json:"source"`   // client_selected | session_grant | policy | timeout | cancelled | disconnected | unknown_option | rate_limited | no_channel | display_refused | revalidation_failed
 }
 
 // WakeTaskPayload is the payload of EventWakeTaskStart / EventWakeTaskEnd.
@@ -489,11 +522,14 @@ type PipelineStepStartPayload struct {
 
 // PipelineStepEndPayload is emitted when a pipeline step completes
 type PipelineStepEndPayload struct {
-	StepName  string `json:"step_name"`
-	StepType  string `json:"step_type"`
-	Status    string `json:"status"` // "success", "error"
-	Output    string `json:"output,omitempty"`
-	Iteration int    `json:"iteration,omitempty"` // for loop steps
+	RetrievalCount  *int   `json:"retrieval_count,omitempty"`
+	DecisionBackend string `json:"decision_backend,omitempty"`
+	DecisionRoute   string `json:"decision_route,omitempty"`
+	StepName        string `json:"step_name"`
+	StepType        string `json:"step_type"`
+	Status          string `json:"status"` // "success", "error"
+	Output          string `json:"output,omitempty"`
+	Iteration       int    `json:"iteration,omitempty"` // for loop steps
 }
 
 // DebugPendingToolInfo describes a tool call about to be executed (for debug inspection).
@@ -723,8 +759,9 @@ type EventBus struct {
 	// derived bus owns no subscribers of its own: it stamps origin and hands
 	// the event to its parent, so a tagged producer publishes to exactly the
 	// same audience an untagged one does.
-	parent *EventBus
-	origin string
+	parent    *EventBus
+	origin    string
+	sessionID string
 }
 
 // WithOrigin returns a view of eb that stamps every event it publishes with
@@ -744,6 +781,11 @@ func (eb *EventBus) WithOrigin(origin string) *EventBus {
 		return nil
 	}
 	return &EventBus{parent: eb, origin: origin}
+}
+
+// WithSession stamps events from a run while keeping the shared subscribers.
+func (eb *EventBus) WithSession(id string) *EventBus {
+	return &EventBus{parent: eb, sessionID: id}
 }
 
 // NewEventBus creates a new event bus
@@ -792,6 +834,9 @@ func (eb *EventBus) Publish(event AgentEvent) {
 		// derivation should keep the innermost tag.
 		if event.Origin == "" {
 			event.Origin = eb.origin
+		}
+		if eb.sessionID != "" {
+			event.SessionID = eb.sessionID
 		}
 		eb.parent.Publish(event)
 		return

@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { computed, ref, watch, nextTick, onMounted } from 'vue';
+import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import EventItem from './EventItem.vue';
-import { useEventStream, useSessionHistory } from '../../composables';
+import { useSessionHistory } from '../../composables';
+import { createEventStream } from '../../composables/useEventStream';
 import type { EventType } from '../../types';
 import ComboBox from '../builder/ComboBox.vue';
 
 const mode = ref<'history' | 'live'>('history');
 
 // Live mode
-const { events, isConnected, error: liveError, sessionInfo, connect, disconnect, clearEvents } = useEventStream();
+const { events, isConnected, error: liveError, sessionInfo, connect, disconnect, clearEvents } = createEventStream();
 const debugUrl = ref('localhost:9100');
 
 // History mode
@@ -120,6 +121,7 @@ function formatTime(iso: string): string {
 onMounted(() => {
   fetchSessions();
 });
+onUnmounted(disconnect);
 </script>
 
 <template>

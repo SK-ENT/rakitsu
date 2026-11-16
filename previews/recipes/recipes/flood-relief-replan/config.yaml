@@ -1,0 +1,69 @@
+# Rakitsu tested build: v0.3.2 (09c37a8e)
+name: Flood relief dispatch and replan
+version: "1.0"
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://127.0.0.1:11434/v1
+      default_model: qwen3:4b-q4_K_M
+  defaults:
+    temperature: 0
+    max_tokens: 1800
+tools:
+  - name: intake_tool
+    type: cli
+    command: "python3 -I dispatch.py intake"
+    description: "Reconcile duplicate shelter requests and road updates. No arguments."
+    sandbox:
+      type: local_restricted
+      resource_limits: {timeout_sec: 10}
+  - name: plan_tool
+    type: cli
+    command: "python3 -I dispatch.py plan"
+    description: "Produce a feasible allocation from the reconciled facts. No arguments."
+    sandbox:
+      type: local_restricted
+      resource_limits: {timeout_sec: 10}
+  - name: verify_tool
+    type: cli
+    command: "python3 -I dispatch.py verify"
+    description: "Verify the saved allocation and identify unmet needs for human review. No arguments."
+    sandbox:
+      type: local_restricted
+      resource_limits: {timeout_sec: 10}
+agents:
+  - name: Intake
+    role: worker
+    tools: [intake_tool]
+    system_prompt: "Call intake_tool with no arguments. Report the tool result. Reconcile duplicate shelter requests and road updates."
+    settings: {max_iterations: 3}
+  - name: Planner
+    role: worker
+    tools: [plan_tool]
+    system_prompt: "Call plan_tool with no arguments. Report the tool result. Produce a feasible allocation from the reconciled facts."
+    settings: {max_iterations: 3}
+  - name: Verifier
+    role: worker
+    tools: [verify_tool]
+    system_prompt: "Call verify_tool with no arguments. Report the tool result. Verify the saved allocation and identify unmet needs for human review."
+    settings: {max_iterations: 3}
+orchestrator:
+  name: Dispatch
+  strategy: Pipeline
+  agents: [Intake, Planner, Verifier]
+  pipeline:
+    steps:
+      - name: intake
+        agent: Intake
+        task: "Call intake_tool with {}. Reconcile duplicate shelter requests and road updates. /no_think"
+        require_tool_call: {tool: intake_tool}
+      - name: plan
+        agent: Planner
+        task: "Call plan_tool with {}. Produce a feasible allocation from the reconciled facts. /no_think"
+        require_tool_call: {tool: plan_tool}
+      - name: verify
+        agent: Verifier
+        task: "Call verify_tool with {}. Verify the saved allocation and identify unmet needs for human review. /no_think"
+        require_tool_call: {tool: verify_tool}

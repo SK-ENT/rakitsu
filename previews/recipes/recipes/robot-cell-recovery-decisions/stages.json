@@ -1,0 +1,30 @@
+[
+  {
+    "backend": "laya",
+    "name": "report_category",
+    "config": "laya.json",
+    "input": "operator_note",
+    "fixture_answer": "jam"
+  },
+  {
+    "backend": "jev",
+    "name": "history_signal",
+    "config": "jev.json",
+    "input": "maintenance_history",
+    "fixture_answer": "yes"
+  },
+  {
+    "backend": "openai",
+    "name": "quality_review",
+    "config": "openai.json",
+    "input": "inspection_note",
+    "fixture_answer": "yes"
+  },
+  {
+    "backend": "gemini",
+    "name": "owner",
+    "config": "gemini.json",
+    "input": "operator_note",
+    "fixture_answer": "maintenance"
+  }
+]

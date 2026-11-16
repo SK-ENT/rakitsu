@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/SK-ENT/rakitsu/internal/config"
+	"github.com/SK-ENT/rakitsu/internal/permission"
 )
 
 // ============================================================
@@ -739,5 +740,163 @@ func TestSearch_RelativeAllowedDot_StillWorks(t *testing.T) {
 	out := searchFor(t, tool, ".", "needle-rel")
 	if strings.Contains(out, "No files") {
 		t.Errorf("relative allowed path search failed: %q", out)
+	}
+}
+
+func fsRuntimePolicy(t *testing.T, root string, mode permission.Mode, focus permission.Focus) permission.EffectivePolicy {
+	t.Helper()
+	root = resolvePathWithSymlinks(root)
+	authority := permission.Authority{}
+	for _, kind := range []permission.Kind{permission.KindFSRead, permission.KindFSWrite} {
+		authority.Rules = append(authority.Rules, permission.AuthorityRule{
+			Kind: kind, Tool: "test-fs", Roots: []string{root},
+			Boundary:    permission.Boundary{Type: "host", Label: "fs:test-fs"},
+			Network:     permission.EffectScope{Level: permission.EffectNone},
+			Credentials: permission.EffectScope{Level: permission.EffectNone},
+		})
+	}
+	policy, err := permission.ResolvePolicy(permission.PolicyConfig{
+		DefaultMode: mode, AvailableFocus: []permission.Focus{permission.FocusCoding, permission.FocusPlan},
+	}, permission.Selection{Focus: focus}, nil, permission.PolicyInputs{
+		Operator: permission.OperatorPolicy{HardLimits: authority, Requestable: authority},
+		Workflow: authority, Preauthorized: []permission.Authority{authority},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return policy
+}
+
+type fsPolicyPrompter struct {
+	cards []permission.Card
+}
+
+func (p *fsPolicyPrompter) Prompt(_ context.Context, card permission.Card, options []permission.Option) (permission.Answer, error) {
+	p.cards = append(p.cards, card)
+	for _, option := range options {
+		if option.Scope == permission.ScopeOnce {
+			return permission.Answer{OptionID: option.ID}, nil
+		}
+	}
+	return permission.Answer{}, errors.New("once approval not offered")
+}
+
+func TestExecuteSecurePolicyDeniesBeforeFilesystemAction(t *testing.T) {
+	for _, op := range []string{"read", "write", "read_image", "read_audio", "read_media", "list", "search"} {
+		t.Run(op, func(t *testing.T) {
+			dir := t.TempDir()
+			file := writeTemp(t, dir, "unchanged")
+			tool := newFSTool(op, []string{dir})
+			tool.workingDir = dir
+			path := file
+			if op == "list" || op == "search" {
+				path = dir
+			}
+			args := map[string]interface{}{"path": path, "content": "changed", "pattern": "unchanged"}
+			for _, denial := range []string{"no gate", "no authority", "zero policy"} {
+				t.Run(denial, func(t *testing.T) {
+					policy := fsRuntimePolicy(t, dir, permission.ModeAuto, permission.FocusCoding)
+					if denial == "no authority" {
+						policy = fsRuntimePolicy(t, t.TempDir(), permission.ModeAsk, permission.FocusCoding)
+					} else if denial == "zero policy" {
+						policy = permission.EffectivePolicy{}
+					}
+					ctx := permission.WithPolicy(context.Background(), policy)
+					prompter := &fsPolicyPrompter{}
+					if denial != "no gate" {
+						ctx = permission.WithGate(ctx, permission.NewGate(prompter, nil, permission.GateOptions{}))
+					}
+					text, blocks, err := tool.ExecuteContent(ctx, args)
+					if err == nil || !strings.Contains(err.Error(), "Permission denied") || text != "" || len(blocks) != 0 {
+						t.Fatalf("expected policy denial before %s, got %q, %v, %v", op, text, blocks, err)
+					}
+					if len(prompter.cards) != 0 {
+						t.Fatal("authority denial prompted")
+					}
+					content, err := os.ReadFile(file)
+					if err != nil || string(content) != "unchanged" {
+						t.Fatalf("denied action changed file: %q, %v", content, err)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestExecuteSecureAskCanonicalPath(t *testing.T) {
+	dir := t.TempDir()
+	file := writeTemp(t, dir, "read me")
+	link := filepath.Join(dir, "alias")
+	if err := os.Symlink(filepath.Base(file), link); err != nil {
+		t.Fatal(err)
+	}
+	for _, op := range []string{"read", "write", "list", "search"} {
+		t.Run(op, func(t *testing.T) {
+			tool := newFSTool(op, []string{dir})
+			tool.workingDir = dir
+			prompter := &fsPolicyPrompter{}
+			ctx := permission.WithPolicy(context.Background(), fsRuntimePolicy(t, dir, permission.ModeAsk, permission.FocusCoding))
+			ctx = permission.WithGate(ctx, permission.NewGate(prompter, nil, permission.GateOptions{}))
+			path := "alias"
+			if op == "list" || op == "search" {
+				path = "."
+			}
+			out, err := tool.Execute(ctx, map[string]interface{}{"path": path, "content": "read me", "pattern": "read me"})
+			if err != nil {
+				t.Fatalf("approved %s failed: %v", op, err)
+			}
+			if len(prompter.cards) != 1 || out == "" {
+				t.Fatalf("expected one prompt and output, got %d prompts, %q", len(prompter.cards), out)
+			}
+			canonical := resolvePathWithSymlinks(filepath.Join(dir, path))
+			if !strings.Contains(prompter.cards[0].Body, canonical) {
+				t.Fatalf("prompt did not contain canonical target %q: %s", canonical, prompter.cards[0].Body)
+			}
+			if op == "write" && !prompter.cards[0].Risky {
+				t.Fatal("write did not carry destructive risk")
+			}
+		})
+	}
+}
+
+func TestExecuteSecurePlanDeniesWrite(t *testing.T) {
+	dir := t.TempDir()
+	tool := newFSTool("write", []string{dir})
+	tool.workingDir = dir
+	prompter := &fsPolicyPrompter{}
+	ctx := permission.WithPolicy(context.Background(), fsRuntimePolicy(t, dir, permission.ModeAsk, permission.FocusPlan))
+	ctx = permission.WithGate(ctx, permission.NewGate(prompter, nil, permission.GateOptions{}))
+	path := filepath.Join(dir, "new", "file")
+	_, err := tool.Execute(ctx, map[string]interface{}{"path": path, "content": "changed"})
+	if err == nil || !strings.Contains(err.Error(), "Permission denied") {
+		t.Fatalf("expected plan denial, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Dir(path)); !os.IsNotExist(err) {
+		t.Fatalf("denied write created parent directory: %v", err)
+	}
+	if len(prompter.cards) != 0 {
+		t.Fatal("plan write prompted")
+	}
+}
+
+func TestExecuteLegacyPolicyUnchanged(t *testing.T) {
+	legacy, err := permission.ResolvePolicy(permission.PolicyConfig{}, permission.Selection{}, nil, permission.PolicyInputs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, withPolicy := range []bool{false, true} {
+		for _, op := range []string{"read", "write"} {
+			dir := t.TempDir()
+			file := writeTemp(t, dir, "legacy")
+			tool := newFSTool(op, []string{dir})
+			tool.workingDir = dir
+			ctx := permission.WithGate(context.Background(), permission.NewGate(permission.DenyPrompter{}, nil, permission.GateOptions{}))
+			if withPolicy {
+				ctx = permission.WithPolicy(ctx, legacy)
+			}
+			if _, err := tool.Execute(ctx, map[string]interface{}{"path": file, "content": "legacy"}); err != nil {
+				t.Fatalf("legacy %s with policy=%v failed: %v", op, withPolicy, err)
+			}
+		}
 	}
 }

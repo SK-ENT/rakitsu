@@ -1,0 +1,11 @@
+{
+  "stock": 80,
+  "unit_price_cents": 200,
+  "max_discount_percent": 10,
+  "approval_threshold_cents": 20000,
+  "approved": false,
+  "suppliers": [
+    {"name": "Fast Supply", "quantity": 40, "shipping_cents": 6000, "arrival": "2026-11-19"},
+    {"name": "Budget Supply", "quantity": 40, "shipping_cents": 2000, "arrival": "2026-11-23"}
+  ]
+}

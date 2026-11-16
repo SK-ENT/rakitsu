@@ -1,0 +1,8 @@
+{
+  "cell": "R-14",
+  "safety_interlock": "open",
+  "lockout_verified": false,
+  "operator_note": "Robot cell R-14 stopped because a pallet jammed at the infeed. Network remains connected.",
+  "maintenance_history": "The infeed pallet jam has recurred three times this week.",
+  "inspection_note": "Quarantine all parts from this batch for inspection after the collision."
+}

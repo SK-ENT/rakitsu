@@ -19,6 +19,19 @@ Or from repo root:
 node test/webui/probe.mjs
 ```
 
+To measure Builder canvas height in Debug and Replay and check the compact
+controls, point the probe at a serving build and a YAML config containing an
+agent. The browser imports the config and measures the layout without running it.
+
+```bash
+RAKITSU_BASE_URL=http://127.0.0.1:9100 \
+RAKITSU_TIMELINE_CONFIG=/path/to/config.yaml \
+node test/webui/compact-builder.mjs
+```
+
+Set `RAKITSU_BUILDER_SHOTS` to an existing directory to save the two layouts
+as PNGs.
+
 ## Env vars
 
 | Name | Default | Purpose |

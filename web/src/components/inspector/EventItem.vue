@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import type { AgentEvent, AgentEndPayload, StructuredThought, ToolCallStartPayload, ToolCallEndPayload, ReflectionEndPayload, GroundCheckEndPayload, PipelineStartPayload, PipelineStepStartPayload, PipelineStepEndPayload, AgentHandoffPayload, AgentMessagePayload, RetryAttemptPayload, ContextCompressedPayload, RetrievalInjectedPayload, SalvagedOutputPayload, WorkerRedelegationBlockedPayload, RollbackPayload, WakeTickPayload, WakeEscalatePayload } from '../../types';
+import type { AgentEvent, AgentEndPayload, StructuredThought, ToolCallStartPayload, ToolCallEndPayload, ReflectionEndPayload, GroundCheckEndPayload, PipelineStartPayload, PipelineStepStartPayload, PipelineStepEndPayload, AgentHandoffPayload, AgentMessagePayload, RetryAttemptPayload, ContextCompressedPayload, RetrievalInjectedPayload, SalvagedOutputPayload, WorkerRedelegationBlockedPayload, RollbackPayload, WakeTickPayload, WakeEscalatePayload, PermissionRequestedPayload, PermissionDecidedPayload } from '../../types';
 
 const props = defineProps<{
   event: AgentEvent;
@@ -50,6 +50,8 @@ const eventIcon = computed(() => {
     case 'WAKE_ESCALATE': return '⏰';
     case 'WAKE_TASK_START': return '▶';
     case 'WAKE_TASK_END': return '■';
+    case 'PERMISSION_REQUESTED': return '🔐';
+    case 'PERMISSION_DECIDED': return '🔓';
     default: return '📌';
   }
 });
@@ -196,6 +198,20 @@ const wakeTickData = computed((): WakeTickPayload | null => {
 const wakeEscalateData = computed((): WakeEscalatePayload | null => {
   if (props.event.event_type === 'WAKE_ESCALATE') {
     return props.event.payload as unknown as WakeEscalatePayload;
+  }
+  return null;
+});
+
+const permRequestData = computed((): PermissionRequestedPayload | null => {
+  if (props.event.event_type === 'PERMISSION_REQUESTED') {
+    return props.event.payload as unknown as PermissionRequestedPayload;
+  }
+  return null;
+});
+
+const permDecidedData = computed((): PermissionDecidedPayload | null => {
+  if (props.event.event_type === 'PERMISSION_DECIDED') {
+    return props.event.payload as unknown as PermissionDecidedPayload;
   }
   return null;
 });
@@ -371,6 +387,13 @@ function toggleExpand() {
             {{ pipelineStepEndData.status }}
           </span>
         </div>
+        <div v-if="pipelineStepEndData.decision_backend" class="step-output">
+          {{ pipelineStepEndData.decision_backend }}
+          <span v-if="pipelineStepEndData.decision_route"> · {{ pipelineStepEndData.decision_route }}</span>
+        </div>
+        <div v-if="pipelineStepEndData.retrieval_count !== undefined" class="step-output">
+          Retrieved {{ pipelineStepEndData.retrieval_count }} result<span v-if="pipelineStepEndData.retrieval_count !== 1">s</span>
+        </div>
         <div v-if="pipelineStepEndData.output" class="step-output">
           <label>Output:</label>
           <pre>{{ pipelineStepEndData.output }}</pre>
@@ -528,6 +551,29 @@ function toggleExpand() {
         </div>
       </div>
 
+      <!-- Permission Requested Display -->
+      <div v-else-if="permRequestData" class="perm-content">
+        <div class="perm-header">
+          <span class="perm-badge">Permission requested</span>
+          <span>{{ permRequestData.tool }} ({{ permRequestData.kind }})</span>
+          <code class="perm-id">{{ permRequestData.request_id }}</code>
+        </div>
+        <div v-if="permRequestData.reasons && permRequestData.reasons.length">Reasons: {{ permRequestData.reasons.join(', ') }}</div>
+        <div v-if="permRequestData.argv && permRequestData.argv.length"><code>{{ permRequestData.argv.join(' ') }}</code></div>
+        <div v-if="permRequestData.paths && permRequestData.paths.length"><code>{{ permRequestData.paths.join(', ') }}</code></div>
+        <div>Options: {{ (permRequestData.options || []).join(', ') }}</div>
+      </div>
+
+      <!-- Permission Decided Display -->
+      <div v-else-if="permDecidedData" class="perm-content">
+        <div class="perm-header">
+          <span class="perm-badge" :class="'perm-' + permDecidedData.decision">{{ permDecidedData.decision }}</span>
+          <span>scope {{ permDecidedData.scope }}</span>
+          <span>source {{ permDecidedData.source }}</span>
+          <code class="perm-id">{{ permDecidedData.request_id }}</code>
+        </div>
+      </div>
+
       <!-- Default Payload Display -->
       <div v-else class="payload-content">
         <pre>{{ formattedPayload }}</pre>
@@ -568,6 +614,14 @@ function toggleExpand() {
 .event-WAKE_ESCALATE { border-left-color: #f59e0b; }
 .event-WAKE_TASK_START { border-left-color: #34d399; }
 .event-WAKE_TASK_END { border-left-color: #10b981; }
+.event-PERMISSION_REQUESTED { border-left-color: #f97316; }
+.event-PERMISSION_DECIDED { border-left-color: #14b8a6; }
+.perm-content { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.perm-header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.perm-badge { padding: 1px 6px; border-radius: 4px; background: #f97316; color: #fff; }
+.perm-badge.perm-allow { background: #10b981; }
+.perm-badge.perm-deny { background: #ef4444; }
+.perm-id { opacity: 0.7; }
 .event-THOUGHT_START { border-left-color: #ff9800; }
 .event-THOUGHT_END { border-left-color: #ff5722; }
 .event-TOOL_CALL_START { border-left-color: #00bcd4; }

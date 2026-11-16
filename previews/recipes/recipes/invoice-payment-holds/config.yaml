@@ -1,0 +1,71 @@
+# Rakitsu tested build: v0.3.2 (09c37a8e)
+name: "Invoice payment hold report"
+version: "1.0"
+description: "Compare billed prices and quantities with approved purchase orders and goods received."
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://127.0.0.1:11434/v1
+      default_model: qwen3:4b-q4_K_M
+  defaults:
+    temperature: 0
+    max_tokens: 1800
+tools:
+  - name: read-source
+    type: fs
+    operation: read
+    description: Read the first bundled CSV
+    allowed_paths: ["fixtures/invoices.csv"]
+    parameters:
+      path: {type: string, required: true, enum: ["fixtures/invoices.csv"]}
+  - name: read-reference
+    type: fs
+    operation: read
+    description: Read the second bundled CSV
+    allowed_paths: ["fixtures/receiving.csv"]
+    parameters:
+      path: {type: string, required: true, enum: ["fixtures/receiving.csv"]}
+  - name: save-report
+    type: fs
+    operation: write
+    description: Save the actual Markdown report
+    allowed_paths: ["output/report.md"]
+    parameters:
+      path: {type: string, required: true, enum: ["output/report.md"]}
+      content: {type: string, required: true, description: Full Markdown report including every record}
+agents:
+  - name: Intake
+    role: worker
+    system_prompt: Read the file with the assigned tool and relay all rows verbatim.
+    tools: [read-source]
+    settings: {max_iterations: 4}
+  - name: Reconciler
+    role: worker
+    system_prompt: Read the reference file with the assigned tool. Join both inputs and apply the user's policy. Account for every row.
+    tools: [read-reference]
+    settings: {max_iterations: 4}
+  - name: Publisher
+    role: worker
+    system_prompt: Save the reconciled decisions as a Markdown report using save-report. Keep each ID, decision and reason. Report completion only after the tool succeeds.
+    tools: [save-report]
+    settings: {max_iterations: 4}
+orchestrator:
+  name: Reconciliation
+  strategy: Pipeline
+  agents: [Intake, Reconciler, Publisher]
+  pipeline:
+    steps:
+      - name: intake
+        agent: Intake
+        task: "Use read-source to read fixtures/invoices.csv. Return exactly the CSV contents without explanations. /no_think"
+        require_tool_call: {tool: read-source}
+      - name: reconcile
+        agent: Reconciler
+        task: "Use read-reference to read fixtures/receiving.csv. Compare with intake and apply the user policy. Give one decision and reason per ID. /no_think"
+        require_tool_call: {tool: read-reference}
+      - name: publish
+        agent: Publisher
+        task: "Call save-report with path output/report.md and the full Markdown report. Include only one row for each invoice. Each row gives the decision and the factual comparison. Omit all additional sections and notes. /no_think"
+        require_tool_call: {tool: save-report}

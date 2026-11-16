@@ -20,6 +20,8 @@
   --node-bg: #252540;
   --node-border: #3a3a50;
   --node-radius: 3px;
+  --diagram-card-radius: 8px;
+  --diagram-card-tint: 12%;
 
   /* Text — adjusted for WCAG contrast on dark surfaces */
   --text-primary: #e0e0e0;
@@ -63,4 +65,11 @@
   --input-border: #3a3a50;
   --input-text: #e0e0e0;
   --input-placeholder: #666680;
+}
+
+/* Shared live and recorded workflow focus in the Builder. */
+[data-workflow-active="true"] {
+  outline: 2px solid var(--status-running);
+  outline-offset: 2px;
+  box-shadow: 0 0 16px color-mix(in srgb, var(--status-running) 28%, transparent);
 }

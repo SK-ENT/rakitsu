@@ -236,7 +236,9 @@ export interface HandoffConfig {
 
 export interface PipelineStep {
   name: string;
-  type?: 'sequential' | 'parallel' | 'loop';
+  type?: 'sequential' | 'parallel' | 'loop' | 'decision' | 'retrieval';
+  decision?: DecisionConfig;
+  retrieval?: RetrievalStepConfig;
   agent?: string;
   _agentId?: string; // Internal: stable reference to agent by ID
   _groupId?: string; // Internal: source group that defined this step
@@ -247,6 +249,33 @@ export interface PipelineStep {
   condition_prompt?: string;
   timeout_sec?: number;
   depends_on?: string[];
+}
+
+export interface DecisionMatch {
+  question: string;
+  field: 'choice' | 'probability_true' | 'score';
+  equals?: string;
+  min?: number;
+  max?: number;
+}
+
+export interface DecisionConfig {
+  backend: 'jev' | 'laya' | 'openai' | 'gemini';
+  url?: string;
+  input?: { from: 'query' | 'step' | 'retrieval'; step?: string };
+  questions: Record<string, {
+    type: 'predicate' | 'choice' | 'score';
+    instructions: string;
+    choices?: Record<string, string>;
+    levels?: string[];
+  }>;
+  routes?: { when: DecisionMatch; steps: PipelineStep[] }[];
+  otherwise?: PipelineStep[];
+}
+
+export interface RetrievalStepConfig {
+  directory: string;
+  top_k?: number;
 }
 
 export interface PipelineConfig {

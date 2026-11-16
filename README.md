@@ -4,6 +4,8 @@
 
 <h1 align="center">Rakitsu</h1>
 
+[日本語](README.ja.md)
+
 [![CI](https://github.com/SK-ENT/rakitsu/actions/workflows/ci.yml/badge.svg)](https://github.com/SK-ENT/rakitsu/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/SK-ENT/rakitsu?include_prereleases)](https://github.com/SK-ENT/rakitsu/releases)
 [![Status: Preview](https://img.shields.io/badge/status-preview-orange.svg)](#disclaimer)
@@ -16,10 +18,19 @@
 
 Design multi-agent systems on a drag-and-drop canvas, debug with breakpoints and time-travel, deploy as a single zero-dependency binary. YAML-configured, multi-provider, open source.
 
+> **0.4.0 development preview.** The demos below were captured on the v0.4.0
+> milestone. The Quick Start installs the latest published release. To try the
+> preview from this checkout, run `make build-embedded VERSION=v0.4.0-dev`
+> and then `./bin/rakitsu serve`.
+
 <p align="center">
-  <img src="docs/assets/showcase/debugger.gif" width="880" alt="Rakitsu debugger: a Code Reviewer run pauses at a breakpoint before its read_file tool call, the detail panel shows token usage and the pending call, then the run resumes to its result">
+  <img src="docs/assets/diagrams/workflow-overview.svg" width="640" alt="Teaching example of a Python clamp review, from wiring Reviewer and Test Writer to a live breakpoint and recorded replay">
 </p>
-<p align="center"><sub>A real run, nothing staged: breakpoint on <code>read_file</code>, pause, inspect, resume.</sub></p>
+
+A Reviewer spots reversed `min` and `max` calls in a Python clamp. A Test
+Writer suggests checking that `clamp(12, 0, 10)` returns `10`. Follow the
+example through a live breakpoint and the finished recording.
+[Follow the example workflow in the Web UI manual](docs/WEBUI.md#build-debug-and-replay-a-code-review).
 
 ## Quick Start
 
@@ -87,19 +98,32 @@ socket mounted, which gives the container root on your machine. The default
 
 ## See it run
 
-Recorded against a local model with the [Code Reviewer config](#example-config) below. Nothing staged.
-
-**Chat.** Open a chat on the same config. The chat host hands the review to the pipeline, shows the nested tool calls, and comes back with the real bugs in the sample file.
-
-<p align="center">
-  <img src="docs/assets/showcase/chat.gif" width="880" alt="Rakitsu web chat: the chat host delegates a code review to the Reviewer agent, nested invoke_config and read_file tool blocks appear, then a markdown list of the top issues">
-</p>
-
-**Terminal and browser at once.** The same run, watched from the chat TUI and the web hub side by side.
+**Debug.** A live code review pauses before an agent thought. Inspect the
+graph and Run Log, then use **Resume** to continue execution.
 
 <p align="center">
-  <img src="docs/assets/showcase/tui-web.gif" width="880" alt="Split screen: the rakitsu chat TUI on the left and the web hub on the right, both following the same run in real time">
+  <img src="docs/assets/showcase/debugger.gif" width="880" alt="Rakitsu 0.4.0 Debug layout with Builder, the execution graph, Run Log, and Run Timeline as a code review pauses at an agent breakpoint and resumes">
 </p>
+<p align="center"><sub>A local code review pauses at an agent breakpoint and resumes in the Debug layout.</sub></p>
+
+**Builder.** Open **+ Add** to create nodes, or use the **Import** icon to load a
+pipeline. The demo switches to the SVG workbench and folds a pipeline with
+local Retrieval and Decision steps. This separate pipeline runs without
+agents.
+
+<p align="center">
+  <img src="docs/assets/showcase/builder.gif" width="880" alt="Rakitsu 0.4.0 Builder with Retrieval and Decision steps, showing group folding and the SVG workbench preview">
+</p>
+
+**Chat.** A local Ollama model explains a bug in a short Python function.
+
+<p align="center">
+  <img src="docs/assets/showcase/chat.gif" width="880" alt="Rakitsu 0.4.0 Chat panel showing a Python function and a response from a local model">
+</p>
+
+The full walkthrough covers Builder, a live breakpoint, and recorded playback.
+[Watch the MP4 walkthrough](docs/assets/showcase/web-ui-workbench.mp4) or open the
+[Web UI manual](docs/WEBUI.md).
 
 ## Why Rakitsu?
 
@@ -112,8 +136,10 @@ Recorded against a local model with the [Code Reviewer config](#example-config) 
 ## Features
 
 **Visual Builder**
-- Vue Flow canvas: drag agents, wire tools, group into pipelines
-- Block programming: pipeline, parallel, and team groups
+- Add nodes and groups with **+ Add**, then drag and wire them on the canvas
+- Use compact icon controls in docked layouts. **Run** and **Debug** stay labeled
+- Switch to **SVG workbench preview** for orthogonal wiring and an alternate canvas
+- Add **Decision** for typed model answers or **Retrieval** for local document search
 - Inherit/override: group defines defaults, agents override, with badges
 - Canvas search, auto-arrange, hierarchy panel
 
@@ -121,7 +147,8 @@ Recorded against a local model with the [Code Reviewer config](#example-config) 
 - Set breakpoints on any agent or tool node
 - Pause mid-execution, inspect reasoning, override parameters, resume
 - 4 visualization modes: Tree, Block Diagram, Timeline, Mind Map
-- Playback scrubbing on completed runs
+- Dock Builder, Debugger, Run Log, and Run Timeline together with **Layouts → Debug**
+- Use **Layouts → Replay** to scrub recorded runs and follow the graph and log together
 
 **Agent Engine**
 - ReAct loop with reflection and ground-checking
@@ -167,10 +194,10 @@ Details: [docs/wake-timer.md](docs/wake-timer.md), [docs/monitor-autostart.md](d
 
 Something to watch while an agent thinks. The Builder canvas can run an animated shader behind your agents: seven presets, off by default, picked in the Settings panel.
 
-One of the presets, Water Ripple, is a koi pond. Press **F** to drop food and the koi show up. Press **Shift+F** to fish them instead (they forgive you, they're pixels). **R** makes it rain. The clip below is the real thing: an agent run going on in the background, koi doing their own thing in front.
+One of the presets, Water Ripple, is a koi pond. Press **F** to drop food and the koi show up. Press **Shift+F** to fish them instead (they forgive you, they're pixels). **R** makes it rain. The clip below shows Water Ripple on the Builder canvas.
 
 <p align="center">
-  <img src="docs/assets/showcase/wallpaper-koi-pond.gif" width="640" alt="Water wallpaper: koi swimming and feeding on pellets over the Builder canvas while an agent run is in progress">
+  <img src="docs/assets/showcase/wallpaper-koi-pond.gif" width="640" alt="Water Ripple wallpaper with koi and feeding pellets on the 0.4.0 Builder canvas">
 </p>
 
 <details>

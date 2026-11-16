@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/SK-ENT/rakitsu/internal/config"
@@ -137,6 +138,13 @@ type Server struct {
 
 	shutdownMu sync.Mutex // guards stopped, serializing it against wg.Add in the reader loop
 	stopped    bool       // set before wg.Wait(); see Run's comment
+
+	// Outbound (agent → client) requests; see outbound.go.
+	outMu            sync.Mutex              // guards outSeq, pending, outClosed
+	outSeq           uint64                  // last issued "rk-N" sequence number
+	pending          map[string]*pendingCall // keyed by our outbound JSON-RPC id
+	outClosed        bool                    // set once the client is gone
+	droppedResponses atomic.Uint64           // bounds stderr logging
 }
 
 // NewServer creates an ACP server that reads from os.Stdin and writes to
@@ -265,14 +273,24 @@ func (s *Server) Run(ctx context.Context, in io.Reader, out io.Writer) error {
 			line, err := reader.readLine()
 			trimmed := bytesTrimNewline(line)
 			if len(trimmed) > 0 {
-				var req acpRequest
-				if jsonErr := json.Unmarshal([]byte(trimmed), &req); jsonErr != nil {
+				var env inboundEnvelope
+				if jsonErr := json.Unmarshal([]byte(trimmed), &env); jsonErr != nil {
 					// Malformed JSON — parse errors are reported with an
 					// explicit JSON "null" id per the JSON-RPC 2.0 spec, not
 					// suppressed the way a true notification's absent id is
 					// (see writeResponse/writeError).
 					s.writeError(json.RawMessage("null"), -32700, "parse error")
+				} else if env.isResponse() {
+					// A client answer to one of our outbound requests. Routed
+					// inline (non-blocking) and never replied to: JSON-RPC
+					// forbids answering a response.
+					s.routeResponse(env)
+				} else if env.Method == "" {
+					// Neither a request nor a response. writeError skips the
+					// reply when there is no id.
+					s.writeError(env.ID, -32600, "invalid request: no method")
 				} else {
+					req := acpRequest{JSONRPC: env.JSONRPC, ID: env.ID, Method: env.Method, Params: env.Params}
 					// s.wg.Add must never happen concurrently with or after
 					// s.wg.Wait() below — sync.WaitGroup's own docs call that
 					// undefined behavior. shutdownMu serializes this check
@@ -314,6 +332,11 @@ func (s *Server) Run(ctx context.Context, in io.Reader, out io.Writer) error {
 		runErr = ctx.Err()
 	case runErr = <-readDone:
 	}
+
+	// No answer can arrive any more: fail every pending outbound call and
+	// refuse new ones BEFORE waiting, or a turn blocked on a client answer
+	// would hold s.wg.Wait() below open forever.
+	s.closeOutbound(errClientDisconnected)
 
 	// Stop accepting new dispatches before waiting — see the Add-site
 	// comment above for why this ordering is what makes s.wg.Wait() safe.
@@ -658,6 +681,10 @@ func (s *Server) handleCancel(req acpRequest) {
 		return
 	}
 	if sess, ok := s.sessions.get(params.SessionID); ok {
+		// Fail this session's outbound calls first (ACP expects the client
+		// to answer them "cancelled"; we do not wait for that, and drop the
+		// late answers), then cancel the turn itself.
+		s.failPending(params.SessionID, errSessionCancelled)
 		sess.requestCancel()
 	}
 }

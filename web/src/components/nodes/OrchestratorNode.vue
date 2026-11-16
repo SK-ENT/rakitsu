@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, computed, ref } from 'vue';
+import { type ComputedRef, inject, computed, ref } from 'vue';
 import { Handle, Position } from '@vue-flow/core';
 import BuilderSideHandles from './BuilderSideHandles.vue';
 import type { OrchestratorConfig } from '../../types';
@@ -18,17 +18,29 @@ const canvasMode = inject<Ref<string>>('canvasMode');
 const showResults = inject<Ref<boolean>>('showResults', ref(false));
 const isExecution = computed(() => canvasMode?.value !== 'design');
 const hasResult = computed(() => !!(showResults?.value && props.data._runStatus));
+// Match OrchestratorConfig.RunsWithoutChatProvider in the runtime.
+const runsWithoutChatLLM = computed(() => {
+  const { strategy, pipeline } = props.data;
+  if (strategy !== 'Pipeline' || !pipeline?.steps.length || pipeline.synthesis) return false;
+  return pipeline.steps.every(step =>
+    (step.type === 'retrieval' && !!step.retrieval) ||
+    (step.type === 'decision' && !!step.decision &&
+      !step.decision.routes?.length && !step.decision.otherwise?.length)
+  );
+});
 const toggleBreakpoint = inject<(agentName: string) => void>('toggleBreakpoint');
 
 function fmtTokens(n: number): string {
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
   return String(n);
 }
+const workflowFocus = inject<ComputedRef<{ agent: string; tool: string } | null>>('builderWorkflowFocus');
 </script>
 
 <template>
   <div
     class="orchestrator-node"
+    :data-workflow-active="workflowFocus?.agent === data.name || undefined"
     :class="[{ selected }, data._runStatus && `status-${data._runStatus}`, isExecution && !data._runStatus && 'status-pending']"
   >
     <!-- Breakpoint dot — always visible for orchestrator nodes -->
@@ -56,11 +68,15 @@ function fmtTokens(n: number): string {
     </div>
 
     <div v-if="!isExecution" class="node-content">
-      <div class="node-field">
+      <div v-if="runsWithoutChatLLM" class="node-field">
+        <label>EXECUTION</label>
+        <span class="badge">No chat LLM</span>
+      </div>
+      <div v-else class="node-field">
         <label>PROVIDER</label>
         <span class="badge provider">{{ data.provider || 'openai' }}</span>
       </div>
-      <div class="node-field">
+      <div v-if="!runsWithoutChatLLM" class="node-field">
         <label>MODEL</label>
         <span class="field-value">{{ data.model }}</span>
       </div>

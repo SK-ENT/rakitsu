@@ -1,0 +1,1 @@
+My payment was processed twice for one order. The application works normally.

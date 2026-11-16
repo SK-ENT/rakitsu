@@ -1,0 +1,35 @@
+# Rakitsu tested build: v0.3.2 (09c37a8e)
+name: "Incident shift handoff"
+version: "1.0"
+description: "Separate verified observations from guesses and hand the next on-call engineer a clear action list."
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://127.0.0.1:11434/v1
+      default_model: qwen3:4b-q4_K_M
+  defaults:
+    temperature: 0
+    max_tokens: 1400
+agents:
+  - name: Analyst
+    role: worker
+    system_prompt: "Use the supplied fixture. Distinguish facts from assumptions."
+    settings: { max_iterations: 1 }
+  - name: Reviewer
+    role: worker
+    system_prompt: "Check the analysis against the fixture. Return only the requested deliverable."
+    settings: { max_iterations: 1 }
+orchestrator:
+  name: Recipe
+  strategy: Pipeline
+  agents: [Analyst, Reviewer]
+  pipeline:
+    steps:
+      - name: analyze
+        agent: Analyst
+        task: "Extract a timeline, current status, owner and next check. Separate observations from hypotheses. /no_think"
+      - name: review
+        agent: Reviewer
+        task: "Write a handoff for INC-42. Include 2%, 0.5%, Priya, 09:35 UTC, and that the root cause is unconfirmed. /no_think"

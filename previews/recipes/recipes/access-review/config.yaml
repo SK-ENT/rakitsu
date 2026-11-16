@@ -1,0 +1,35 @@
+# Rakitsu tested build: v0.3.2 (09c37a8e)
+name: "Access review shortlist"
+version: "1.0"
+description: "Compare fictional access grants with a policy and give a human reviewer a shortlist."
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://127.0.0.1:11434/v1
+      default_model: qwen3:4b-q4_K_M
+  defaults:
+    temperature: 0
+    max_tokens: 1400
+agents:
+  - name: Analyst
+    role: worker
+    system_prompt: "Use the supplied fixture. Distinguish facts from assumptions."
+    settings: { max_iterations: 1 }
+  - name: Reviewer
+    role: worker
+    system_prompt: "Check the analysis against the fixture. Return only the requested deliverable."
+    settings: { max_iterations: 1 }
+orchestrator:
+  name: Recipe
+  strategy: Pipeline
+  agents: [Analyst, Reviewer]
+  pipeline:
+    steps:
+      - name: analyze
+        agent: Analyst
+        task: "Compare the grants with policy. Identify expired and unapproved access. /no_think"
+      - name: review
+        agent: Reviewer
+        task: "Write a review shortlist with G-31 expired on its June 25 contract end date, G-32 missing approval, and G-33 no exception. Recommend review by a human. /no_think"

@@ -31,6 +31,9 @@ func buildChatRunner(
 	sessionID string,
 	selfURL string,
 ) (runner agent.Runner, innerRunner agent.Runner, cleanup func(), agentName string, modelLabel string, err error) {
+	if err := cfg.ValidatePlan(); err != nil {
+		return nil, nil, nil, "", "", err
+	}
 	// Create alert notifier if wake alerts are configured
 	var alertNotifier interface{}
 	if cfg.Settings.Wake.Enabled && len(cfg.Settings.Wake.Alerts.Sinks) > 0 {

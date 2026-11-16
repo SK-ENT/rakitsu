@@ -68,6 +68,8 @@ export type EventType =
   | 'WAKE_ESCALATE'
   | 'WAKE_TASK_START'
   | 'WAKE_TASK_END'
+  | 'PERMISSION_REQUESTED'
+  | 'PERMISSION_DECIDED'
   /**
    * Final lifecycle marker written as the last line of a session JSONL by
    * SessionStore.EndSession. JSONL-only — never published to the EventBus,
@@ -245,6 +247,9 @@ export interface PipelineStepStartPayload {
 }
 
 export interface PipelineStepEndPayload {
+  retrieval_count?: number;
+  decision_backend?: string;
+  decision_route?: string;
   step_name: string;
   step_type: string;
   status: string;
@@ -405,6 +410,29 @@ export interface WakeTaskPayload {
   reason?: string
   args?: Record<string, string>
   summary?: string
+}
+
+export interface PermissionRequestedPayload {
+  request_id: string
+  session_id?: string
+  tool: string
+  kind: 'cli_exec' | 'fs_write' | 'fs_read'
+  reasons: string[]
+  risk?: string
+  binary?: string
+  argv?: string[]
+  paths?: string[]
+  persistence_point?: boolean
+  boundary: string
+  parent_chain?: string[]
+  options: string[]
+}
+
+export interface PermissionDecidedPayload {
+  request_id: string
+  decision: 'allow' | 'deny'
+  scope: 'once' | 'session' | 'none'
+  source: string
 }
 
 export interface DebugTreeNode {

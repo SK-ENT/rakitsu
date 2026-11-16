@@ -1,0 +1,35 @@
+# Rakitsu tested build: v0.3.2 (09c37a8e)
+name: "Import quality review"
+version: "1.0"
+description: "Check a small data extract against its schema and produce a quarantine list."
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://127.0.0.1:11434/v1
+      default_model: qwen3:4b-q4_K_M
+  defaults:
+    temperature: 0
+    max_tokens: 1400
+agents:
+  - name: Analyst
+    role: worker
+    system_prompt: "Use the supplied fixture. Distinguish facts from assumptions."
+    settings: { max_iterations: 1 }
+  - name: Reviewer
+    role: worker
+    system_prompt: "Check the analysis against the fixture. Return only the requested deliverable."
+    settings: { max_iterations: 1 }
+orchestrator:
+  name: Recipe
+  strategy: Pipeline
+  agents: [Analyst, Reviewer]
+  pipeline:
+    steps:
+      - name: analyze
+        agent: Analyst
+        task: "Check each row against the import rules. Report the reason for each failed row. /no_think"
+      - name: review
+        agent: Reviewer
+        task: "Write an import report. State row 1 accepted. Quarantine row 2 for invalid status, row 3 for duplicate ID, row 4 for missing country. /no_think"

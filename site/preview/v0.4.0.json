@@ -1,0 +1,275 @@
+{
+  "baseline": "v0.3.2",
+  "previewNotice": {
+    "en": "Unreleased v0.4.0 documentation preview. The Web UI, pipeline steps, and Plan focus sections describe the milestone. Other reference sections use v0.3.2 as their baseline.",
+    "ja": "未リリースの v0.4.0 ドキュメントです。Web UI、パイプラインのステップ、Plan フォーカスはマイルストーン版の内容です。その他の仕様は v0.3.2 を参照元としています。"
+  },
+  "story": {
+    "id": "web-ui-story",
+    "name": {
+      "en": "Example workflow for a Python code review",
+      "ja": "Python コードレビューのワークフロー例"
+    },
+    "simple": {
+      "en": "Configure two sample agents to review a Python function. Follow their run through Builder, a live breakpoint, and recorded Replay. The diagrams illustrate the workflow.",
+      "ja": "Python 関数をレビューするサンプルエージェントを 2 つ設定します。図で Builder での構成、実行中のブレークポイント、記録の再生をたどります。"
+    },
+    "detail": [
+      {
+        "t": "h",
+        "id": "build",
+        "en": "1. Build the review pipeline",
+        "ja": "1. レビュー用のパイプラインを作る"
+      },
+      {
+        "t": "p",
+        "en": "The clamp calls min and max with the bounds in the wrong places. Connect an Orchestrator to a Pipeline group. Put Reviewer above Test Writer so Reviewer proposes the fix first.",
+        "ja": "clamp 関数では min と max に渡す上下限が逆になっています。Orchestrator を Pipeline グループにつなぎ、Reviewer を Test Writer の上に置きます。Reviewer が先に修正案を出します。"
+      },
+      {
+        "t": "media",
+        "diagram": {
+          "src": {
+            "en": "docs/assets/diagrams/workflow-build.svg",
+            "ja": "docs/assets/diagrams/workflow-build-ja.svg"
+          },
+          "alt": {
+            "en": "Builder diagram showing the faulty clamp and the two ordered review steps.",
+            "ja": "誤った clamp 関数と、順に実行される 2 つのレビューステップの図。"
+          }
+        }
+      },
+      {
+        "t": "h",
+        "id": "debug",
+        "en": "2. Pause at the Reviewer",
+        "ja": "2. Reviewer で一時停止する"
+      },
+      {
+        "t": "p",
+        "en": "Right-click Reviewer and choose Break before thought. Switch to Layouts → Debug and start with Debug. Inspect the paused node and live Run Log, then choose Resume.",
+        "ja": "Reviewer を右クリックして Break before thought を選びます。Layouts → Debug に切り替え、Debug で実行します。停止したノードとライブの Run Log を確認し、Resume で再開します。"
+      },
+      {
+        "t": "media",
+        "diagram": {
+          "src": {
+            "en": "docs/assets/diagrams/workflow-debug.svg",
+            "ja": "docs/assets/diagrams/workflow-debug-ja.svg"
+          },
+          "alt": {
+            "en": "Reviewer pauses at a live breakpoint while Test Writer waits.",
+            "ja": "ライブ実行中に Reviewer がブレークポイントで停止し、Test Writer が待機している図。"
+          }
+        }
+      },
+      {
+        "t": "h",
+        "id": "replay",
+        "en": "3. Replay the recorded result",
+        "ja": "3. 記録された結果を再生する"
+      },
+      {
+        "t": "p",
+        "en": "Switch to Layouts → Replay and pick the completed run in Run Timeline. Scrub to Reviewer’s fix, then forward to Test Writer’s check that clamp(12, 0, 10) returns 10. The graph and recorded log follow the selected event.",
+        "ja": "Layouts → Replay に切り替え、Run Timeline で完了した実行を選びます。スライダーを動かして Reviewer の修正案、続いて clamp(12, 0, 10) が 10 を返すという Test Writer の確認項目を見ます。グラフと記録ログは選択したイベントに連動します。"
+      },
+      {
+        "t": "media",
+        "diagram": {
+          "src": {
+            "en": "docs/assets/diagrams/workflow-replay.svg",
+            "ja": "docs/assets/diagrams/workflow-replay-ja.svg"
+          },
+          "alt": {
+            "en": "Recorded graph and log aligned at the Reviewer’s proposed fix.",
+            "ja": "Reviewer が修正案を出したイベントに、記録グラフとログがそろっている図。"
+          }
+        }
+      },
+      {
+        "t": "link",
+        "label": {
+          "en": "Open the full Web UI manual",
+          "ja": "Web UI マニュアルを開く"
+        },
+        "href": {
+          "en": "docs/WEBUI.html",
+          "ja": "docs/WEBUI.ja.html"
+        }
+      },
+      {
+        "t": "link",
+        "label": {
+          "en": "Open the README",
+          "ja": "README を開く"
+        },
+        "href": {
+          "en": "README.html",
+          "ja": "README.ja.html"
+        }
+      }
+    ]
+  },
+  "features": [
+    {
+      "id": "decision-retrieval",
+      "name": {
+        "en": "Decision and Retrieval pipeline steps",
+        "ja": "Decision と Retrieval のステップ"
+      },
+      "simple": {
+        "en": "Ask a typed question or search a local corpus from a Pipeline, with or without chat agents.",
+        "ja": "Pipeline から型付きの質問に答えたり、ローカル文書を検索したりできます。チャット用エージェントがないパイプラインでも使えます。"
+      },
+      "detail": [
+        {
+          "t": "h",
+          "id": "decision",
+          "en": "Typed answers and routing",
+          "ja": "型付きの回答と分岐"
+        },
+        {
+          "t": "p",
+          "en": "Decision supports Jev, local Laya, OpenAI Decisions, and Gemini Developer API. A predicate returns a probability, a choice returns a named option, and a score uses an ordered rubric. Routes run the first matching branch. Supply an otherwise branch when routes are configured.",
+          "ja": "Decision は Jev、ローカルの Laya、OpenAI Decisions、Gemini Developer API に対応します。predicate は確率、choice は名前付きの選択肢、score は段階評価を返します。routes は最初に一致した分岐を実行します。routes を設定するときは otherwise も指定します。"
+        },
+        {
+          "t": "kv",
+          "head": [
+            "Key",
+            "Description"
+          ],
+          "rows": [
+            [
+              "decision.input",
+              {
+                "en": "Use the run query or a named upstream step. Retrieval input requires a local Laya Decision without routes.",
+                "ja": "実行時の質問、または名前を指定した上流ステップを使います。検索結果を入力にする場合は、分岐のないローカル Laya の Decision を使います。"
+              }
+            ],
+            [
+              "retrieval.directory",
+              {
+                "en": "Search Markdown and text beneath a path relative to RAKITSU_RETRIEVAL_ROOT.",
+                "ja": "RAKITSU_RETRIEVAL_ROOT からの相対パスで Markdown とテキストを検索します。"
+              }
+            ],
+            [
+              "retrieval.top_k",
+              {
+                "en": "Return 1–8 ranked passages. Defaults to 3. Results include file paths and line ranges.",
+                "ja": "順位付きの抜粋を 1〜8 件返します。既定値は 3 件です。ファイルパスと行範囲が含まれます。"
+              }
+            ]
+          ]
+        },
+        {
+          "t": "h",
+          "id": "evidence",
+          "en": "Use local evidence",
+          "ja": "ローカルの検索結果を使う"
+        },
+        {
+          "t": "p",
+          "en": "Use depends_on to make the Retrieval step upstream. Set the Decision input to { from: retrieval, step: search }. When the search finds no passages, the Decision model call is skipped.",
+          "ja": "depends_on で Retrieval を上流に設定します。Decision の入力を { from: retrieval, step: search } にします。該当する抜粋がなければ Decision のモデル呼び出しを省略します。"
+        }
+      ]
+    },
+    {
+      "id": "plan-focus",
+      "name": {
+        "en": "Plan focus and permissions",
+        "ja": "Plan フォーカスと権限"
+      },
+      "simple": {
+        "en": "Run one direct agent with read-only filesystem tools by setting settings.focus.mode to plan.",
+        "ja": "settings.focus.mode を plan にすると、読み取り専用のファイル操作で単一のエージェントを直接実行できます。"
+      },
+      "detail": [
+        {
+          "t": "kv",
+          "head": [
+            "Key",
+            "Description"
+          ],
+          "rows": [
+            [
+              "settings.focus.mode: plan",
+              {
+                "en": "Allows filesystem read, list, and search. Requires a single direct agent without orchestration or delegation.",
+                "ja": "ファイルの読み取り・一覧表示・検索を許可します。オーケストレーションや委譲のない単一のエージェントが必要です。"
+              }
+            ],
+            [
+              "settings.permissions.mode",
+              {
+                "en": "Defaults to legacy. The ask, semi_auto, and auto modes are disabled in this build.",
+                "ja": "既定値は legacy です。このビルドでは ask、semi_auto、auto は無効です。"
+              }
+            ]
+          ]
+        },
+        {
+          "t": "p",
+          "en": "Plan focus also rejects memory, spawning, session messaging, wake timers, and monitors. The configured provider still receives prompts and tool results.",
+          "ja": "Plan フォーカスではメモリ、エージェント生成、セッション間メッセージ、ウェイクタイマー、モニターも使えません。設定されたプロバイダーにはプロンプトとツールの結果が送信されます。"
+        }
+      ]
+    }
+  ],
+  "hub": {
+    "en": "Use rakitsu serve to open the dockable Web UI. The compact Builder shares the workspace with Debugger, Inspector, Sessions, Chat, Run Log, and Run Timeline.",
+    "ja": "rakitsu serve でドッキング対応の Web UI を開きます。コンパクトな Builder と Debugger、Inspector、Sessions、Chat、Run Log、Run Timeline を同じワークスペースで使えます。"
+  },
+  "hubDetail": [
+    {
+      "t": "h",
+      "id": "workspace-layouts",
+      "en": "Debug and Replay workspace layouts",
+      "ja": "Debug と Replay のレイアウト"
+    },
+    {
+      "t": "kv",
+      "head": [
+        "Key",
+        "Description"
+      ],
+      "rows": [
+        [
+          "Layouts → Debug",
+          {
+            "en": "Dock Builder and Debugger above Run Log and Run Timeline. Follow the live run and pause at a breakpoint.",
+            "ja": "Builder と Debugger を上段、Run Log と Run Timeline を下段に表示します。ライブ実行を追い、ブレークポイントで停止できます。"
+          }
+        ],
+        [
+          "Layouts → Replay",
+          {
+            "en": "Give the graph more room. Select a saved run and play or scrub its recorded events.",
+            "ja": "実行グラフの表示領域を広げます。保存済みの実行を選び、記録したイベントを再生したりスライダーで移動したりできます。"
+          }
+        ],
+        [
+          "+ Add / Run / Debug",
+          {
+            "en": "Create nodes and groups with + Add. Run starts execution. Debug appears when a breakpoint is set.",
+            "ja": "+ Add でノードとグループを作成します。Run で実行し、ブレークポイントを設定すると Debug が表示されます。"
+          }
+        ]
+      ]
+    },
+    {
+      "t": "link",
+      "label": {
+        "en": "Follow the Web UI manual",
+        "ja": "Web UI マニュアルを開く"
+      },
+      "href": {
+        "en": "docs/WEBUI.html",
+        "ja": "docs/WEBUI.ja.html"
+      }
+    }
+  ]
+}

@@ -4,6 +4,7 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/SK-ENT/rakitsu/internal/decision"
 	"os"
 	"path/filepath"
 	"sort"
@@ -302,7 +303,7 @@ func (s *SessionStore) GetSessionEvents(id string) ([]telemetry.AgentEvent, erro
 	for dec.More() {
 		var event telemetry.AgentEvent
 		if err := dec.Decode(&event); err != nil {
-			continue // skip malformed entries
+			break // Keep the valid prefix if the active writer has not finished the next event.
 		}
 		if event.EventType == telemetry.EventSessionEnd {
 			continue // session-lifecycle marker, not an agent event
@@ -571,9 +572,10 @@ type StoreCheckpointData struct {
 
 // StoreStepResult is the persisted form of one completed pipeline step.
 type StoreStepResult struct {
-	Name       string `json:"name"`
-	Output     string `json:"output"`
-	DurationNs int64  `json:"duration_ns"`
+	Decision   *decision.Result `json:"decision,omitempty"`
+	Name       string           `json:"name"`
+	Output     string           `json:"output"`
+	DurationNs int64            `json:"duration_ns"`
 }
 
 // WriteCheckpoint atomically writes (or overwrites) the checkpoint file for the

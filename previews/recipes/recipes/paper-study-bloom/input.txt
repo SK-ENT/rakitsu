@@ -1,0 +1,15 @@
+Complete the supplied BloomPrecheck starter with only these two methods:
+
+def might_contain(self, value):
+    # All positions from self.positions(value) must be set in self.bits.
+
+def confirm(self, value, exact_values):
+    # Set candidate = self.might_contain(value).
+    # Return a dict with value, bloom_candidate (candidate unchanged),
+    # and exact_match (value in exact_values if candidate else False).
+    # The exact set must never be consulted when candidate is false.
+
+In a one-bit filter, adding alice makes mallory a candidate, but it is an
+exact nonmember. A negative precheck must return bloom_candidate false.
+Do not regenerate any existing starter code. No imports or extra functions.
+/no_think

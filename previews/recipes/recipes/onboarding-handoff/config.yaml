@@ -1,0 +1,35 @@
+# Rakitsu tested build: v0.3.2 (09c37a8e)
+name: "New starter readiness"
+version: "1.0"
+description: "Combine equipment and access requests into a first-day handoff with owners and due dates."
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://127.0.0.1:11434/v1
+      default_model: qwen3:4b-q4_K_M
+  defaults:
+    temperature: 0
+    max_tokens: 1400
+agents:
+  - name: Analyst
+    role: worker
+    system_prompt: "Use the supplied fixture. Distinguish facts from assumptions."
+    settings: { max_iterations: 1 }
+  - name: Reviewer
+    role: worker
+    system_prompt: "Check the analysis against the fixture. Return only the requested deliverable."
+    settings: { max_iterations: 1 }
+orchestrator:
+  name: Recipe
+  strategy: Pipeline
+  agents: [Analyst, Reviewer]
+  pipeline:
+    steps:
+      - name: analyze
+        agent: Analyst
+        task: "Identify the outstanding setup items, owners, and deadlines. Separate completed items. /no_think"
+      - name: review
+        agent: Reviewer
+        task: "Draft a readiness handoff with Open and Complete headings. Include IT-12, Maya, FAC-8, Omar, and HR-4. /no_think"

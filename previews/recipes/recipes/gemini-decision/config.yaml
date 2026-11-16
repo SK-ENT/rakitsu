@@ -1,0 +1,22 @@
+# Rakitsu tested build: v0.3.0-alpha.1-internal.1897 (loopback protocol check)
+name: "Gemini Decisions accessibility routing"
+version: "1.0"
+agents: []
+orchestrator:
+  name: decision
+  strategy: Pipeline
+  pipeline:
+    steps:
+      - name: classify
+        type: decision
+        decision:
+          backend: gemini
+          input: {from: query}
+          questions:
+            queue:
+              type: choice
+              instructions: "Which accessibility review queue owns this issue?"
+              choices:
+                keyboard: "Keyboard interaction or focus order"
+                labels: "Screen reader names or labels"
+                visual: "Contrast or visual presentation"

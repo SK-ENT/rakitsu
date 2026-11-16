@@ -1,0 +1,21 @@
+# Rakitsu tested build: v0.3.0-alpha.1-internal.1897 (loopback protocol check)
+name: "OpenAI Decisions support routing"
+version: "1.0"
+agents: []
+orchestrator:
+  name: decision
+  strategy: Pipeline
+  pipeline:
+    steps:
+      - name: classify
+        type: decision
+        decision:
+          backend: openai
+          input: {from: query}
+          questions:
+            queue:
+              type: choice
+              instructions: "Which queue should own this report?"
+              choices:
+                billing: "Payments, refunds or invoices"
+                technical: "Errors, outages or broken functionality"

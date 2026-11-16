@@ -1,0 +1,30 @@
+name: local-decision
+description: Evaluate text locally and return typed answers without a chat model.
+version: "1.0"
+agents: []
+orchestrator:
+  name: local-decision
+  strategy: Pipeline
+  pipeline:
+    steps:
+      - name: classify
+        type: decision
+        decision:
+          backend: laya
+          input: { from: query }
+          questions:
+            needs_review:
+              type: predicate
+              instructions: Does this message report a payment problem?
+            department:
+              type: choice
+              instructions: Which team handles this request?
+              choices:
+                billing: Payments and invoices
+                technical: Product errors and outages
+            urgency:
+              type: score
+              instructions: How urgent is this request?
+              levels:
+                - General question
+                - Work is blocked

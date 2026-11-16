@@ -1,0 +1,76 @@
+# Rakitsu tested build: v0.3.2 (09c37a8e)
+name: All-agent company order desk
+version: "1.0"
+settings:
+  default_provider: ollama
+  providers:
+    ollama:
+      type: ollama
+      base_url: http://127.0.0.1:11434/v1
+      default_model: qwen3:4b-q4_K_M
+  defaults:
+    temperature: 0
+    max_tokens: 1800
+tools:
+  - name: sales_record
+    type: cli
+    description: Read the fixed local sales record. Takes no arguments.
+    command: "python3 -I order_desk.py sales"
+    sandbox:
+      type: local_restricted
+      resource_limits: {timeout_sec: 10}
+  - name: operations_record
+    type: cli
+    description: Read the fixed local operations record. Takes no arguments.
+    command: "python3 -I order_desk.py operations"
+    sandbox:
+      type: local_restricted
+      resource_limits: {timeout_sec: 10}
+  - name: finance_record
+    type: cli
+    description: Read the fixed local finance record. Takes no arguments.
+    command: "python3 -I order_desk.py finance"
+    sandbox:
+      type: local_restricted
+      resource_limits: {timeout_sec: 10}
+agents:
+  - name: Sales
+    role: worker
+    tools: [sales_record]
+    system_prompt: "Summarize the customer order and constraints."
+    settings: {max_iterations: 3}
+  - name: Operations
+    role: worker
+    tools: [operations_record]
+    system_prompt: "Compare supply options with the requested delivery date and report the shortage."
+    settings: {max_iterations: 3}
+  - name: Finance
+    role: worker
+    tools: [finance_record]
+    system_prompt: "Apply the policy tool. Relay its exact decision, price options and blockers."
+    settings: {max_iterations: 3}
+  - name: CustomerSuccess
+    role: worker
+    system_prompt: "Draft a short reply for the customer based on the Finance result. Omit all numerical details. On HOLD, ask whether timing or budget is flexible. Do not promise fulfillment or claim any purchase was made."
+    settings: {max_iterations: 1}
+orchestrator:
+  name: Order desk
+  strategy: Pipeline
+  agents: [Sales, Operations, Finance, CustomerSuccess]
+  pipeline:
+    steps:
+      - name: sales
+        agent: Sales
+        task: "Call sales_record with {}. Summarize the customer order and constraints. /no_think"
+        require_tool_call: {tool: sales_record}
+      - name: operations
+        agent: Operations
+        task: "Call operations_record with {}. Compare supply options with the requested delivery date and report the shortage. /no_think"
+        require_tool_call: {tool: operations_record}
+      - name: finance
+        agent: Finance
+        task: "Call finance_record with {}. Apply the policy tool. Relay its exact decision, price options and blockers. /no_think"
+        require_tool_call: {tool: finance_record}
+      - name: customer_reply
+        agent: CustomerSuccess
+        task: "Draft a short reply for the customer based on the Finance result. Omit all numerical details. On HOLD, ask whether timing or budget is flexible. Do not promise fulfillment or claim any purchase was made. /no_think"

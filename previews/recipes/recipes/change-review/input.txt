@@ -1,0 +1,1 @@
+Review a proposed change. Before: only signed-in users could GET /account/export. After: the endpoint returns account data when given a user_id query parameter without checking the session. /no_think

@@ -1,0 +1,33 @@
+{
+  "name": "Runtime decision",
+  "version": "1.0",
+  "agents": [],
+  "orchestrator": {
+    "name": "decision",
+    "strategy": "Pipeline",
+    "pipeline": {
+      "steps": [
+        {
+          "name": "classify",
+          "type": "decision",
+          "decision": {
+            "backend": "gemini",
+            "input": {
+              "from": "query"
+            },
+            "questions": {
+              "result": {
+                "type": "choice",
+                "instructions": "Which team should review the equipment fault?",
+                "choices": {
+                  "maintenance": "Jam, mechanical wear, or equipment recovery",
+                  "it": "Connectivity or network configuration"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
